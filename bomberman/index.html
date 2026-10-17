@@ -372,7 +372,7 @@ G.spiral = (() => {
 
 // ================= audio =================
 const Sound = (() => {
-  let ac = null, sfxBus, musBus, noise, delay, lastBoom = 0;
+  let ac = null, sfxBus, musBus, noise, delay, lastBoom = 0, revSend = null, distCurve = null;
   let mOn = false, mStep = 0, mNext = 0, mTimer = null, mBpm = 132, mTrans = 0;
   const ok = () => ac && ac.state === 'running';
   function init() {
@@ -391,6 +391,13 @@ const Sound = (() => {
         delay.connect(fb); fb.connect(delay); delay.connect(wet); wet.connect(musBus);
         noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
         const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        // Space for explosions: a synthetic stereo hall reverb (decaying noise impulse) on a send bus.
+        const len = Math.floor(ac.sampleRate * 2.4), ir = ac.createBuffer(2, len, ac.sampleRate);
+        for (let c = 0; c < 2; c++) { const ch = ir.getChannelData(c); for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2); }
+        const conv = ac.createConvolver(); conv.buffer = ir;
+        revSend = ac.createGain(); revSend.gain.value = 0.42; revSend.connect(conv); conv.connect(sfxBus);
+        distCurve = new Float32Array(1024);
+        for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; distCurve[i] = Math.tanh(x * 4); }
         apply();
       }
       if (ac.state !== 'running') ac.resume();
@@ -414,14 +421,48 @@ const Sound = (() => {
     s.connect(f); f.connect(g); g.connect(bus); s.start(t, Math.random() * 0.4); s.stop(t + dur + 0.03);
   }
   const quiet = () => !ok() || !settings.sfx || G.mode === 'demo';
+  // One noise layer: filtered burst with its own envelope, routed to a destination node.
+  function layer(dest, t, dur, vol, type, f0, f1, q, attack) {
+    const s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+    s.buffer = noise; f.type = type; f.Q.value = q;
+    f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f); f.connect(g); g.connect(dest); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.05);
+    return g;
+  }
+  function panned(pan) {
+    const out = ac.createGain();
+    if (ac.createStereoPanner) { const p = ac.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan)); out.connect(p); p.connect(sfxBus); p.connect(revSend); }
+    else { out.connect(sfxBus); out.connect(revSend); }
+    return out;
+  }
+  // A real-sounding blast: crack + distorted sub thump + roaring body + fire crackle + rumble tail,
+  // placed left/right by where it happened and sent into a reverb for depth.
+  function explosion(pan, power) {
+    const t = ac.currentTime + 0.005, chained = t - lastBoom < 0.08; lastBoom = t;
+    const big = Math.min(1.25, 0.8 + power * 0.04), out = panned(pan * 0.8);
+    out.gain.value = chained ? 0.55 : 1;
+    layer(out, t, 0.07, 1.1, 'highpass', 3000, 1800, 0.7, 0.002);                    // crack
+    if (!chained) {
+      const o = ac.createOscillator(), sh = ac.createWaveShaper(), g = ac.createGain();
+      o.type = 'sine'; o.frequency.setValueAtTime(120 + Math.random() * 30, t); o.frequency.exponentialRampToValueAtTime(26, t + 0.6);
+      sh.curve = distCurve; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(1.1 * big, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.95);
+      o.connect(sh); sh.connect(g); g.connect(out); o.start(t); o.stop(t + 1);         // sub thump
+      layer(out, t, 2.4 * big, 0.75, 'lowpass', 160, 60, 1.2, 0.04);                   // rumble tail
+    }
+    layer(out, t, 1.1 * big, 1.0, 'lowpass', 5200, 180, 0.9, 0.006);                   // blast body
+    const roar = layer(out, t, 1.5 * big, 0.38, 'bandpass', 1400, 500, 0.6, 0.09);     // fire roar
+    for (let i = 1; i < 14; i++) roar.gain.setValueAtTime(0.12 + Math.random() * 0.3, t + 0.1 + i * 0.08);
+    const pops = chained ? 8 : 18;                                                      // fire crackle
+    for (let i = 0; i < pops; i++) {
+      const when = t + 0.04 + Math.pow(Math.random(), 1.6) * 1.4 * big;
+      layer(panned(pan * 0.6 + (Math.random() - 0.5) * 0.9), when, 0.012 + Math.random() * 0.03, 0.12 + Math.random() * 0.25, 'highpass', 2500 + Math.random() * 3500, 1500, 0.8, 0.001);
+    }
+  }
   const loud = () => !ok() || !settings.sfx;
   const play = {
     place() { if (quiet()) return; osc('sine', 260, 90, 0.14, 0.55); osc('triangle', 540, 180, 0.06, 0.2); },
-    boom() {
-      if (quiet()) return; const n = ac.currentTime; if (n - lastBoom < 0.05) return; lastBoom = n;
-      const v = 0.85 + Math.random() * 0.3;
-      nz(0.9, 1.0, 2400 * v, 50); osc('sine', 120 * v, 28, 0.6, 1.0); osc('square', 80 * v, 30, 0.18, 0.16); nz(0.25, 0.45, 6000, 800, 0, 'bandpass', 0.6);
-    },
+    boom(pan = 0, power = 2) { if (quiet()) return; explosion(pan, power); },
     crumble() { if (quiet()) return; nz(0.22, 0.22, 900 + Math.random() * 600, 120, 0.04, 'lowpass', 1.5); },
     tick(last) { if (quiet()) return; osc('square', last ? 1320 : 990, 0, 0.07, 0.1); },
     bossHit() { if (quiet()) return; osc('sawtooth', 220, 70, 0.45, 0.2); osc('square', 330, 90, 0.35, 0.12, 0.05); nz(0.3, 0.4, 2500, 300); },
@@ -1103,8 +1144,8 @@ function explode(b) {
   G.explosions.push({ x: cx, y: cy, arms, t: 0, dur: 0.62, power: b.power });
   fxExplosion(cx, cy, arms, b.power);
   G.shake = Math.min(1.1, G.shake + 0.4);
-  Sound.play.boom();
-  if (b.owner.human) haptic('medium');
+  Sound.play.boom((cx - (COLS - 1) / 2) / ((COLS - 1) / 2), b.power);
+  if (b.owner.human) haptic('heavy');
 }
 function destroySoft(x, y) {
   G.grid[idx(x, y)] = BURN; G.burning.push({ x, y, t: 0 }); Sound.play.crumble();
