@@ -24,10 +24,10 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
 html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--font);
-  overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-text-size-adjust:100%}
+  overscroll-behavior:none;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-text-size-adjust:100%}
 #app{position:fixed;inset:0;overflow:hidden;background:var(--bg)}
-#game{position:absolute;inset:0;width:100%;height:100%;display:block}
-#touch{position:absolute;inset:0;z-index:2}
+#game{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#touch{position:absolute;inset:0;z-index:2;touch-action:none}
 #safe{position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;
   padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
 
@@ -99,7 +99,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 #banner.white .bt{color:#fff}
 
 /* screens */
-.screen{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+.screen{position:absolute;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:14px;-webkit-overflow-scrolling:touch;
   padding:calc(env(safe-area-inset-top,0px) + 18px) calc(env(safe-area-inset-right,0px) + 16px) calc(env(safe-area-inset-bottom,0px) + 18px) calc(env(safe-area-inset-left,0px) + 16px);
   background:radial-gradient(120% 75% at 50% 38%,rgba(8,10,24,.3),rgba(8,10,24,.9) 72%);overflow-y:auto;touch-action:pan-y;text-align:center}
 .screen.solid{background:rgba(7,9,22,.84)}
@@ -157,6 +157,16 @@ h2.warn{color:var(--warn)} h2.good{color:var(--good)}
   background:rgba(255,255,255,.05);border:1px solid var(--line)}
 .help p{margin:4px 0}
 .help b{color:var(--gold)}
+/* centred when it fits, scrollable from the top when it doesn't */
+.screen>:first-child{margin-top:auto}
+.screen>:last-child{margin-bottom:auto}
+@media (max-height:520px){
+  .screen{gap:9px}
+  .logo{font-size:48px} .logoBomb{width:52px;height:52px;margin-bottom:-8px} .tag{display:none}
+  .btn{padding:10px 16px;font-size:16px} .btn .sub{display:none} .menu{gap:8px}
+  .stat{min-width:78px;padding:6px 10px} .stat b{font-size:17px}
+  h2{font-size:34px} .help{font-size:12.5px;line-height:1.35} .tog{padding:10px 14px} .rows{gap:5px} .row img{width:34px;height:34px}
+}
 @media (prefers-reduced-motion:reduce){
   .logoWrap,.badge,.chip.warn,.logoBomb .spark{animation:none}
   #banner{transition:opacity .2s}
@@ -369,7 +379,9 @@ const Sound = (() => {
     try {
       if (!ac) {
         const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
-        ac = new AC();
+        // Without this, iOS mutes Web Audio whenever the ringer switch is on silent.
+        try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) { /* older iOS */ }
+        ac = new AC({ latencyHint: 'interactive' });
         const comp = ac.createDynamicsCompressor();
         comp.threshold.value = -12; comp.knee.value = 10; comp.ratio.value = 5; comp.attack.value = 0.003; comp.release.value = 0.2;
         const master = ac.createGain(); master.gain.value = 0.9; master.connect(comp); comp.connect(ac.destination);
@@ -407,8 +419,16 @@ const Sound = (() => {
     place() { if (quiet()) return; osc('sine', 260, 90, 0.14, 0.55); osc('triangle', 540, 180, 0.06, 0.2); },
     boom() {
       if (quiet()) return; const n = ac.currentTime; if (n - lastBoom < 0.05) return; lastBoom = n;
-      nz(0.9, 1.0, 2400, 50); osc('sine', 120, 28, 0.6, 1.0); osc('square', 80, 30, 0.18, 0.16); nz(0.25, 0.45, 6000, 800, 0, 'bandpass', 0.6);
+      const v = 0.85 + Math.random() * 0.3;
+      nz(0.9, 1.0, 2400 * v, 50); osc('sine', 120 * v, 28, 0.6, 1.0); osc('square', 80 * v, 30, 0.18, 0.16); nz(0.25, 0.45, 6000, 800, 0, 'bandpass', 0.6);
     },
+    crumble() { if (quiet()) return; nz(0.22, 0.22, 900 + Math.random() * 600, 120, 0.04, 'lowpass', 1.5); },
+    tick(last) { if (quiet()) return; osc('square', last ? 1320 : 990, 0, 0.07, 0.1); },
+    bossHit() { if (quiet()) return; osc('sawtooth', 220, 70, 0.45, 0.2); osc('square', 330, 90, 0.35, 0.12, 0.05); nz(0.3, 0.4, 2500, 300); },
+    bossDown() { if (quiet()) return; [55, 52, 48, 43].forEach((m, i) => osc('sawtooth', mtof(m), mtof(m - 12), 0.4, 0.18, i * 0.18)); nz(1.4, 0.8, 3000, 40, 0.2); },
+    spawn() { if (quiet()) return; osc('sine', 300, 1200, 0.3, 0.12); osc('triangle', 1200, 300, 0.3, 0.08, 0.15); },
+    reveal() { if (quiet()) return; osc('triangle', mtof(88), 0, 0.12, 0.1); osc('triangle', mtof(93), 0, 0.2, 0.1, 0.08); },
+    pause() { if (loud()) return; osc('triangle', 660, 440, 0.12, 0.15); },
     item() { if (quiet()) return; [72, 76, 79, 84].forEach((m, i) => osc('square', mtof(m), 0, 0.09, 0.12, i * 0.055)); osc('sine', mtof(96), 0, 0.3, 0.12, 0.22); },
     kill() { if (quiet()) return; osc('square', 900, 120, 0.25, 0.16); nz(0.15, 0.25, 3000, 500); },
     die() { if (quiet()) return; osc('square', 660, 70, 0.9, 0.18); osc('triangle', 440, 50, 1.0, 0.3); },
@@ -486,7 +506,7 @@ function haptic(kind) {
 const canvas = $('game');
 let ctx = canvas.getContext('2d');
 const bg = document.createElement('canvas'), bctx = bg.getContext('2d');
-let W = 0, H = 0, DPR = 1, T = 24, FX = 0, FY = 0, portrait = true;
+let dprCap = 3, W = 0, H = 0, DPR = 1, T = 24, FX = 0, FY = 0, portrait = true;
 let SA = { t: 0, r: 0, b: 0, l: 0 }, ctrl = {};
 const SPR = {}, glowCache = {};
 
@@ -515,7 +535,7 @@ const CROP = 0.65, EC = COLS - 2 * CROP, ER = ROWS - 2 * CROP;
 let VX = 0, VY = 0, VW = 0, VH = 0;
 function layout() {
   readSafe();
-  W = window.innerWidth; H = window.innerHeight; DPR = Math.min(window.devicePixelRatio || 1, 3);
+  W = window.innerWidth; H = window.innerHeight; DPR = Math.min(window.devicePixelRatio || 1, 3, dprCap);
   canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
   portrait = H >= W * 1.05;
   const snap = v => Math.round(v * DPR) / DPR, hud = $('hud'), pw = $('powers');
@@ -698,7 +718,7 @@ function makeEnemy(type, x, y) {
   const def = ENEMIES[type];
   const hp = def.boss ? 3 + Math.floor(G.stage / 10) * 2 : 1;
   return { kind: 'enemy', def, x, y, tx: x, ty: y, px: x, py: y, di: (Math.random() * 4) | 0, alive: true, deadT: 0, spawnT: 0, hp, maxHp: hp, hitT: 0, summonT: 6,
-    speed: def.speed * (1 + Math.min(0.3, (G.stage - 1) * 0.012)), bob: Math.random() * 6 };
+    speed: def.speed * (1 + Math.min(0.3, (G.stage - 1) * 0.012)) * (def.boss ? 1 : 0.93 + Math.random() * 0.14), bob: Math.random() * 6 };
 }
 function resetWorld() {
   G.grid.fill(EMPTY); G.items.fill(null); G.fire.fill(0); G.fireChain.fill(0); G.bombGrid.fill(null); G.danger.fill(Infinity);
@@ -875,7 +895,7 @@ function simulate(dt) {
       const j = idx(b.x, b.y);
       if (G.grid[j] === BURN) G.grid[j] = EMPTY;
       if (G.exit && G.exit.x === b.x && G.exit.y === b.y) { fxStars(b.x, b.y, '#9ff2ff', 10); if (aliveEnemies() === 0) Sound.play.door(); }
-      else if (G.items[j]) fxStars(b.x, b.y, ITEMS[G.items[j]].color, 6);
+      else if (G.items[j]) { fxStars(b.x, b.y, ITEMS[G.items[j]].color, 6); Sound.play.reveal(); }
     }
   }
   for (let i = G.explosions.length - 1; i >= 0; i--) { const e = G.explosions[i]; e.t += dt; if (e.t >= e.dur) G.explosions.splice(i, 1); }
@@ -885,7 +905,10 @@ function simulate(dt) {
   if (!G.explosions.length && !G.bombs.length) G.chainKills = {};
 }
 function updateTimers(dt) {
+  const before = Math.ceil(G.timeLeft);
   G.timeLeft = Math.max(0, G.timeLeft - dt);
+  const now = Math.ceil(G.timeLeft);
+  if (now !== before && now <= 10 && now >= 0 && (G.mode === 'adventure' ? !G.timeUp : !G.sudden || now > 0)) Sound.play.tick(now === 0);
   if (G.mode === 'adventure') {
     if (!G.hurry && G.timeLeft <= 30) { G.hurry = true; banner('¡APÚRATE!', '30 segundos', 1.2, 'warn'); setMusic('hurry'); }
     if (G.timeLeft <= 0 && !G.timeUp) { G.timeUp = true; spawnSwarm(); banner('¡SE ACABÓ EL TIEMPO!', '¡Corre!', 1.5, 'warn'); }
@@ -1084,7 +1107,7 @@ function explode(b) {
   if (b.owner.human) haptic('medium');
 }
 function destroySoft(x, y) {
-  G.grid[idx(x, y)] = BURN; G.burning.push({ x, y, t: 0 });
+  G.grid[idx(x, y)] = BURN; G.burning.push({ x, y, t: 0 }); Sound.play.crumble();
   fxDebris(x, y);
   if (G.mode === 'adventure') addScore(10);
 }
@@ -1093,6 +1116,7 @@ function exitHit() {
   G.exit.cd = 3;
   const type = Math.min(7, Math.floor(G.stage / 2) + 1);
   for (let i = 0; i < 2; i++) { const e = makeEnemy(type, G.exit.x, G.exit.y); e.spawnT = 0.9; G.enemies.push(e); }
+  Sound.play.spawn();
   addText(G.exit.x, G.exit.y - 0.6, '¡CUIDADO!', '#ff6a5a', 0.45, 1.2);
 }
 function collisions() {
@@ -1116,7 +1140,8 @@ function hitBoss(e, chain) {
   e.hp--; e.hitT = 1.3;
   G.shake = Math.max(G.shake, 0.8); haptic('medium');
   fxStars(e.x, e.y, e.def.col, 14);
-  if (e.hp > 0) { addText(e.x, e.y - 1, `¡AUCH! ${e.hp} MÁS`, '#ff6a5a', 0.48, 1.1); Sound.play.kill(); return; }
+  if (e.hp > 0) { addText(e.x, e.y - 1, `¡AUCH! ${e.hp} MÁS`, '#ff6a5a', 0.48, 1.1); Sound.play.bossHit(); return; }
+  Sound.play.bossDown();
   G.exit = { x: Math.round(e.x), y: Math.round(e.y), cd: 0 };
   G.grid[idx(G.exit.x, G.exit.y)] = EMPTY;
   killEnemy(e, chain);
@@ -1208,7 +1233,11 @@ function updateEnemies(dt) {
       e.summonT -= dt;
       if (e.summonT <= 0) {
         e.summonT = 7;
-        if (aliveEnemies() < 7) for (let i = 0; i < 2; i++) { const m = makeEnemy(Math.min(6, Math.floor(G.stage / 2)), e.px, e.py); m.spawnT = 0.9; G.enemies.push(m); }
+        const sx = Math.round(e.x), sy = Math.round(e.y);
+        if (aliveEnemies() < 7 && !G.bombGrid[idx(sx, sy)] && G.fire[idx(sx, sy)] <= 0) {
+          for (let i = 0; i < 2; i++) { const m = makeEnemy(Math.min(6, Math.floor(G.stage / 2)), sx, sy); m.spawnT = 0.9; G.enemies.push(m); }
+          Sound.play.spawn();
+        }
       }
     }
     // A bomb on the tile ahead always turns an enemy around unless its center is already on that tile.
@@ -1227,16 +1256,18 @@ function chooseDir(e) {
   if (!opts.length) return;
   let dir = -1;
   const smart = e.def.smart, hero = G.hero;
+  // Smart enemies usually dodge blasts, but not every time, so they can still be outplayed.
+  const dodge = smart >= 0.5 && !e.def.boss && Math.random() < 0.55 + smart * 0.35;
   if (smart > 0 && hero.alive && Math.random() < smart) {
     const F = e.def.wall ? pdistW : pdist; let bd = 1e9;
     for (const d of opts) {
       const k = idx(e.x + DIRS[d][0], e.y + DIRS[d][1]), v = F[k];
-      if (smart >= 0.5 && !e.def.boss && G.danger[k] !== Infinity) continue;
+      if (dodge && G.danger[k] !== Infinity) continue;
       if (v >= 0 && v <= 12 && v < bd) { bd = v; dir = d; }
     }
   }
   if (dir < 0) {
-    const safe = smart >= 0.5 ? opts.filter(d => G.danger[idx(e.x + DIRS[d][0], e.y + DIRS[d][1])] === Infinity) : opts;
+    const safe = dodge ? opts.filter(d => G.danger[idx(e.x + DIRS[d][0], e.y + DIRS[d][1])] === Infinity) : opts;
     const pool = safe.length ? safe : opts;
     if (pool.includes(e.di) && Math.random() < 0.82) dir = e.di;
     else { const nr = pool.filter(d => d !== 3 - e.di); dir = pick(nr.length ? nr : pool); }
@@ -1932,7 +1963,8 @@ function buildHud() {
   hudCache = {}; powersKey = '';
   placePowers();
 }
-function setText(id, v) { if (hudCache[id] !== v) { hudCache[id] = v; const el = $(id); if (el) el.textContent = v; } }
+let hudDirty = false;
+function setText(id, v) { if (hudCache[id] !== v) { hudCache[id] = v; hudDirty = true; const el = $(id); if (el) el.textContent = v; } }
 function setFlag(id, cls, on) { const key = id + cls; if (hudCache[key] !== on) { hudCache[key] = on; const el = $(id); if (el) el.classList.toggle(cls, on); } }
 function hudTick() {
   if (G.mode === 'demo') return;
@@ -1942,7 +1974,7 @@ function hudTick() {
   if (G.mode === 'adventure') {
     setText('hLives', String(G.lives)); setText('hStage', String(G.stage)); setText('hScore', G.score.toLocaleString('es-ES'));
   } else G.players.forEach((p, i) => { setText('hw' + i, '★' + p.wins); setFlag('hp' + i, 'dead', !p.alive); });
-  if (!portrait) { const hh = $('hud').offsetHeight; if (hudCache.hh !== hh) { hudCache.hh = hh; placePowers(); } }
+  if (!portrait && hudDirty) { hudDirty = false; const hh = $('hud').offsetHeight; if (hudCache.hh !== hh) { hudCache.hh = hh; placePowers(); } }
   const p = G.hero;
   if (p) {
     const spd = Math.round((p.speed - 3.3) / 0.45) + 1;
@@ -1988,6 +2020,9 @@ function setMusic(key) {
 let wakeLock = null;
 function enterGame() {
   show(null); $('controls').hidden = false; $('powers').hidden = false; G.paused = false;
+  requestWake();
+}
+function requestWake() {
   try { if (navigator.wakeLock && !wakeLock) navigator.wakeLock.request('screen').then(l => { wakeLock = l; l.addEventListener('release', () => { wakeLock = null; }); }).catch(() => {}); } catch (e) { /* unsupported */ }
 }
 function toTitle() {
@@ -2000,7 +2035,7 @@ function toTitle() {
 const inGame = () => (G.mode === 'adventure' || G.mode === 'battle') && ['intro', 'play', 'dying', 'clear', 'roundEnd'].includes(G.phase);
 function pause() {
   if (!inGame() || G.paused) return;
-  G.paused = true; releaseStick(); show('sPause'); Sound.music(false);
+  G.paused = true; releaseStick(); show('sPause'); Sound.music(false); Sound.play.pause();
 }
 function resume() { G.paused = false; show(null); setMusic(G.musicKey); }
 function act(a, el) {
@@ -2105,6 +2140,7 @@ document.addEventListener('keydown', unlock);
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) { pause(); Sound.music(false); Sound.suspend(); }
   else if (!G.paused && G.phase !== 'over' && G.phase !== 'results') { Sound.init(); setTimeout(() => setMusic(G.musicKey), 80); }
+  if (!document.hidden && inGame()) requestWake();
 });
 window.addEventListener('blur', () => { input.keys.length = 0; });
 let resizeQueued = false;
@@ -2113,10 +2149,19 @@ window.addEventListener('resize', onResize);
 window.addEventListener('orientationchange', () => setTimeout(onResize, 250));
 
 // ================= main loop =================
-let last = performance.now(), acc = 0;
+let last = performance.now(), acc = 0, perfT = 0, perfN = 0;
+// If frames run slow for a few seconds of play, render at a lower resolution instead of stuttering.
+function watchPerf(dt) {
+  if (G.paused || G.mode === 'demo' || document.hidden || dt > 0.09) { perfT = perfN = 0; return; }
+  perfT += dt; perfN++;
+  if (perfT < 3) return;
+  const avg = perfT / perfN; perfT = perfN = 0;
+  if (avg > 1 / 45 && DPR > 1.5) { dprCap = Math.max(1.5, DPR - 0.75); layout(); }
+}
 function frame(now) {
   requestAnimationFrame(frame);
   const dt = Math.min(0.1, Math.max(0, (now - last) / 1000)); last = now;
+  watchPerf(dt);
   if (!G.paused) {
     acc += dt * (G.fast ? 2.5 : 1);
     let n = 0;

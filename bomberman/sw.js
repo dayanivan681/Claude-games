@@ -1,5 +1,5 @@
 // Offline cache: serve from cache instantly, refresh in the background (stale-while-revalidate).
-const CACHE = 'bomblast-v2';
+const CACHE = 'bomblast-v3';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', e => {
