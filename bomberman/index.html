@@ -372,7 +372,7 @@ G.spiral = (() => {
 
 // ================= audio =================
 const Sound = (() => {
-  let ac = null, sfxBus, musBus, noise, delay, lastBoom = 0, revSend = null, distCurve = null;
+  let ac = null, sfxBus, musBus, noise, delay, lastBoom = 0, revSend = null, distCurve = null, crushCurve = null;
   let mOn = false, mStep = 0, mNext = 0, mTimer = null, mBpm = 132, mTrans = 0;
   const ok = () => ac && ac.state === 'running';
   function init() {
@@ -395,9 +395,11 @@ const Sound = (() => {
         const len = Math.floor(ac.sampleRate * 2.4), ir = ac.createBuffer(2, len, ac.sampleRate);
         for (let c = 0; c < 2; c++) { const ch = ir.getChannelData(c); for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2); }
         const conv = ac.createConvolver(); conv.buffer = ir;
-        revSend = ac.createGain(); revSend.gain.value = 0.42; revSend.connect(conv); conv.connect(sfxBus);
+        revSend = ac.createGain(); revSend.gain.value = 0.12; revSend.connect(conv); conv.connect(sfxBus);
         distCurve = new Float32Array(1024);
         for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; distCurve[i] = Math.tanh(x * 4); }
+        crushCurve = new Float32Array(1024);
+        for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; crushCurve[i] = Math.round(Math.tanh(x * 2.2) * 12) / 12; }
         apply();
       }
       if (ac.state !== 'running') ac.resume();
@@ -436,27 +438,20 @@ const Sound = (() => {
     else { out.connect(sfxBus); out.connect(revSend); }
     return out;
   }
-  // A real-sounding blast: crack + distorted sub thump + roaring body + fire crackle + rumble tail,
-  // placed left/right by where it happened and sent into a reverb for depth.
+  // Classic arcade-style blast: a short crunchy "pssh-boom" — lo-fi noise burst over a quick thump,
+  // a little stereo placement and only a touch of room. Punchy, not cinematic.
   function explosion(pan, power) {
     const t = ac.currentTime + 0.005, chained = t - lastBoom < 0.08; lastBoom = t;
-    const big = Math.min(1.25, 0.8 + power * 0.04), out = panned(pan * 0.8);
-    out.gain.value = chained ? 0.55 : 1;
-    layer(out, t, 0.07, 1.1, 'highpass', 3000, 1800, 0.7, 0.002);                    // crack
+    const out = panned(pan * 0.5), len = 0.55 + Math.min(0.25, power * 0.02);
+    out.gain.value = chained ? 0.6 : 0.95;
+    const crush = ac.createWaveShaper(); crush.curve = crushCurve; crush.connect(out);   // 8-bit grit
+    layer(crush, t, len, 1.0, 'lowpass', 6000, 260, 0.7, 0.003);                       // "pssh" noise body
+    layer(crush, t, 0.12, 0.6, 'bandpass', 1800, 700, 0.9, 0.002);                     // attack snap
     if (!chained) {
-      const o = ac.createOscillator(), sh = ac.createWaveShaper(), g = ac.createGain();
-      o.type = 'sine'; o.frequency.setValueAtTime(120 + Math.random() * 30, t); o.frequency.exponentialRampToValueAtTime(26, t + 0.6);
-      sh.curve = distCurve; g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(1.1 * big, t + 0.008); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.95);
-      o.connect(sh); sh.connect(g); g.connect(out); o.start(t); o.stop(t + 1);         // sub thump
-      layer(out, t, 2.4 * big, 0.75, 'lowpass', 160, 60, 1.2, 0.04);                   // rumble tail
-    }
-    layer(out, t, 1.1 * big, 1.0, 'lowpass', 5200, 180, 0.9, 0.006);                   // blast body
-    const roar = layer(out, t, 1.5 * big, 0.38, 'bandpass', 1400, 500, 0.6, 0.09);     // fire roar
-    for (let i = 1; i < 14; i++) roar.gain.setValueAtTime(0.12 + Math.random() * 0.3, t + 0.1 + i * 0.08);
-    const pops = chained ? 8 : 18;                                                      // fire crackle
-    for (let i = 0; i < pops; i++) {
-      const when = t + 0.04 + Math.pow(Math.random(), 1.6) * 1.4 * big;
-      layer(panned(pan * 0.6 + (Math.random() - 0.5) * 0.9), when, 0.012 + Math.random() * 0.03, 0.12 + Math.random() * 0.25, 'highpass', 2500 + Math.random() * 3500, 1500, 0.8, 0.001);
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.type = 'triangle'; o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.28);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.9, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
+      o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.35);                       // "boom" thump
     }
   }
   const loud = () => !ok() || !settings.sfx;
