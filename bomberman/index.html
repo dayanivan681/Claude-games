@@ -650,14 +650,14 @@ function layout() {
     pw.className = ''; Object.assign(pw.style, { left: '8px', right: '8px', width: '', top: (y0 + 8) + 'px' });
     $('controls').classList.remove('ghost'); hud.classList.remove('over');
   } else {
-    // Full-screen, zoomed board; controls float over it, almost transparent. Phones show ~7.5 rows,
-    // tablets ~9; the camera scrolls both ways and keeps the board clear of the Dynamic Island / home bar.
+    // The whole map (border wall included) as large as fits below the HUD band; controls float over it,
+    // almost transparent, and the board stays clear of the Dynamic Island / home bar.
     zoomed = true;
     TOPBAR = SA.t + 46;                                   // HUD band: the board starts below it
-    const usableH = H - TOPBAR - SA.b, usableW = W - SA.l - SA.r, rowsVis = H < 520 ? 7.2 : 9.2;
-    T = Math.max(8, Math.floor((usableH / rowsVis) * DPR) / DPR);
+    const usableH = H - TOPBAR - SA.b - 4, usableW = W - SA.l - SA.r;
+    T = Math.max(8, Math.floor(Math.min(usableH / ROWS, usableW / COLS) * DPR) / DPR);
     const fw = T * EC;
-    VX0 = snap(fw <= usableW ? SA.l + (usableW - fw) / 2 : SA.l + 4); VY0 = snap(TOPBAR + CROP * T);
+    VX0 = snap(fw <= usableW ? SA.l + (usableW - fw) / 2 : SA.l + 4); VY0 = snap(TOPBAR + 2 + CROP * T + Math.max(0, usableH - ROWS * T) / 2);
     const r = Math.min(100, H * 0.27);
     ctrl = { stickX: SA.l + r + 4, stickY: H - SA.b - r, bombX: W - SA.r - r + 6, bombY: H - SA.b - r + 4, detX: W - SA.r - r - 6, detY: H - SA.b - r * 2 - 50, zoneTop: 0 };
     pw.className = 'band'; Object.assign(pw.style, { left: (W / 2) + 'px', right: 'auto', width: 'auto', top: (SA.t + 8) + 'px' });
