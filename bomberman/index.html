@@ -372,7 +372,7 @@ G.spiral = (() => {
 
 // ================= audio =================
 const Sound = (() => {
-  let ac = null, sfxBus, musBus, noise, delay, lastBoom = 0;
+  let ac = null, sfxBus, musBus, noise, delay, lastBoom = 0, revSend = null, distCurve = null, crushCurve = null;
   let mOn = false, mStep = 0, mNext = 0, mTimer = null, mBpm = 132, mTrans = 0;
   const ok = () => ac && ac.state === 'running';
   function init() {
@@ -391,6 +391,15 @@ const Sound = (() => {
         delay.connect(fb); fb.connect(delay); delay.connect(wet); wet.connect(musBus);
         noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
         const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+        // Space for explosions: a synthetic stereo hall reverb (decaying noise impulse) on a send bus.
+        const len = Math.floor(ac.sampleRate * 2.4), ir = ac.createBuffer(2, len, ac.sampleRate);
+        for (let c = 0; c < 2; c++) { const ch = ir.getChannelData(c); for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2); }
+        const conv = ac.createConvolver(); conv.buffer = ir;
+        revSend = ac.createGain(); revSend.gain.value = 0.12; revSend.connect(conv); conv.connect(sfxBus);
+        distCurve = new Float32Array(1024);
+        for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; distCurve[i] = Math.tanh(x * 4); }
+        crushCurve = new Float32Array(1024);
+        for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; crushCurve[i] = Math.round(Math.tanh(x * 2.2) * 12) / 12; }
         apply();
       }
       if (ac.state !== 'running') ac.resume();
@@ -414,14 +423,57 @@ const Sound = (() => {
     s.connect(f); f.connect(g); g.connect(bus); s.start(t, Math.random() * 0.4); s.stop(t + dur + 0.03);
   }
   const quiet = () => !ok() || !settings.sfx || G.mode === 'demo';
+  // One noise layer: filtered burst with its own envelope, routed to a destination node.
+  function layer(dest, t, dur, vol, type, f0, f1, q, attack) {
+    const s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+    s.buffer = noise; f.type = type; f.Q.value = q;
+    f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    s.connect(f); f.connect(g); g.connect(dest); s.start(t, Math.random() * 0.5); s.stop(t + dur + 0.05);
+    return g;
+  }
+  function panned(pan) {
+    const out = ac.createGain();
+    if (ac.createStereoPanner) { const p = ac.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan)); out.connect(p); p.connect(sfxBus); p.connect(revSend); }
+    else { out.connect(sfxBus); out.connect(revSend); }
+    return out;
+  }
+  // 8-bit blast, built like a NES noise channel: LFSR noise that is sample-and-held at a
+  // falling rate (it gets "lower" as it fades), with a 4-bit stepped volume envelope,
+  // plus a short stepped triangle drop for the body. Pre-rendered once, replayed per bomb.
+  let blastBuf = null;
+  function renderBlast() {
+    const sr = ac.sampleRate, dur = 0.75, n = Math.floor(sr * dur), buf = ac.createBuffer(1, n, sr), d = buf.getChannelData(0);
+    let lfsr = 1, hold = 0, acc = 0, phase = 0;
+    for (let i = 0; i < n; i++) {
+      const k = i / n;
+      const rate = 7000 * Math.pow(0.11, k);                            // noise clock: 7 kHz → ~800 Hz
+      acc += rate / sr;
+      while (acc >= 1) { acc -= 1; const bit = (lfsr ^ (lfsr >> 1)) & 1; lfsr = (lfsr >> 1) | (bit << 14); hold = (lfsr & 1) ? 1 : -1; }
+      const vol = Math.floor(15 * Math.pow(1 - k, 1.6)) / 15;           // 16-step volume
+      const tf = 110 * Math.pow(0.3, Math.min(1, k * 3));               // triangle drop 110 → 33 Hz
+      phase = (phase + Math.round(tf / 4) * 4 / sr) % 1;                // stepped pitch
+      const tri = (Math.floor((phase < 0.5 ? phase * 4 - 1 : 3 - phase * 4) * 8) / 8);
+      const tvol = k < 0.35 ? Math.floor(15 * (1 - k / 0.35)) / 15 : 0;
+      d[i] = hold * vol * 0.75 + tri * tvol * 0.55;
+    }
+    return buf;
+  }
+  function explosion(pan, power) {
+    if (!blastBuf) blastBuf = renderBlast();
+    const t = ac.currentTime + 0.005, chained = t - lastBoom < 0.08; lastBoom = t;
+    const src = ac.createBufferSource(), g = ac.createGain();
+    src.buffer = blastBuf; src.playbackRate.value = 0.94 + Math.random() * 0.1 - Math.min(0.08, power * 0.006);
+    g.gain.value = chained ? 0.5 : 0.85;
+    src.connect(g);
+    if (ac.createStereoPanner) { const p = ac.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan * 0.4)); g.connect(p); p.connect(sfxBus); }
+    else g.connect(sfxBus);
+    src.start(t);
+  }
   const loud = () => !ok() || !settings.sfx;
   const play = {
     place() { if (quiet()) return; osc('sine', 260, 90, 0.14, 0.55); osc('triangle', 540, 180, 0.06, 0.2); },
-    boom() {
-      if (quiet()) return; const n = ac.currentTime; if (n - lastBoom < 0.05) return; lastBoom = n;
-      const v = 0.85 + Math.random() * 0.3;
-      nz(0.9, 1.0, 2400 * v, 50); osc('sine', 120 * v, 28, 0.6, 1.0); osc('square', 80 * v, 30, 0.18, 0.16); nz(0.25, 0.45, 6000, 800, 0, 'bandpass', 0.6);
-    },
+    boom(pan = 0, power = 2) { if (quiet()) return; explosion(pan, power); },
     crumble() { if (quiet()) return; nz(0.22, 0.22, 900 + Math.random() * 600, 120, 0.04, 'lowpass', 1.5); },
     tick(last) { if (quiet()) return; osc('square', last ? 1320 : 990, 0, 0.07, 0.1); },
     bossHit() { if (quiet()) return; osc('sawtooth', 220, 70, 0.45, 0.2); osc('square', 330, 90, 0.35, 0.12, 0.05); nz(0.3, 0.4, 2500, 300); },
@@ -1103,8 +1155,8 @@ function explode(b) {
   G.explosions.push({ x: cx, y: cy, arms, t: 0, dur: 0.62, power: b.power });
   fxExplosion(cx, cy, arms, b.power);
   G.shake = Math.min(1.1, G.shake + 0.4);
-  Sound.play.boom();
-  if (b.owner.human) haptic('medium');
+  Sound.play.boom((cx - (COLS - 1) / 2) / ((COLS - 1) / 2), b.power);
+  if (b.owner.human) haptic('heavy');
 }
 function destroySoft(x, y) {
   G.grid[idx(x, y)] = BURN; G.burning.push({ x, y, t: 0 }); Sound.play.crumble();
