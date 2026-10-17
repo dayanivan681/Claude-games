@@ -334,7 +334,7 @@ const THEMES = [
   { name: 'NEÓN', bg: ['#1c1042', '#04020d'], floor: ['#231c4e', '#1e1846'], det: '#3a2f8a', det2: '#ff3df2', hard: ['#5243a6', '#352a80', '#180f44'], border: ['#3f338c', '#2b2268', '#140c38'], soft: ['#8240c2', '#58268f', '#2a0f4a'], mortar: '#ff4df5', accent: '#3df5ff', neon: true },
 ];
 const PALS = [
-  { name: 'TÚ', suit: '#1f4fd8', suit2: '#0b2275', shirt: '#ebe6ff', ball: '#ff5fae', glove: '#ff7dbd', glove2: '#c92a7f', boot: '#ff7dbd', boot2: '#c92a7f', trim: '#5ff6ff', visor: '#ffdcc0' },
+  { name: 'TÚ', suit: '#2361c9', suit2: '#103479', shirt: '#e7e2fb', ball: '#ff6fb8', ball2: '#b8287a', glove: '#ff7dbd', glove2: '#c92a7f', boot: '#ff7dbd', boot2: '#c92a7f', trim: '#5ff6ff', visor: '#ffdcc0' },
   { name: 'ROJO', suit: '#e8283a', suit2: '#7d0d1c', shirt: '#fff0e6', ball: '#ffd23f', glove: '#ffe066', glove2: '#c28f00', boot: '#3a2a66', boot2: '#170d33', trim: '#ffd23f', visor: '#ffdcc0' },
   { name: 'VERDE', suit: '#18b65f', suit2: '#0a5a2e', shirt: '#eafff3', ball: '#7af0ff', glove: '#ffffff', glove2: '#a3b2c4', boot: '#ff8a2a', boot2: '#b04a0a', trim: '#b8ff6a', visor: '#ffdcc0' },
   { name: 'ORO', suit: '#ffb81f', suit2: '#945800', shirt: '#fff8e6', ball: '#b36bff', glove: '#ffffff', glove2: '#b3abcc', boot: '#2f6bff', boot2: '#13348f', trim: '#fff2a8', visor: '#ffdcc0' },
@@ -1623,7 +1623,7 @@ function render() {
   ctx.save();
   if (G.shake > 0.01) { const m = G.shake * G.shake * T * 0.32; ctx.translate(rnd(-m, m), rnd(-m, m)); }
   glows.length = 0;
-  const clipTop = Math.max(VY - T * 0.6, TOPBAR);
+  const clipTop = Math.max(VY - T * 0.6, TOPBAR - T * 0.4);   // tall heroes may peek into the HUD band
   ctx.save(); ctx.beginPath(); ctx.rect(VX, clipTop, VW, VY + VH - clipTop); ctx.clip();
   drawExit(); drawItems(); drawSoftBlocks(); drawBurning(); drawBombs(); drawExplosions(); drawFalling();
   const ents = [];
@@ -1821,8 +1821,26 @@ function gloss(x, y, r, c, c2) {
   g.addColorStop(0, '#ffffff'); g.addColorStop(0.28, c); g.addColorStop(1, c2); return g;
 }
 let renderDt = 1 / 60;
-// The hero: glossy white helmet, deep-blue jacket with glowing trim, expressive eyes and
-// secondary motion (antenna spring, lean, squash & stretch) so it reads well even when small.
+// The hero: big glossy white helmet with a teardrop antenna, short-sleeve jacket over a light shirt,
+// white legs, chunky boots and big mitten gloves. Fully animated: two-segment legs and arms that swing
+// and bend, head bob, antenna spring, lean, squash & stretch, idle breathing/glances, crouch on bomb drop.
+function limb(pts, w, col) {
+  ctx.beginPath(); ctx.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) ctx.lineTo(pts[i], pts[i + 1]);
+  ctx.strokeStyle = OUT; ctx.lineWidth = w + 0.05; ctx.stroke();
+  ctx.strokeStyle = col; ctx.lineWidth = w; ctx.stroke();
+}
+function boot(x, y, side, pal) {
+  ctx.lineWidth = 0.04; ctx.strokeStyle = OUT;
+  ctx.fillStyle = gloss(x + (side ? 0.04 : 0), y - 0.02, 0.13, pal.boot, pal.boot2);
+  ell(x + (side ? 0.045 : 0), y - 0.035, side ? 0.135 : 0.11, 0.07); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = gloss(x, y - 0.1, 0.08, pal.boot, pal.boot2);
+  rr(ctx, x - 0.06, y - 0.12, 0.12, 0.055, 0.022); ctx.fill(); ctx.stroke();
+}
+function mitt(x, y, pal) {
+  ctx.lineWidth = 0.04; ctx.strokeStyle = OUT;
+  ctx.fillStyle = gloss(x, y, 0.1, pal.glove, pal.glove2); circ(x, y + 0.01, 0.092); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = gloss(x, y - 0.07, 0.06, pal.glove, pal.glove2); rr(ctx, x - 0.055, y - 0.1, 0.11, 0.05, 0.02); ctx.fill(); ctx.stroke();
+}
 function drawBomber(p) {
   const pal = p.pal, dt = Math.min(0.05, renderDt);
   let alpha = 1, sc = 1, rot = 0, lift = 0;
@@ -1835,106 +1853,140 @@ function drawBomber(p) {
   const vx = p.lx === undefined ? 0 : (p.x - p.lx) / Math.max(dt, 1e-3); p.lx = p.x;
   p.av = (p.av || 0) + ((-vx * 0.07 - (p.ao || 0)) * 170 - (p.av || 0) * 9) * dt;
   p.ao = Math.max(-0.3, Math.min(0.3, (p.ao || 0) + p.av * dt));
-  p.lean = (p.lean || 0) + (Math.max(-0.12, Math.min(0.12, vx * 0.028)) - (p.lean || 0)) * Math.min(1, dt * 10);
+  p.lean = (p.lean || 0) + (Math.max(-0.1, Math.min(0.1, vx * 0.025)) - (p.lean || 0)) * Math.min(1, dt * 10);
   if (p.placeT > 0) p.placeT -= dt;
   const crouch = p.placeT > 0 ? Math.sin(p.placeT / 0.22 * Math.PI) : 0;
   const dance = p.winner || (G.phase === 'clear' && p.human);
-  const walk = p.moving ? p.walk : 0, sw = Math.sin(walk * Math.PI), cw = Math.cos(walk * Math.PI);
-  let bob = p.moving ? -Math.abs(cw) * 0.055 : Math.sin(G.t * 2.6 + p.bob) * 0.014;
-  if (dance) bob = -Math.abs(Math.sin(G.t * 8 + p.bob)) * 0.22;
-  const squash = p.moving ? 1 - Math.abs(sw) * 0.04 : 1 + Math.sin(G.t * 2.6 + p.bob) * 0.012;
+  const ph = (p.moving ? p.walk : 0) * Math.PI, sw = Math.sin(ph), cw = Math.cos(ph);
+  const idle = !p.moving && !dance;
+  let bob = p.moving ? -Math.abs(cw) * 0.05 : Math.sin(G.t * 2.6 + p.bob) * 0.012;
+  if (dance) bob = -Math.abs(Math.sin(G.t * 8 + p.bob)) * 0.24;
+  const squash = p.moving ? 1 - Math.abs(sw) * 0.03 : 1 + Math.sin(G.t * 2.6 + p.bob) * 0.012;
 
-  ctx.save(); ctx.translate(cx, cy + T * 0.34); ctx.scale(T, T);
-  ctx.globalAlpha = 0.3 * alpha; ctx.fillStyle = '#000'; ell(0, 0.02, 0.28 * sc, 0.09 * sc); ctx.fill();
+  ctx.save(); ctx.translate(cx, cy + T * 0.36); ctx.scale(T, T);
+  ctx.globalAlpha = 0.3 * alpha; ctx.fillStyle = '#000'; ell(0, 0.02, 0.3 * sc, 0.09 * sc); ctx.fill();
   if (p.human && p.alive && G.mode !== 'demo') {
-    ctx.globalAlpha = 0.4 + 0.2 * Math.sin(G.t * 4); ctx.strokeStyle = pal.trim; ctx.lineWidth = 0.035; ell(0, 0.02, 0.37, 0.12); ctx.stroke();
+    ctx.globalAlpha = 0.4 + 0.2 * Math.sin(G.t * 4); ctx.strokeStyle = pal.trim; ctx.lineWidth = 0.035; ell(0, 0.02, 0.38, 0.12); ctx.stroke();
   }
   ctx.globalAlpha = alpha;
-  ctx.translate(0, bob + lift);
-  if (rot) { ctx.translate(0, -0.5); ctx.rotate(rot); ctx.translate(0, 0.5); }
+  ctx.translate(0, lift);
+  if (rot) { ctx.translate(0, -0.55); ctx.rotate(rot); ctx.translate(0, 0.55); }
   ctx.rotate(p.lean || 0);
-  ctx.scale(sc * (1 + crouch * 0.1), sc * squash * (1 - crouch * 0.14));
+  ctx.scale(sc * (1 + crouch * 0.08), sc * squash * (1 - crouch * 0.12));
   const f = dance ? 0 : p.face, side = f === 1 || f === 2, back = f === 3;
   if (f === 1) ctx.scale(-1, 1);
-  ctx.lineWidth = 0.045; ctx.strokeStyle = OUT; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  const hipY = -0.37 + bob * 0.5, shY = -0.59 + bob, LEG = '#f6f6ff';
 
-  // legs & boots
-  const legs = side ? [[-sw * 0.1, 0], [sw * 0.1, 0]] : [[-0.09, Math.max(0, sw) * 0.06], [0.09, Math.max(0, -sw) * 0.06]];
-  for (const [lx, up] of legs) { ctx.fillStyle = '#f4f5ff'; rr(ctx, lx - 0.045, -0.2 - up, 0.09, 0.15, 0.04); ctx.fill(); ctx.stroke(); }
-  for (const [lx, up] of legs) {
-    const bx = side ? lx + 0.04 : lx * 1.25;
-    ctx.fillStyle = gloss(bx, -0.06 - up, 0.12, pal.boot, pal.boot2); ell(bx, -0.055 - up, side ? 0.13 : 0.115, 0.08); ctx.fill(); ctx.stroke();
-  }
-  // torso: shirt + deep-blue jacket with glowing trim, belt with gold buckle
-  const by = -0.47, bh = 0.34;
-  const jg = ctx.createLinearGradient(-0.2, by, 0.2, by + bh); jg.addColorStop(0, pal.suit); jg.addColorStop(1, pal.suit2);
-  ctx.fillStyle = jg; rr(ctx, -0.19, by, 0.38, bh, 0.12); ctx.fill(); ctx.stroke();
-  if (!back) {
-    const sx0 = side ? 0.06 : -0.06, sw0 = side ? 0.11 : 0.12;
-    ctx.fillStyle = pal.shirt; rr(ctx, sx0, by + 0.02, sw0, bh - 0.08, 0.04); ctx.fill();
-    ctx.strokeStyle = pal.trim; ctx.lineWidth = 0.022; ctx.beginPath();
-    if (side) { ctx.moveTo(0.06, by + 0.04); ctx.lineTo(0.06, by + bh - 0.07); }
-    else { ctx.moveTo(-0.065, by + 0.04); ctx.lineTo(-0.065, by + bh - 0.07); ctx.moveTo(0.065, by + 0.04); ctx.lineTo(0.065, by + bh - 0.07); }
-    ctx.stroke();
-    ctx.fillStyle = pal.suit; ctx.strokeStyle = OUT; ctx.lineWidth = 0.03;               // collar
-    for (const s2 of side ? [1] : [-1, 1]) { ctx.beginPath(); ctx.moveTo(s2 * 0.02, by + 0.005); ctx.lineTo(s2 * 0.11, by + 0.005); ctx.lineTo(s2 * 0.07, by + 0.08); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+  // ---- legs (two segments, bend at the knee) ----
+  const legs = [];
+  if (side) {
+    for (const s2 of [-1, 1]) {
+      const a = s2 * sw * 0.55, up = Math.max(0, s2 * cw) * 0.05 * (p.moving ? 1 : 0);
+      const fx = Math.sin(a) * 0.27, fy = -0.07 - up;
+      legs.push({ hip: [0, hipY], knee: [fx * 0.5 + 0.035, (hipY + fy) / 2 - up * 0.5], foot: [fx, fy], back: s2 < 0 });
+    }
   } else {
-    ctx.strokeStyle = pal.trim; ctx.lineWidth = 0.022; ctx.beginPath(); ctx.moveTo(-0.13, by + 0.08); ctx.lineTo(0.13, by + 0.08); ctx.stroke();
+    for (const s2 of [-1, 1]) {
+      const up = p.moving ? Math.max(0, s2 * sw) * 0.08 : 0;
+      legs.push({ hip: [s2 * 0.07, hipY], knee: [s2 * 0.1, (hipY - 0.07) / 2 - up * 0.6], foot: [s2 * 0.11, -0.07 - up], back: false });
+    }
   }
-  ctx.strokeStyle = OUT; ctx.lineWidth = 0.045;
-  ctx.fillStyle = '#17142a'; ctx.fillRect(-0.19, by + bh - 0.11, 0.38, 0.055);
-  if (!back) { ctx.fillStyle = '#ffd23f'; rr(ctx, side ? 0.07 : -0.05, by + bh - 0.12, 0.1, 0.075, 0.015); ctx.fill(); ctx.fillStyle = '#17142a'; ctx.fillRect(side ? 0.1 : -0.02, by + bh - 0.1, 0.04, 0.035); }
-  // arms & gloves
-  const hs = p.moving ? sw * 0.08 : 0;
-  const hands = dance ? [[-0.3, -0.68], [0.3, -0.68]] : side ? [[0.02 - hs * 1.4, -0.27]] : [[-0.25, -0.27 + hs], [0.25, -0.27 - hs]];
-  for (const [hx, hy2] of hands) {
-    ctx.strokeStyle = pal.suit2; ctx.lineWidth = 0.07; ctx.beginPath(); ctx.moveTo(Math.sign(hx || 1) * (side ? 0 : 0.16), by + 0.08); ctx.lineTo(hx, hy2); ctx.stroke();
-    ctx.strokeStyle = OUT; ctx.lineWidth = 0.045;
-    ctx.fillStyle = gloss(hx, hy2, 0.09, pal.glove, pal.glove2); circ(hx, hy2, 0.088); ctx.fill(); ctx.stroke();
+  const drawLeg = l => {
+    limb([l.hip[0], l.hip[1], l.knee[0], l.knee[1], l.foot[0], l.foot[1] - 0.06], 0.085, l.back ? '#d9dbee' : LEG);
+    if (!l.back) { ctx.strokeStyle = '#c9c2f2'; ctx.lineWidth = 0.018; ctx.beginPath();
+      ctx.moveTo(l.knee[0] - 0.035, l.knee[1] + 0.05); ctx.lineTo(l.knee[0] + 0.035, l.knee[1] + 0.05);
+      ctx.moveTo(l.knee[0] - 0.035, l.knee[1] + 0.08); ctx.lineTo(l.knee[0] + 0.035, l.knee[1] + 0.08); ctx.stroke(); }
+    boot(l.foot[0], l.foot[1], side, pal);
+  };
+  // ---- arms (sleeve, forearm, big mitten) ----
+  const swing = p.moving ? sw * 0.09 : (idle ? Math.sin(G.t * 2.6 + p.bob) * 0.008 : 0);
+  const arms = [];
+  if (dance) for (const s2 of [-1, 1]) arms.push({ sh: [s2 * 0.15, shY + 0.03], el: [s2 * 0.27, shY - 0.04], hd: [s2 * 0.36, shY - 0.17] });
+  else if (side) for (const s2 of [-1, 1]) arms.push({ sh: [0.0, shY + 0.03], el: [-s2 * sw * 0.08, shY + 0.11], hd: [-s2 * sw * 0.18 + 0.02, shY + 0.21 - Math.abs(sw) * 0.03], back: s2 > 0 });
+  else for (const s2 of [-1, 1]) {
+    const k = s2 > 0 ? -swing : swing, drop = crouch * 0.08;
+    arms.push({ sh: [s2 * 0.15, shY + 0.03], el: [s2 * 0.21, shY + 0.11 + k * 0.5], hd: [s2 * 0.24, shY + 0.21 + k + drop] });
   }
-  // helmet
-  const hy = -0.79, ax = p.ao || 0;
-  for (const s2 of side ? [-1] : [-1, 1]) { ctx.fillStyle = gloss(s2 * (side ? 0.21 : 0.3), hy + 0.03, 0.07, pal.ball, OUT); circ(s2 * (side ? 0.21 : 0.3), hy + 0.03, 0.065); ctx.fill(); ctx.stroke(); }
-  ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(-0.06, hy - 0.28); ctx.quadraticCurveTo(ax * 0.4, hy - 0.4, ax, hy - 0.46);
-  ctx.quadraticCurveTo(ax * 0.4 + 0.02, hy - 0.4, 0.06, hy - 0.28); ctx.closePath(); ctx.fill(); ctx.stroke();
-  const hg = ctx.createRadialGradient(-0.11, hy - 0.15, 0.02, 0, hy, 0.36);
-  hg.addColorStop(0, '#ffffff'); hg.addColorStop(0.55, '#f2f4ff'); hg.addColorStop(1, '#a7b0da');
-  ctx.fillStyle = hg; circ(0, hy, 0.32); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = gloss(ax, hy - 0.53, 0.09, pal.ball, OUT); circ(ax, hy - 0.53, 0.088); ctx.fill(); ctx.stroke();
-  // face plate + expressive eyes
+  const drawArm = a => {
+    limb([a.sh[0], a.sh[1], a.el[0], a.el[1], a.hd[0], a.hd[1]], 0.055, a.back ? '#d9dbee' : LEG);
+    ctx.lineWidth = 0.04; ctx.strokeStyle = OUT; ctx.fillStyle = a.back ? pal.suit2 : pal.suit;   // short sleeve
+    const mx = a.sh[0] + (a.el[0] - a.sh[0]) * 0.45, my = a.sh[1] + (a.el[1] - a.sh[1]) * 0.45;
+    ell(mx, my, 0.06, 0.055); ctx.fill(); ctx.stroke();
+    mitt(a.hd[0], a.hd[1], pal);
+  };
+  // ---- torso (shirt, open jacket, belt) ----
+  const drawTorso = () => {
+    const top = shY - 0.02, h = hipY - top + 0.02, w2 = side ? 0.13 : 0.155;
+    ctx.lineWidth = 0.04; ctx.strokeStyle = OUT;
+    ctx.fillStyle = '#f6f6ff'; rr(ctx, -0.1, hipY - 0.03, 0.2, 0.08, 0.04); ctx.fill(); ctx.stroke();   // hips
+    const jg = ctx.createLinearGradient(-w2, top, w2, top + h); jg.addColorStop(0, pal.suit); jg.addColorStop(1, pal.suit2);
+    ctx.fillStyle = jg; rr(ctx, -w2, top, w2 * 2, h, 0.08); ctx.fill(); ctx.stroke();
+    if (!back) {
+      const sx = side ? 0.035 : -0.055, swd = side ? 0.08 : 0.11;
+      ctx.fillStyle = pal.shirt; rr(ctx, sx, top + 0.01, swd, h - 0.05, 0.03); ctx.fill();
+      ctx.strokeStyle = pal.trim; ctx.lineWidth = 0.016; ctx.beginPath();
+      if (!side) { ctx.moveTo(-0.058, top + 0.03); ctx.lineTo(-0.058, top + h - 0.06); ctx.moveTo(0.058, top + 0.03); ctx.lineTo(0.058, top + h - 0.06); }
+      else { ctx.moveTo(0.035, top + 0.03); ctx.lineTo(0.035, top + h - 0.06); }
+      ctx.stroke();
+      ctx.fillStyle = pal.suit; ctx.strokeStyle = OUT; ctx.lineWidth = 0.03;
+      for (const s2 of side ? [1] : [-1, 1]) { ctx.beginPath(); ctx.moveTo(s2 * 0.015, top + 0.005); ctx.lineTo(s2 * 0.1, top + 0.005); ctx.lineTo(s2 * 0.06, top + 0.075); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+    }
+    ctx.fillStyle = '#17142a'; ctx.fillRect(-w2 + 0.005, hipY - 0.045, w2 * 2 - 0.01, 0.045);
+    if (!back) {
+      const bx = side ? 0.05 : -0.045;
+      ctx.fillStyle = '#ffd23f'; ctx.strokeStyle = '#8a6400'; ctx.lineWidth = 0.012;
+      rr(ctx, bx, hipY - 0.06, 0.09, 0.07, 0.012); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#17142a'; ctx.fillRect(bx + 0.025, hipY - 0.04, 0.04, 0.032);
+    }
+  };
+  // draw order: far limbs, legs, torso, near arms, head
+  if (side) { drawArm(arms.find(a => a.back)); legs.filter(l => l.back).forEach(drawLeg); legs.filter(l => !l.back).forEach(drawLeg); drawTorso(); drawArm(arms.find(a => !a.back)); }
+  else { legs.forEach(drawLeg); drawTorso(); arms.forEach(drawArm); }
+
+  // ---- head ----
+  const hy = shY - 0.29 + (p.moving ? cw * 0.012 : 0), ax = p.ao || 0;
+  ctx.lineWidth = 0.045; ctx.strokeStyle = OUT;
+  ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(-0.07, hy - 0.26); ctx.quadraticCurveTo(ax * 0.4 - 0.01, hy - 0.4, ax, hy - 0.47);
+  ctx.quadraticCurveTo(ax * 0.4 + 0.03, hy - 0.4, 0.07, hy - 0.26); ctx.closePath(); ctx.fill(); ctx.stroke();
+  const hg = ctx.createRadialGradient(-0.11, hy - 0.15, 0.02, 0, hy, 0.37);
+  hg.addColorStop(0, '#ffffff'); hg.addColorStop(0.55, '#f3f4fc'); hg.addColorStop(1, '#a9b0d6');
+  ctx.fillStyle = hg; ell(0, hy, 0.305, 0.29); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = gloss(ax, hy - 0.54, 0.1, pal.ball, pal.ball2 || OUT); circ(ax, hy - 0.54, 0.095); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.85)'; ell(ax - 0.03, hy - 0.575, 0.03, 0.018, -0.6); ctx.fill();
   if (!back) {
-    const fg = ctx.createLinearGradient(0, hy - 0.14, 0, hy + 0.14); fg.addColorStop(0, '#ffe9d6'); fg.addColorStop(1, '#f3b58c');
-    ctx.fillStyle = fg; if (side) rr(ctx, -0.01, hy - 0.135, 0.29, 0.27, 0.11); else rr(ctx, -0.22, hy - 0.135, 0.44, 0.27, 0.12);
-    ctx.fill(); ctx.stroke();
+    const fg = ctx.createLinearGradient(0, hy - 0.13, 0, hy + 0.16); fg.addColorStop(0, '#ffe7d2'); fg.addColorStop(1, '#efb48b');
+    ctx.fillStyle = fg; if (side) rr(ctx, 0.0, hy - 0.12, 0.28, 0.28, 0.11); else rr(ctx, -0.205, hy - 0.12, 0.41, 0.28, 0.12);
+    ctx.fill(); ctx.lineWidth = 0.035; ctx.stroke();
     let danger = false;
     if (p.alive && G.danger) { const j = idx(Math.round(p.x), Math.round(p.y)); danger = j >= 0 && j < N && G.danger[j] < 1.2; }
     const blink = Math.sin(G.t * 1.3 + p.bob * 3) > 0.985;
     const mode = !p.alive ? 'dead' : dance ? 'happy' : danger ? 'worried' : blink ? 'blink' : 'normal';
-    const eyesX = side ? [0.15] : [-0.085, 0.085], ey = hy + 0.015;
+    const look = idle && p.alive ? Math.sin(G.t * 0.8 + p.bob) * 0.015 : 0;
+    const eyesX = side ? [0.155] : [-0.08, 0.08], ey = hy + 0.035;
     ctx.fillStyle = OUT; ctx.strokeStyle = OUT; ctx.lineWidth = 0.028;
-    for (const ex of eyesX) {
-      const sg = side ? -1 : Math.sign(ex);             // which side the brow's outer end is on
+    for (const e0 of eyesX) {
+      const ex = e0 + look, sg = side ? -1 : Math.sign(e0);
       if (mode === 'normal' || mode === 'worried') {
-        const ry = mode === 'worried' ? 0.07 : 0.088, rx = mode === 'worried' ? 0.055 : 0.05;
-        ctx.fillStyle = OUT; ell(ex, ey, rx, ry); ctx.fill();
-        ctx.fillStyle = '#fff'; circ(ex - 0.013, ey - ry * 0.45, 0.015); ctx.fill(); circ(ex + 0.012, ey + ry * 0.4, 0.007); ctx.fill();
-        ctx.beginPath();
-        if (mode === 'normal') { ctx.moveTo(ex + sg * 0.06, ey - 0.13); ctx.lineTo(ex - sg * 0.045, ey - 0.095); }
-        else { ctx.moveTo(ex + sg * 0.055, ey - 0.095); ctx.lineTo(ex - sg * 0.045, ey - 0.13); }
-        ctx.stroke();
-      } else if (mode === 'happy') { ctx.beginPath(); ctx.arc(ex, ey + 0.025, 0.042, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); }
+        const ry = mode === 'worried' ? 0.07 : 0.088, rx = mode === 'worried' ? 0.05 : 0.042;
+        ctx.fillStyle = '#120f22'; ell(ex, ey, rx, ry); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.9)'; ell(ex - 0.012, ey - ry * 0.45, 0.012, 0.022); ctx.fill();
+        ctx.fillStyle = OUT; ctx.beginPath();                        // thick tapered brow
+        if (mode === 'normal') { ctx.moveTo(ex + sg * 0.075, ey - 0.16); ctx.lineTo(ex - sg * 0.055, ey - 0.11); ctx.lineTo(ex - sg * 0.05, ey - 0.088); ctx.lineTo(ex + sg * 0.07, ey - 0.135); }
+        else { ctx.moveTo(ex + sg * 0.07, ey - 0.105); ctx.lineTo(ex - sg * 0.05, ey - 0.15); ctx.lineTo(ex - sg * 0.05, ey - 0.128); ctx.lineTo(ex + sg * 0.07, ey - 0.085); }
+        ctx.closePath(); ctx.fill();
+      } else if (mode === 'happy') { ctx.lineWidth = 0.032; ctx.beginPath(); ctx.arc(ex, ey + 0.025, 0.045, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke(); }
       else if (mode === 'blink') { ctx.beginPath(); ctx.moveTo(ex - 0.04, ey); ctx.lineTo(ex + 0.04, ey); ctx.stroke(); }
       else { ctx.beginPath(); ctx.moveTo(ex - 0.035, ey - 0.035); ctx.lineTo(ex + 0.035, ey + 0.035); ctx.moveTo(ex + 0.035, ey - 0.035); ctx.lineTo(ex - 0.035, ey + 0.035); ctx.stroke(); }
     }
-    if (mode === 'worried') { ctx.fillStyle = '#9fe6ff'; ctx.beginPath(); ctx.moveTo(0.27, hy - 0.12); ctx.quadraticCurveTo(0.31, hy - 0.04, 0.27, hy - 0.02); ctx.quadraticCurveTo(0.23, hy - 0.04, 0.27, hy - 0.12); ctx.fill(); }
+    if (mode === 'worried') { ctx.fillStyle = '#9fe6ff'; ctx.beginPath(); ctx.moveTo(0.27, hy - 0.1); ctx.quadraticCurveTo(0.31, hy - 0.02, 0.27, hy); ctx.quadraticCurveTo(0.23, hy - 0.02, 0.27, hy - 0.1); ctx.fill(); }
   }
-  ctx.fillStyle = 'rgba(255,255,255,0.95)'; ell(-0.13, hy - 0.18, 0.085, 0.045, -0.6); ctx.fill();   // helmet shine
-  ctx.strokeStyle = 'rgba(140,185,255,0.55)'; ctx.lineWidth = 0.025; ctx.beginPath(); ctx.arc(0, hy, 0.275, 0.12 * Math.PI, 0.55 * Math.PI); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.95)'; ell(-0.13, hy - 0.19, 0.085, 0.045, -0.6); ctx.fill();
+  ctx.strokeStyle = 'rgba(140,185,255,0.5)'; ctx.lineWidth = 0.022; ctx.beginPath(); ctx.arc(0, hy, 0.27, 0.12 * Math.PI, 0.5 * Math.PI); ctx.stroke();
   ctx.restore();
   if (p.alive) {
-    const k = T * sc, base = cy + T * 0.34 + (bob + lift) * T;
-    glow(cx + ax * k * (f === 1 ? -1 : 1), base + (hy - 0.53) * k, T * 0.32, glowOf(pal.ball), 0.65);
-    if (!back) glow(cx, base - 0.32 * k, T * 0.3, glowOf(pal.trim), 0.2);
+    const k = T * sc, base = cy + T * 0.36 + lift * T;
+    glow(cx + ax * k * (f === 1 ? -1 : 1), base + (hy - 0.54) * k, T * 0.32, glowOf(pal.ball), 0.55);
     if (p.shieldT > 0 && (p.shieldT > 3 || Math.floor(G.t * 10) % 2)) glow(cx, cy - T * 0.15, T * 0.95, glowOf('#3df5ff'), 0.45 + 0.1 * Math.sin(G.t * 8));
   }
 }
