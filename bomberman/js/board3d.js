@@ -557,7 +557,7 @@ const Board3D = (() => {
   // Fit the arena (optionally cropping the outer part of the side walls) inside the rectangle the
   // game reserves for it, keeping the world's camera angle; the lens is shifted to centre it there.
   // crop: how much of the outer wall may fall outside the rectangle ({ x, top, bottom } in tiles).
-  let fitRect = null, crop = { x: 0, top: 0, bottom: 0 }, orient = 'portrait', unitT = 1;
+  let fitRect = null, crop = { x: 0, top: 0, bottom: 0 }, orient = 'portrait', unitT = 1, zoom = 1, box0 = null, panX = 0, panY = 0, follow = null;
   function fitCamera() {
     const base = world.scene3d.camera, c = Object.assign({}, base, base[orient] || {});
     const el = c.elevation * Math.PI / 180, center = new THREE.Vector3(7.5, 0, 6.5), dir = new THREE.Vector3(0, Math.sin(el), Math.cos(el));
@@ -571,15 +571,31 @@ const Board3D = (() => {
       box = bounds(pts);
       d *= Math.max((box[2] - box[0]) / fitRect.w, (box[3] - box[1]) / fitRect.h);
     }
+    d /= zoom;   // zoom > 1: closer view of part of the arena; the lens then pans to follow the hero
     camera.position.copy(center).addScaledVector(dir, d); camera.lookAt(center); camera.updateMatrixWorld(); camera.updateProjectionMatrix();
-    box = bounds(pts);
-    const dx = fitRect.x + fitRect.w / 2 - (box[0] + box[2]) / 2, dy = fitRect.y + fitRect.h / 2 - (box[1] + box[3]) / 2;
-    camera.setViewOffset(W, H, -dx, -dy, W, H); camera.updateProjectionMatrix();
+    box0 = bounds(pts);
+    const pan = panFor(follow); panX = pan[0]; panY = pan[1];
+    camera.setViewOffset(W, H, -panX, -panY, W, H); camera.updateProjectionMatrix();
     VP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-    const b = bounds(all);   // keep the whole arena in focus
-    focus.uniforms.rect.value.set((b[0] + b[2]) / 2 / W, 1 - (b[1] + b[3]) / 2 / H, (b[2] - b[0]) / 2 / W * 1.02, (b[3] - b[1]) / 2 / H * 1.04);
+    allPts = all; refocus();
     scene.fog.near = d * 0.95; scene.fog.far = d * 2.3;
     camera.far = d * 4; camera.near = 0.5; camera.updateProjectionMatrix(); VP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+  }
+  // Lens shift that centres a board point (or the arena) in the fit rectangle without showing past the arena's edges.
+  function panFor(pt) {
+    const b = box0, cx = fitRect.x + fitRect.w / 2, cy = fitRect.y + fitRect.h / 2;
+    let px = (b[0] + b[2]) / 2, py = (b[1] + b[3]) / 2;
+    if (pt && zoom > 1) {
+      const e = VP.elements, x = pt[0], z = pt[1], w = e[3] * x + e[11] * z + e[15];
+      px = ((e[0] * x + e[8] * z + e[12]) / w + 1) * 0.5 * W - panX; py = (1 - (e[1] * x + e[9] * z + e[13]) / w) * 0.5 * H - panY;
+    }
+    const clamp = (v, lo, hi) => lo > hi ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, v));
+    return [clamp(cx - px, fitRect.x + fitRect.w - b[2], fitRect.x - b[0]), clamp(cy - py, fitRect.y + fitRect.h - b[3], fitRect.y - b[1])];
+  }
+  let allPts = [];
+  function refocus() {   // keep the whole arena in focus
+    const b = bounds(allPts);
+    focus.uniforms.rect.value.set((b[0] + b[2]) / 2 / W, 1 - (b[1] + b[3]) / 2 / H, (b[2] - b[0]) / 2 / W * 1.02, (b[3] - b[1]) / 2 / H * 1.04);
   }
   function bounds(pts) {
     VP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
@@ -641,7 +657,7 @@ const Board3D = (() => {
   }
   function resize(o) {
     if (!renderer) return;
-    W = o.W; H = o.H; unitT = o.T; fitRect = o.fit; crop = o.crop; orient = o.orient;
+    W = o.W; H = o.H; unitT = o.T; fitRect = o.fit; crop = o.crop; orient = o.orient; zoom = o.zoom || 1; panX = panY = 0;
     const pr = Math.min(o.DPR, 2.5);
     renderer.setPixelRatio(pr); renderer.setSize(W, H, false);
     composer.setPixelRatio(pr); composer.setSize(W, H);
@@ -653,8 +669,16 @@ const Board3D = (() => {
     if (st.plan !== plan || !soft) { plan = st.plan; buildLevel(st); }
     dirty = true;
   }
-  function frame(st, shx, shy) {
+  function frame(st, shx, shy, focusPt) {
     if (!renderer || !soft) return;
+    follow = focusPt || null;
+    if (zoom > 1 && box0) {   // glide the lens toward the hero
+      const t = panFor(follow), nx = panX + (t[0] - panX) * 0.12, ny = panY + (t[1] - panY) * 0.12;
+      if (Math.abs(nx - panX) > 0.25 || Math.abs(ny - panY) > 0.25) {
+        panX = nx; panY = ny; camera.setViewOffset(W, H, -panX, -panY, W, H); camera.updateProjectionMatrix();
+        VP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); refocus(); dirty = true;
+      }
+    }
     const css = shx || shy ? `translate(${shx.toFixed(1)}px,${shy.toFixed(1)}px)` : '';
     if (css !== shakeCss) { canvas.style.transform = css; shakeCss = css; }
     const moved = sync(st);
