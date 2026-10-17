@@ -139,6 +139,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 .foot{font-size:12px;color:var(--muted);font-weight:700;max-width:320px;line-height:1.45}
 .foot b{color:#fff}
 .foot.rot{color:var(--gold);font-size:14px}
+.foot.snd{color:#fff;font-size:14px;animation:throb .7s ease-in-out infinite alternate}
+.audio-on .foot.snd{display:none}
 h2{margin:0;font-size:clamp(34px,10vw,54px);font-weight:900;color:var(--gold);-webkit-text-stroke:6px var(--shade);paint-order:stroke fill;
   text-shadow:0 5px 0 rgba(0,0,0,.4);text-wrap:balance;line-height:1.02}
 h2.warn{color:var(--warn)} h2.good{color:var(--good)}
@@ -211,6 +213,7 @@ h2.warn{color:var(--warn)} h2.good{color:var(--good)}
       <div class="stat"><small>NIVEL MÁX.</small><b id="tMax">1</b></div>
       <div class="stat"><small>COPAS</small><b id="tCups">0</b></div>
     </div>
+    <div class="foot snd" id="soundHint">🔊 Toca la pantalla para activar el sonido</div>
     <div class="foot rot" id="rotateHint" hidden>📱↻ Gira el teléfono para jugar en pantalla completa.</div>
     <div class="foot" id="installHint" hidden>Instálalo como app: toca <b>Compartir</b> y luego <b>Agregar a inicio</b>.</div>
   </section>
@@ -382,7 +385,7 @@ G.spiral = (() => {
 // ================= audio =================
 const Sound = (() => {
   let ac = null, sfxBus, musBus, noise, delay, lastBoom = 0, revSend = null, distCurve = null, crushCurve = null;
-  let mOn = false, mStep = 0, mNext = 0, mTimer = null, mBpm = 132, mTrans = 0;
+  let mOn = false, mStep = 0, mNext = 0, mTimer = null, mBpm = 132, mTrans = 0, mWant = false;
   const ok = () => ac && ac.state === 'running';
   function init() {
     try {
@@ -410,8 +413,10 @@ const Sound = (() => {
         crushCurve = new Float32Array(1024);
         for (let i = 0; i < 1024; i++) { const x = i / 511.5 - 1; crushCurve[i] = Math.round(Math.tanh(x * 2.2) * 12) / 12; }
         apply();
+        // The context often becomes 'running' a moment after the first tap; start any music that was waiting.
+        ac.onstatechange = () => { if (ok() && mWant && !mOn) start(); document.documentElement.classList.toggle('audio-on', ok()); };
       }
-      if (ac.state !== 'running') ac.resume();
+      if (ac.state !== 'running') { const r = ac.resume(); if (r && r.then) r.then(() => { if (ok() && mWant && !mOn) start(); }).catch(() => {}); }
       const s = ac.createBufferSource(); s.buffer = ac.createBuffer(1, 1, 22050); s.connect(ac.destination); s.start(0);
     } catch (e) { /* audio unavailable */ }
   }
@@ -537,13 +542,12 @@ const Sound = (() => {
     if (mNext < ac.currentTime - 0.25) mNext = ac.currentTime + 0.03;
     while (mNext < ac.currentTime + 0.16) { step(mStep, mNext - ac.currentTime, sd); mNext += sd; mStep = (mStep + 1) % SONG.len; }
   }
+  function start() { if (mOn) return; mOn = true; mStep = 0; mNext = ac.currentTime + 0.06; mTimer = setInterval(sched, 40); }
   function music(on, bpm, trans) {
     if (bpm) { mBpm = bpm; mTrans = trans || 0; if (delay) delay.delayTime.value = 60 / mBpm / 4 * 3; }
-    if (on && !ok()) on = false;
-    if (on === mOn) return;
-    mOn = on;
-    if (on) { mStep = 0; mNext = ac.currentTime + 0.06; mTimer = setInterval(sched, 40); }
-    else { clearInterval(mTimer); mTimer = null; }
+    mWant = on;
+    if (on) { if (ok()) start(); }        // otherwise it starts by itself once audio is unlocked
+    else if (mOn) { mOn = false; clearInterval(mTimer); mTimer = null; }
   }
   function suspend() { if (ac && ac.state === 'running') ac.suspend(); }
   return { init, apply, play, music, suspend, ok };
@@ -596,8 +600,8 @@ function readSafe() {
 const CROP = 0.65, EC = COLS - 2 * CROP, ER = ROWS - 2 * CROP;
 // VY0 = field top in background-canvas space; VY = field top on screen (VY0 - CAM).
 // In landscape the board is zoomed in and the camera scrolls vertically to follow you.
-let VX = 0, VY = 0, VW = 0, VH = 0, VY0 = 0, CAM = 0, BH = 0, zoomed = false;
-function applyCam(c) { CAM = c; VY = VY0 - c; FX = VX - CROP * T; FY = VY - CROP * T; }
+let VX = 0, VY = 0, VW = 0, VH = 0, VX0 = 0, VY0 = 0, CAM = 0, CAMX = 0, BW = 0, BH = 0, zoomed = false;
+function applyCam(c, cx = CAMX) { CAM = c; CAMX = cx; VY = VY0 - c; VX = VX0 - cx; FX = VX - CROP * T; FY = VY - CROP * T; }
 function camTarget() {
   if (!zoomed) return 0;
   const lo = VY0 - SA.t - 4, hi = VY0 + VH - H + SA.b + 4;
@@ -606,7 +610,15 @@ function camTarget() {
   const y = h ? VY0 + (h.y + 0.5 - CROP) * T : VY0 + VH / 2;
   return Math.max(lo, Math.min(hi, y - H * 0.52));
 }
-function updateCam(dt) { if (zoomed) applyCam(CAM + (camTarget() - CAM) * Math.min(1, dt * 7)); }
+function camTargetX() {
+  if (!zoomed) return 0;
+  const lo = VX0 - SA.l - 4, hi = VX0 + VW - W + SA.r + 4;
+  if (hi <= lo) return 0;
+  const h = G.hero && G.mode !== 'demo' ? G.hero : null;
+  const x = h ? VX0 + (h.x + 0.5 - CROP) * T : VX0 + VW / 2;
+  return Math.max(lo, Math.min(hi, x - W / 2));
+}
+function updateCam(dt) { if (zoomed) { const k = Math.min(1, dt * 7); applyCam(CAM + (camTarget() - CAM) * k, CAMX + (camTargetX() - CAMX) * k); } }
 function layout() {
   readSafe();
   W = window.innerWidth; H = window.innerHeight; DPR = Math.min(window.devicePixelRatio || 1, 3, dprCap);
@@ -621,25 +633,27 @@ function layout() {
     const maxW = W - 8 - SA.l - SA.r, maxH = H - top - SA.b - ctlH - 44;
     T = Math.max(8, Math.floor(Math.min(maxW / EC, maxH / ER) * DPR) / DPR);
     const block = T * ER + 44, spare = Math.max(0, H - SA.b - ctlH - top - block);
-    VX = snap((W - T * EC) / 2); VY0 = snap(top + spare / 2);
+    VX0 = snap((W - T * EC) / 2); VY0 = snap(top + spare / 2);
     const y0 = VY0 + T * ER, y1 = H - SA.b, mid = y0 + 44 + (y1 - y0 - 44) * 0.5;
     ctrl = { stickX: W * 0.27, stickY: mid, bombX: W * 0.76, bombY: mid + 4, detX: W * 0.76 - 100, detY: mid - 78, zoneTop: y0 };
     pw.className = ''; Object.assign(pw.style, { left: '8px', right: '8px', width: '', top: (y0 + 8) + 'px' });
     $('controls').classList.remove('ghost'); hud.classList.remove('over');
   } else {
-    // Full-screen, zoomed board; controls float over it, almost transparent.
+    // Full-screen, zoomed board; controls float over it, almost transparent. Phones show ~7.5 rows,
+    // tablets ~9; the camera scrolls both ways and keeps the board clear of the Dynamic Island / home bar.
     zoomed = true;
-    const usableH = H - SA.t - SA.b;
-    T = Math.max(8, Math.floor(Math.min(usableH / 9.2, (W - SA.l - SA.r - 24) / EC) * DPR) / DPR);
-    VX = snap((W - T * EC) / 2); VY0 = snap(SA.t + 6);
+    const usableH = H - SA.t - SA.b, usableW = W - SA.l - SA.r, rowsVis = H < 520 ? 7.4 : 9.2;
+    T = Math.max(8, Math.floor((usableH / rowsVis) * DPR) / DPR);
+    const fw = T * EC;
+    VX0 = snap(fw <= usableW ? SA.l + (usableW - fw) / 2 : SA.l + 4); VY0 = snap(SA.t + 6);
     const r = Math.min(100, H * 0.27);
     ctrl = { stickX: SA.l + r + 4, stickY: H - SA.b - r, bombX: W - SA.r - r + 6, bombY: H - SA.b - r + 4, detX: W - SA.r - r - 6, detY: H - SA.b - r * 2 - 50, zoneTop: 0 };
-    pw.className = 'land'; Object.assign(pw.style, { left: (SA.l + 8) + 'px', right: 'auto', width: Math.max(120, VX - SA.l - 16) + 'px', top: (SA.t + 54) + 'px' });
+    pw.className = 'land'; Object.assign(pw.style, { left: (SA.l + 8) + 'px', right: 'auto', width: '170px', top: (SA.t + 54) + 'px' });
     $('controls').classList.add('ghost'); hud.classList.add('over');
   }
   VW = T * EC; VH = T * ER;
-  BH = Math.max(H, VY0 + VH + SA.b + 10);
-  applyCam(camTarget());
+  BH = Math.max(H, VY0 + VH + SA.b + 10); BW = Math.max(W, VX0 + VW + SA.r + 10);
+  CAMX = 0; applyCam(camTarget(), camTargetX());
   placeAt($('bombBtn'), ctrl.bombX, ctrl.bombY);
   placeAt($('detBtn'), ctrl.detX, ctrl.detY);
   if (input.stick.id === null) stickRest();
@@ -759,9 +773,9 @@ function wallShadow(g, x, y) {
 }
 const isBorder = (x, y) => x === 0 || y === 0 || x === COLS - 1 || y === ROWS - 1;
 function buildBg() {
-  const cam = CAM; applyCam(0);
-  bg.width = canvas.width; bg.height = Math.round(BH * DPR);
-  const g = bctx, th = G.theme, cx = W / 2, cy = FY + T * ROWS / 2, H = BH;
+  const cam = CAM, camx = CAMX; applyCam(0, 0);
+  bg.width = Math.round(BW * DPR); bg.height = Math.round(BH * DPR);
+  const g = bctx, th = G.theme, W = BW, H = BH, cx = VX + VW / 2, cy = FY + T * ROWS / 2;
   g.setTransform(DPR, 0, 0, DPR, 0, 0);
   const gr = g.createRadialGradient(cx, cy, 10, cx, cy, Math.max(W, H) * 0.8);
   gr.addColorStop(0, th.bg[0]); gr.addColorStop(1, th.bg[1]);
@@ -780,14 +794,14 @@ function buildBg() {
   g.fillStyle = vg; g.fillRect(VX, VY, VW, VH);
   g.restore();
   g.strokeStyle = 'rgba(255,255,255,0.14)'; g.lineWidth = 2; rr(g, VX - 1, VY - 1, VW + 2, VH + 2, T * 0.3); g.stroke();
-  applyCam(cam);
+  applyCam(cam, camx);
 }
 function paintHardToBg(x, y) {
-  const cam = CAM; applyCam(0);
+  const cam = CAM, camx = CAMX; applyCam(0, 0);
   bctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   wallShadow(bctx, x, y);
   bctx.drawImage(SPR.hard, FX + x * T, FY + y * T, T, T);
-  applyCam(cam);
+  applyCam(cam, camx);
 }
 
 // ================= world setup =================
@@ -1233,8 +1247,8 @@ function hitBoss(e, chain) {
 function drawBossBar() {
   const b = G.enemies.find(e => e.def.boss && e.alive);
   if (!b || G.mode !== 'adventure') return;
-  const cx = portrait ? VX + VW / 2 : (VX + VW + W - SA.r) / 2;
-  const w = Math.min(portrait ? VW * 0.62 : (W - SA.r - VX - VW) - 24, 240), h = 12, x = cx - w / 2, y = portrait ? VY + VH + 8 : SA.t + 14;
+  const cx = portrait ? VX + VW / 2 : W / 2;
+  const w = Math.min(portrait ? VW * 0.62 : 220, 240), h = 12, x = cx - w / 2, y = portrait ? VY + VH + 8 : SA.t + 54;
   ctx.fillStyle = 'rgba(10,8,24,0.75)'; rr(ctx, x - 4, y - 4, w + 8, h + 22, 9); ctx.fill();
   ctx.fillStyle = '#3a1450'; rr(ctx, x, y + 14, w, h, 6); ctx.fill();
   const gr = ctx.createLinearGradient(x, 0, x + w, 0); gr.addColorStop(0, '#ff4df5'); gr.addColorStop(1, '#b04dff');
@@ -1592,7 +1606,7 @@ const SX = x => FX + (x + 0.5) * T, SY = y => FY + (y + 0.5) * T;
 function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-  ctx.drawImage(bg, 0, Math.round(CAM * DPR), canvas.width, canvas.height, 0, 0, W, H);
+  ctx.drawImage(bg, Math.round(CAMX * DPR), Math.round(CAM * DPR), canvas.width, canvas.height, 0, 0, W, H);
   ctx.save();
   if (G.shake > 0.01) { const m = G.shake * G.shake * T * 0.32; ctx.translate(rnd(-m, m), rnd(-m, m)); }
   glows.length = 0;
@@ -2190,7 +2204,7 @@ function stickMove(x, y) {
 function hitRole(x, y) {
   if (!$('detBtn').hidden && Math.hypot(x - ctrl.detX, y - ctrl.detY) < 54) return 'det';
   if (Math.hypot(x - ctrl.bombX, y - ctrl.bombY) < 80) return 'bomb';
-  if (portrait ? (y > ctrl.zoneTop && x > W * 0.56) : (x > VX + VW)) return 'bomb';
+  if (portrait ? (y > ctrl.zoneTop && x > W * 0.56) : (x > W * 0.55)) return 'bomb';
   return 'stick';
 }
 function pressBtn(el) { el.classList.add('down'); setTimeout(() => el.classList.remove('down'), 120); }
@@ -2216,7 +2230,7 @@ window.addEventListener('mousemove', e => { if (mouseDown) pointerMove('m', e.cl
 window.addEventListener('mouseup', () => { if (mouseDown) { mouseDown = false; pointerUp('m'); } });
 document.addEventListener('gesturestart', e => e.preventDefault());
 document.addEventListener('dblclick', e => e.preventDefault());
-const unlock = () => { const was = Sound.ok(); Sound.init(); if (!was) setTimeout(() => { if (Sound.ok() && !G.paused) setMusic(G.musicKey); }, 60); };
+const unlock = () => { Sound.init(); };
 document.addEventListener('touchend', unlock, { passive: true });
 document.addEventListener('pointerdown', unlock, { passive: true });
 document.addEventListener('keydown', unlock);
