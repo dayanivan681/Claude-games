@@ -438,21 +438,37 @@ const Sound = (() => {
     else { out.connect(sfxBus); out.connect(revSend); }
     return out;
   }
-  // Classic arcade-style blast: a short crunchy "pssh-boom" — lo-fi noise burst over a quick thump,
-  // a little stereo placement and only a touch of room. Punchy, not cinematic.
-  function explosion(pan, power) {
-    const t = ac.currentTime + 0.005, chained = t - lastBoom < 0.08; lastBoom = t;
-    const out = panned(pan * 0.5), len = 0.55 + Math.min(0.25, power * 0.02);
-    out.gain.value = chained ? 0.6 : 0.95;
-    const crush = ac.createWaveShaper(); crush.curve = crushCurve; crush.connect(out);   // 8-bit grit
-    layer(crush, t, len, 1.0, 'lowpass', 6000, 260, 0.7, 0.003);                       // "pssh" noise body
-    layer(crush, t, 0.12, 0.6, 'bandpass', 1800, 700, 0.9, 0.002);                     // attack snap
-    if (!chained) {
-      const o = ac.createOscillator(), g = ac.createGain();
-      o.type = 'triangle'; o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.28);
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.9, t + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.32);
-      o.connect(g); g.connect(out); o.start(t); o.stop(t + 0.35);                       // "boom" thump
+  // 8-bit blast, built like a NES noise channel: LFSR noise that is sample-and-held at a
+  // falling rate (it gets "lower" as it fades), with a 4-bit stepped volume envelope,
+  // plus a short stepped triangle drop for the body. Pre-rendered once, replayed per bomb.
+  let blastBuf = null;
+  function renderBlast() {
+    const sr = ac.sampleRate, dur = 0.75, n = Math.floor(sr * dur), buf = ac.createBuffer(1, n, sr), d = buf.getChannelData(0);
+    let lfsr = 1, hold = 0, acc = 0, phase = 0;
+    for (let i = 0; i < n; i++) {
+      const k = i / n;
+      const rate = 7000 * Math.pow(0.11, k);                            // noise clock: 7 kHz → ~800 Hz
+      acc += rate / sr;
+      while (acc >= 1) { acc -= 1; const bit = (lfsr ^ (lfsr >> 1)) & 1; lfsr = (lfsr >> 1) | (bit << 14); hold = (lfsr & 1) ? 1 : -1; }
+      const vol = Math.floor(15 * Math.pow(1 - k, 1.6)) / 15;           // 16-step volume
+      const tf = 110 * Math.pow(0.3, Math.min(1, k * 3));               // triangle drop 110 → 33 Hz
+      phase = (phase + Math.round(tf / 4) * 4 / sr) % 1;                // stepped pitch
+      const tri = (Math.floor((phase < 0.5 ? phase * 4 - 1 : 3 - phase * 4) * 8) / 8);
+      const tvol = k < 0.35 ? Math.floor(15 * (1 - k / 0.35)) / 15 : 0;
+      d[i] = hold * vol * 0.75 + tri * tvol * 0.55;
     }
+    return buf;
+  }
+  function explosion(pan, power) {
+    if (!blastBuf) blastBuf = renderBlast();
+    const t = ac.currentTime + 0.005, chained = t - lastBoom < 0.08; lastBoom = t;
+    const src = ac.createBufferSource(), g = ac.createGain();
+    src.buffer = blastBuf; src.playbackRate.value = 0.94 + Math.random() * 0.1 - Math.min(0.08, power * 0.006);
+    g.gain.value = chained ? 0.5 : 0.85;
+    src.connect(g);
+    if (ac.createStereoPanner) { const p = ac.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan * 0.4)); g.connect(p); p.connect(sfxBus); }
+    else g.connect(sfxBus);
+    src.start(t);
   }
   const loud = () => !ok() || !settings.sfx;
   const play = {
