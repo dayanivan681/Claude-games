@@ -28,7 +28,9 @@
 html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--font);
   overscroll-behavior:none;touch-action:manipulation;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-text-size-adjust:100%}
 #app{position:fixed;inset:0;overflow:hidden;background:var(--bg)}
-#game{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#game,#scene{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#shade{position:absolute;inset:0;pointer-events:none;display:none;background:radial-gradient(ellipse 75% 70% at 50% 46%,rgba(0,0,0,0) 55%,rgba(4,9,2,.55) 100%)}
+#app.three #shade{display:block}
 #touch{position:absolute;inset:0;z-index:2;touch-action:none}
 #safe{position:fixed;left:0;top:0;width:0;height:0;visibility:hidden;pointer-events:none;
   padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)}
@@ -197,6 +199,8 @@ h2.warn{color:var(--warn)} h2.good{color:var(--good)}
 </head>
 <body>
 <div id="app">
+  <canvas id="scene"></canvas>
+  <div id="shade"></div>
   <canvas id="game"></canvas>
   <div id="touch"></div>
   <div id="controls" hidden>
@@ -299,6 +303,7 @@ h2.warn{color:var(--warn)} h2.good{color:var(--good)}
 <script src="js/worlds.js"></script>
 <script src="js/levels.js"></script>
 <script src="js/board.js"></script>
+<script type="module" src="js/board3d.js"></script>
 <script>
 (() => {
 'use strict';
@@ -665,6 +670,12 @@ function layout() {
   }
   VW = T * EC; VH = T * ER;
   BH = Math.max(H, VY0 + VH + CROP * T + SA.b + 10); BW = Math.max(W, VX0 + VW + SA.r + 10);
+  if (B3) {   // room for the 3D arena: between the HUD and the power-ups (portrait) or below the HUD band (landscape)
+    const fit = portrait ? { x: SA.l + 2, y: SA.t + 52, w: W - SA.l - SA.r - 4, h: VY0 + T * (ER + CROP) - SA.t - 52 }
+      : { x: SA.l, y: TOPBAR + 2, w: W - SA.l - SA.r, h: H - TOPBAR - SA.b - 4 };
+    // landscape: the outer edge of the wall may slip under the HUD band so the arena itself can be bigger
+    B3.setWorld(G.world); B3.resize({ W, H, DPR, T, fit, orient: portrait ? 'portrait' : 'landscape', crop: portrait ? { x: CROP, top: 0, bottom: 0 } : { x: 0, top: 0.62, bottom: 0.22 } });
+  }
   CAMX = 0; applyCam(camTarget(), camTargetX());
   placeAt($('bombBtn'), ctrl.bombX, ctrl.bombY);
   placeAt($('detBtn'), ctrl.detX, ctrl.detY);
@@ -678,12 +689,23 @@ function placeAt(el, x, y) { el.style.transform = `translate(${x}px,${y}px)`; }
 
 // ================= board (painted by js/board.js) =================
 function boardView() { return { T, FX, FY, BW, BH, DPR, cols: COLS, rows: ROWS, grid: G.grid, plan: G.plan, HARD, SOFT }; }
+// The 3D diorama (js/board3d.js, WebGL) replaces the painted board when the device supports it;
+// characters, bombs and effects stay in this 2D layer and are projected onto its perspective.
+let B3 = null;
+function enable3D() {
+  if (B3 || !window.Board3D || !Board3D.init($('scene'), () => { B3 = null; $('app').classList.remove('three'); layout(); })) return;
+  B3 = Board3D; $('app').classList.add('three'); layout();
+}
+window.addEventListener('board3d-ready', enable3D);
+function boardState() { return { grid: G.grid, plan: G.plan, burning: G.burning, falling: G.falling, burnTime: BURN_TIME, cols: COLS, rows: ROWS, HARD, SOFT, EMPTY, BURN }; }
 function buildSprites() {
+  if (B3) B3.setWorld(G.world);
   Board.prepare(G.world, Math.max(8, Math.round(T * DPR)));
   SPR.fire = glowOf('#ff8a2a'); SPR.yellow = glowOf('#ffd84a'); SPR.white = glowOf('#ffffff'); SPR.accent = glowOf(G.world.accent);
 }
 const isBorder = (x, y) => x === 0 || y === 0 || x === COLS - 1 || y === ROWS - 1;
 function buildBg() {
+  if (B3) { B3.build(boardState()); return; }
   const cam = CAM, camx = CAMX; applyCam(0, 0);
   bg.width = Math.round(BW * DPR); bg.height = Math.round(BH * DPR);
   bctx.setTransform(DPR, 0, 0, DPR, 0, 0);
@@ -691,6 +713,7 @@ function buildBg() {
   applyCam(cam, camx);
 }
 function paintHardToBg(x, y) {
+  if (B3) return;   // the 3D board picks new blocks up from the grid
   const cam = CAM, camx = CAMX; applyCam(0, 0);
   bctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   Board.paintHard(bctx, boardView(), x, y);
@@ -1488,47 +1511,72 @@ function confetti() {
 
 // ================= rendering =================
 const glows = [];
-function glow(sx, sy, size, spr, a) { glows.push({ sx, sy, size, spr, a }); }
+let PROJ = false, shx = 0, shy = 0;
+// In 3D mode glows are queued in screen space, so the additive pass needs no per-glow transform.
+function glow(sx, sy, size, spr, a) {
+  if (!PROJ) { glows.push({ sx, sy, size, spr, a }); return; }
+  const m = ctx.getTransform();
+  glows.push({ sx: (m.a * sx + m.c * sy + m.e) / DPR, sy: (m.b * sx + m.d * sy + m.f) / DPR, size: size * m.a / DPR, spr, a });
+}
+// Each thing is drawn exactly as on the flat grid, under a transform that lands its tile on the 3D board
+// (ground = also foreshortened in depth, for things lying on the floor).
+function onBoard(x, y, ground) {
+  if (!PROJ) return;
+  const p = B3.project(x + 0.5, y + 0.5), s = p[2] / T, sy = ground ? s * p[3] : s;
+  ctx.setTransform(DPR * s, 0, 0, DPR * sy, DPR * (p[0] + shx - s * SX(x)), DPR * (p[1] + shy - sy * SY(y)));
+}
+function onScreen() { if (PROJ) ctx.setTransform(DPR, 0, 0, DPR, DPR * shx, DPR * shy); }
+// Screen position and scale of a board point (flat grid in 2D, perspective in 3D).
+function pt(x, y) { if (!PROJ) return [SX(x), SY(y), 1]; const p = B3.project(x + 0.5, y + 0.5); return [p[0], p[1], p[2] / T]; }
 const SX = x => FX + (x + 0.5) * T, SY = y => FY + (y + 0.5) * T;
 
 function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-  ctx.drawImage(bg, Math.round(CAMX * DPR), Math.round(CAM * DPR), canvas.width, canvas.height, 0, 0, W, H);
+  PROJ = !!B3; shx = shy = 0;
+  if (G.shake > 0.01) { const m = G.shake * G.shake * T * 0.32; shx = rnd(-m, m); shy = rnd(-m, m); }
+  if (PROJ) { ctx.clearRect(0, 0, W, H); B3.frame(boardState(), shx, shy); }
+  else ctx.drawImage(bg, Math.round(CAMX * DPR), Math.round(CAM * DPR), canvas.width, canvas.height, 0, 0, W, H);
   ctx.save();
-  if (G.shake > 0.01) { const m = G.shake * G.shake * T * 0.32; ctx.translate(rnd(-m, m), rnd(-m, m)); }
+  if (!PROJ) ctx.translate(shx, shy);
   glows.length = 0;
-  const clipTop = Math.max(FY, TOPBAR - T * 0.4);   // tall heroes may peek into the HUD band
-  ctx.save(); ctx.beginPath(); ctx.rect(FX, clipTop, COLS * T, FY + ROWS * T - clipTop); ctx.clip();
+  ctx.save(); ctx.beginPath();
+  if (PROJ) { onScreen(); ctx.rect(-T, Math.max(0, TOPBAR - T * 0.4), W + 2 * T, H + T); }
+  else { const clipTop = Math.max(FY, TOPBAR - T * 0.4); ctx.rect(FX, clipTop, COLS * T, FY + ROWS * T - clipTop); }   // tall heroes may peek into the HUD band
+  ctx.clip();
   drawExit(); drawItems(); drawSoftBlocks(); drawBurning(); drawBombs(); drawExplosions(); drawFalling();
   const ents = [];
   for (const p of G.players) ents.push(p);
   for (const e of G.enemies) ents.push(e);
   ents.sort((a, b) => a.y - b.y);
-  for (const e of ents) e.kind === 'player' ? drawBomber(e) : drawEnemy(e);
+  for (const e of ents) { onBoard(e.x, e.y); e.kind === 'player' ? drawBomber(e) : drawEnemy(e); }
   drawParticles(false);
-  Board.ambient(boardView(), G.t, (x, y, size, color, a) => glow(x, y, size, glowOf(color), a));
+  onScreen();
+  const emit = (x, y, size, color, a) => glow(x, y, size, glowOf(color), a);
+  if (PROJ) B3.ambient(G.t, emit); else Board.ambient(boardView(), G.t, emit);
   ctx.globalCompositeOperation = 'lighter';
+  if (PROJ) ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   for (const g of glows) { ctx.globalAlpha = Math.max(0, Math.min(1, g.a)); ctx.drawImage(g.spr, g.sx - g.size, g.sy - g.size, g.size * 2, g.size * 2); }
   drawParticles(true);
   ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
   ctx.restore();
-  drawTexts(); drawMarkers(); drawBossBar();
+  drawTexts(); drawMarkers(); onScreen(); drawBossBar();
   ctx.restore();
   if (G.flash > 0) { ctx.fillStyle = `rgba(255,240,230,${G.flash})`; ctx.fillRect(0, 0, W, H); }
 }
-function drawSoftBlocks() { Board.drawSoft(ctx, boardView()); }
+function drawSoftBlocks() { if (!B3) Board.drawSoft(ctx, boardView()); }
 function drawBurning() {
   for (const b of G.burning) {
     const k = b.t / BURN_TIME, sc = 1 - k * 0.3;
-    ctx.globalAlpha = 1 - k;
-    ctx.drawImage(Board.sprite('burn'), SX(b.x) - T * sc / 2, SY(b.y) - T * sc / 2, T * sc, T * sc);
+    ctx.globalAlpha = 1 - k; onBoard(b.x, b.y);
+    if (!PROJ) ctx.drawImage(Board.sprite('burn'), SX(b.x) - T * sc / 2, SY(b.y) - T * sc / 2, T * sc, T * sc);
     glow(SX(b.x), SY(b.y), T * (0.9 + k * 0.4), SPR.fire, 0.8 * (1 - k));
   }
   ctx.globalAlpha = 1;
 }
 function drawExit() {
   const e = G.exit; if (!e || G.grid[idx(e.x, e.y)] !== EMPTY) return;
+  onBoard(e.x, e.y, true);
   const open = aliveEnemies() === 0, cx = SX(e.x), cy = SY(e.y), acc = G.world.accent;
   ctx.save(); ctx.translate(cx, cy); ctx.scale(T, T);
   ctx.fillStyle = 'rgba(0,0,0,0.3)'; ell(0, 0.08, 0.44, 0.34); ctx.fill();
@@ -1551,6 +1599,7 @@ function drawItems() {
   for (let j = 0; j < N; j++) { const it = G.items[j]; if (it && G.grid[j] === EMPTY) drawItem(j % COLS, (j / COLS) | 0, it); }
 }
 function drawItem(x, y, type) {
+  onBoard(x, y);
   const d = ITEMS[type], cx = SX(x), cy = SY(y) + Math.sin(G.t * 4 + x + y) * T * 0.04;
   glow(cx, cy, T * 0.85, glowOf(d.color), 0.45 + 0.2 * Math.sin(G.t * 5 + x));
   ctx.save(); ctx.translate(cx, cy); ctx.scale(T, T);
@@ -1615,6 +1664,7 @@ function glyph(type) {
 }
 function drawBombs() {
   for (const b of G.bombs) {
+    onBoard(b.x, b.y);
     const cx = SX(b.x), cy = SY(b.y) + T * 0.06, age = G.t - b.born;
     const armed = !(b.remote && !b.chain && b.owner.alive);
     const urg = armed ? 1 - b.timer / BOMB_TIME : 0.2;
@@ -1641,40 +1691,38 @@ function drawBombs() {
   }
 }
 const FLAME_LAYERS = [['#ff3b1f', 0.46], ['#ff9a1f', 0.36], ['#ffe270', 0.24], ['#fffbe8', 0.12]];
+// Flame strip from p to q (points from pt()), its half-width scaled by each end's depth.
+function flameStrip(p, q, R) {
+  const dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L, r0 = R * p[2], r1 = R * q[2];
+  ctx.moveTo(p[0] + nx * r0, p[1] + ny * r0); ctx.lineTo(q[0] + nx * r1, q[1] + ny * r1); ctx.lineTo(q[0] - nx * r1, q[1] - ny * r1); ctx.lineTo(p[0] - nx * r0, p[1] - ny * r0); ctx.closePath();
+}
 function drawExplosions() {
+  onScreen();
   for (const ex of G.explosions) {
     const k = ex.t / ex.dur;
     const w = Math.max(0, k < 0.1 ? 1 - Math.pow(1 - k / 0.1, 3) : k > 0.5 ? 1 - (k - 0.5) / 0.5 : 1);
     if (w <= 0) continue;
-    const cx = SX(ex.x), cy = SY(ex.y), a = ex.arms;
-    const x1 = cx - a[1] * T, x2 = cx + a[2] * T, y1 = cy - a[3] * T, y2 = cy + a[0] * T;
+    const a = ex.arms, c = pt(ex.x, ex.y), ends = DIRS.map((d, i) => pt(ex.x + d[0] * a[i], ex.y + d[1] * a[i]));
+    const tiles = [];
+    for (let d = 0; d < 4; d++) for (let i = 1; i <= Math.ceil(a[d]); i++) { const f = Math.min(i, a[d]); tiles.push([pt(ex.x + DIRS[d][0] * f, ex.y + DIRS[d][1] * f), i, d]); }
     for (let li = 0; li < FLAME_LAYERS.length; li++) {
       const [col, r0] = FLAME_LAYERS[li], R = r0 * w * T;
-      if (R < 0.4) continue;
+      if (R * c[2] < 0.4) continue;
       ctx.fillStyle = col; ctx.beginPath();
-      ctx.rect(x1, cy - R, x2 - x1, 2 * R); ctx.rect(cx - R, y1, 2 * R, y2 - y1);
+      for (let d = 0; d < 4; d++) if (a[d] > 0) flameStrip(c, ends[d], R);
       ctx.fill();
       ctx.beginPath();
-      const cr = R * (1.3 + 0.08 * Math.sin(G.t * 40));
-      ctx.moveTo(cx + cr, cy); ctx.arc(cx, cy, cr, 0, Math.PI * 2);
-      for (let d = 0; d < 4; d++) {
-        const n = Math.ceil(a[d]);
-        for (let i = 1; i <= n; i++) {
-          const f = Math.min(i, a[d]), px = cx + DIRS[d][0] * f * T, py = cy + DIRS[d][1] * f * T;
-          const r = R * (1.05 + 0.13 * Math.sin(G.t * 30 + i * 2.1 + d + li));
-          ctx.moveTo(px + r, py); ctx.arc(px, py, r, 0, Math.PI * 2);
-        }
-      }
+      const cr = R * (1.3 + 0.08 * Math.sin(G.t * 40)) * c[2];
+      ctx.moveTo(c[0] + cr, c[1]); ctx.arc(c[0], c[1], cr, 0, Math.PI * 2);
+      for (const [q, i, d] of tiles) { const r = R * (1.05 + 0.13 * Math.sin(G.t * 30 + i * 2.1 + d + li)) * q[2]; ctx.moveTo(q[0] + r, q[1]); ctx.arc(q[0], q[1], r, 0, Math.PI * 2); }
       ctx.fill();
     }
-    glow(cx, cy, T * (1.6 + ex.power * 0.08) * w, SPR.fire, 0.9 * w);
-    for (let d = 0; d < 4; d++) for (let i = 1; i <= Math.ceil(a[d]); i++) {
-      const f = Math.min(i, a[d]);
-      glow(cx + DIRS[d][0] * f * T, cy + DIRS[d][1] * f * T, T * 1.05, SPR.fire, 0.5 * w);
-    }
+    glow(c[0], c[1], T * (1.6 + ex.power * 0.08) * w * c[2], SPR.fire, 0.9 * w);
+    for (const [q] of tiles) glow(q[0], q[1], T * 1.05 * q[2], SPR.fire, 0.5 * w);
   }
 }
 function drawFalling() {
+  if (B3) return;   // falling blocks are part of the 3D board
   for (const f of G.falling) {
     const x = f.j % COLS, y = (f.j / COLS) | 0, k = f.t / 0.35, px = FX + x * T, py = FY + y * T;
     ctx.fillStyle = `rgba(0,0,0,${0.15 + k * 0.35})`; ell(px + T / 2, py + T * 0.7, T * 0.45 * k + T * 0.1, T * 0.18 * k + 2); ctx.fill();
@@ -2087,6 +2135,7 @@ function drawEnemy(e) {
 function drawParticles(additive) {
   for (const p of G.particles) {
     if (p.delay > 0) continue;
+    onBoard(p.x, p.y);
     const k = p.life / p.max, sx = SX(p.x), sy = SY(p.y) - p.z * T;
     switch (p.kind) {
       case 'spark': if (additive) { const s = p.size * T * (0.4 + k * 0.6); ctx.globalAlpha = k; ctx.drawImage(SPR.fire, sx - s * 1.6, sy - s * 1.6, s * 3.2, s * 3.2); ctx.drawImage(SPR.white, sx - s * 0.5, sy - s * 0.5, s, s); } break;
@@ -2108,6 +2157,7 @@ function drawParticles(additive) {
 function drawTexts() {
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
   for (const t of G.texts) {
+    onBoard(t.x, t.y);
     const k = t.t / t.max, a = k < 0.75 ? 1 : 1 - (k - 0.75) / 0.25;
     const sc = k < 0.12 ? 0.6 + k / 0.12 * 0.5 : 1.1 - Math.min(0.1, k - 0.12);
     const sx = Math.min(W - 60, Math.max(60, SX(t.x))), sy = SY(t.y) - k * T * 0.9;
@@ -2120,6 +2170,7 @@ function drawTexts() {
 function drawMarkers() {
   const h = G.hero;
   if (!h || !h.alive || G.mode === 'demo' || G.fieldT > 3.2) return;
+  onBoard(h.x, h.y);
   const x = SX(h.x), y = SY(h.y) - T * 1.15 - Math.abs(Math.sin(G.t * 6)) * T * 0.18;
   ctx.globalAlpha = Math.min(1, (3.2 - G.fieldT) * 2);
   ctx.fillStyle = '#ffd23f'; ctx.strokeStyle = '#1a0f26'; ctx.lineWidth = 2.5;
