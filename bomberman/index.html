@@ -59,6 +59,13 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 #powers.land{justify-content:flex-start}
 #hud.land{right:auto;flex-wrap:wrap;padding:calc(env(safe-area-inset-top,0px) + 8px) 0 0 0}
 #hud.land .sp{display:none}
+#hud.over .chip,#hud.over .hbtn{background:rgba(14,17,38,.45);box-shadow:none}
+#controls.ghost #stick{opacity:.22;border-color:rgba(255,255,255,.35)}
+#controls.ghost #stick.on{opacity:.75}
+#controls.ghost .abtn{opacity:.32}
+#controls.ghost .abtn.down{opacity:.85}
+#controls.ghost #bombBtn{box-shadow:0 4px 12px rgba(0,0,0,.25)}
+#powers.land .pw{background:rgba(14,17,38,.4)}
 .pw{display:flex;align-items:center;gap:3px;height:28px;padding:0 8px;border-radius:10px;background:rgba(14,17,38,.6);border:1px solid var(--line);
   font-weight:900;font-size:13px;font-variant-numeric:tabular-nums}
 .pw.sp2{color:#7ff3ff}
@@ -204,7 +211,7 @@ h2.warn{color:var(--warn)} h2.good{color:var(--good)}
       <div class="stat"><small>NIVEL MÁX.</small><b id="tMax">1</b></div>
       <div class="stat"><small>COPAS</small><b id="tCups">0</b></div>
     </div>
-    <div class="foot rot" id="rotateHint" hidden>📱↻ Gira el teléfono: el juego se ve mejor en horizontal.</div>
+    <div class="foot rot" id="rotateHint" hidden>📱↻ Gira el teléfono para jugar en pantalla completa.</div>
     <div class="foot" id="installHint" hidden>Instálalo como app: toca <b>Compartir</b> y luego <b>Agregar a inicio</b>.</div>
   </section>
 
@@ -587,45 +594,60 @@ function readSafe() {
 }
 // Only a sliver of the outer wall is shown, so the playable maze gets bigger tiles.
 const CROP = 0.65, EC = COLS - 2 * CROP, ER = ROWS - 2 * CROP;
-let VX = 0, VY = 0, VW = 0, VH = 0;
+// VY0 = field top in background-canvas space; VY = field top on screen (VY0 - CAM).
+// In landscape the board is zoomed in and the camera scrolls vertically to follow you.
+let VX = 0, VY = 0, VW = 0, VH = 0, VY0 = 0, CAM = 0, BH = 0, zoomed = false;
+function applyCam(c) { CAM = c; VY = VY0 - c; FX = VX - CROP * T; FY = VY - CROP * T; }
+function camTarget() {
+  if (!zoomed) return 0;
+  const lo = VY0 - SA.t - 4, hi = VY0 + VH - H + SA.b + 4;
+  if (hi <= lo) return (lo + hi) / 2;
+  const h = G.hero && G.mode !== 'demo' ? G.hero : null;
+  const y = h ? VY0 + (h.y + 0.5 - CROP) * T : VY0 + VH / 2;
+  return Math.max(lo, Math.min(hi, y - H * 0.52));
+}
+function updateCam(dt) { if (zoomed) applyCam(CAM + (camTarget() - CAM) * Math.min(1, dt * 7)); }
 function layout() {
   readSafe();
   W = window.innerWidth; H = window.innerHeight; DPR = Math.min(window.devicePixelRatio || 1, 3, dprCap);
   canvas.width = Math.round(W * DPR); canvas.height = Math.round(H * DPR);
   portrait = H >= W * 1.05;
   const snap = v => Math.round(v * DPR) / DPR, hud = $('hud'), pw = $('powers');
+  hud.classList.remove('land'); hud.style.left = ''; hud.style.width = '';
   if (portrait) {
-    const top = SA.t + 52;
-    const maxW = W - 8 - SA.l - SA.r, maxH = H - top - SA.b - 260;
+    // Field and power-ups sit centred in the space between the HUD and the control pad.
+    zoomed = false;
+    const top = SA.t + 52, ctlH = 236;
+    const maxW = W - 8 - SA.l - SA.r, maxH = H - top - SA.b - ctlH - 44;
     T = Math.max(8, Math.floor(Math.min(maxW / EC, maxH / ER) * DPR) / DPR);
-    VX = snap((W - T * EC) / 2); VY = snap(top);
-    const y0 = VY + T * ER, y1 = H - SA.b, mid = y0 + (y1 - y0) * 0.55;
+    const block = T * ER + 44, spare = Math.max(0, H - SA.b - ctlH - top - block);
+    VX = snap((W - T * EC) / 2); VY0 = snap(top + spare / 2);
+    const y0 = VY0 + T * ER, y1 = H - SA.b, mid = y0 + 44 + (y1 - y0 - 44) * 0.5;
     ctrl = { stickX: W * 0.27, stickY: mid, bombX: W * 0.76, bombY: mid + 4, detX: W * 0.76 - 100, detY: mid - 78, zoneTop: y0 };
-    hud.classList.remove('land'); hud.style.left = ''; hud.style.width = '';
-    pw.className = ''; Object.assign(pw.style, { left: '8px', right: '8px', width: '', top: (y0 + 44) + 'px' });
+    pw.className = ''; Object.assign(pw.style, { left: '8px', right: '8px', width: '', top: (y0 + 8) + 'px' });
+    $('controls').classList.remove('ghost'); hud.classList.remove('over');
   } else {
-    const side = Math.max(170, W * 0.2);
-    const maxW = W - SA.l - SA.r - side * 2, maxH = H - SA.t - SA.b - 12;
-    T = Math.max(8, Math.floor(Math.min(maxW / EC, maxH / ER) * DPR) / DPR);
-    VX = snap((W - T * EC) / 2); VY = snap(SA.t + 6 + (maxH - T * ER) / 2);
-    const colL = SA.l + 8, colW = VX - colL - 10, rc = (VX + T * EC + W - SA.r) / 2;
-    ctrl = { stickX: colL + colW / 2, stickY: H - SA.b - Math.min(96, H * 0.26), bombX: rc, bombY: H - SA.b - Math.min(92, H * 0.25), detX: rc, detY: H - SA.b - Math.min(204, H * 0.54), zoneTop: 0 };
-    hud.classList.add('land'); hud.style.left = colL + 'px'; hud.style.width = colW + 'px';
-    pw.className = 'land'; Object.assign(pw.style, { left: colL + 'px', right: 'auto', width: colW + 'px' });
+    // Full-screen, zoomed board; controls float over it, almost transparent.
+    zoomed = true;
+    const usableH = H - SA.t - SA.b;
+    T = Math.max(8, Math.floor(Math.min(usableH / 9.2, (W - SA.l - SA.r - 24) / EC) * DPR) / DPR);
+    VX = snap((W - T * EC) / 2); VY0 = snap(SA.t + 6);
+    const r = Math.min(100, H * 0.27);
+    ctrl = { stickX: SA.l + r + 4, stickY: H - SA.b - r, bombX: W - SA.r - r + 6, bombY: H - SA.b - r + 4, detX: W - SA.r - r - 6, detY: H - SA.b - r * 2 - 50, zoneTop: 0 };
+    pw.className = 'land'; Object.assign(pw.style, { left: (SA.l + 8) + 'px', right: 'auto', width: Math.max(120, VX - SA.l - 16) + 'px', top: (SA.t + 54) + 'px' });
+    $('controls').classList.add('ghost'); hud.classList.add('over');
   }
-  VW = T * EC; VH = T * ER; FX = VX - CROP * T; FY = VY - CROP * T;
+  VW = T * EC; VH = T * ER;
+  BH = Math.max(H, VY0 + VH + SA.b + 10);
+  applyCam(camTarget());
   placeAt($('bombBtn'), ctrl.bombX, ctrl.bombY);
   placeAt($('detBtn'), ctrl.detX, ctrl.detY);
   if (input.stick.id === null) stickRest();
-  $('banner').style.top = (VY + VH * 0.45) + 'px';
-  buildSprites(); buildBg(); placePowers();
+  $('banner').style.top = (zoomed ? H * 0.45 : VY0 + VH * 0.45) + 'px';
+  buildSprites(); buildBg();
   $('rotateHint').hidden = !portrait || !('ontouchstart' in window);
 }
-function placePowers() {
-  if (portrait) return;
-  const h = $('hud');
-  $('powers').style.top = (h.hidden ? SA.t + 8 : h.offsetTop + h.offsetHeight + 6) + 'px';
-}
+function placePowers() { /* positioned in layout() */ }
 function placeAt(el, x, y) { el.style.transform = `translate(${x}px,${y}px)`; }
 
 function drawBlock(g, s, col, th, border) {
@@ -737,8 +759,9 @@ function wallShadow(g, x, y) {
 }
 const isBorder = (x, y) => x === 0 || y === 0 || x === COLS - 1 || y === ROWS - 1;
 function buildBg() {
-  bg.width = canvas.width; bg.height = canvas.height;
-  const g = bctx, th = G.theme, cx = W / 2, cy = FY + T * ROWS / 2;
+  const cam = CAM; applyCam(0);
+  bg.width = canvas.width; bg.height = Math.round(BH * DPR);
+  const g = bctx, th = G.theme, cx = W / 2, cy = FY + T * ROWS / 2, H = BH;
   g.setTransform(DPR, 0, 0, DPR, 0, 0);
   const gr = g.createRadialGradient(cx, cy, 10, cx, cy, Math.max(W, H) * 0.8);
   gr.addColorStop(0, th.bg[0]); gr.addColorStop(1, th.bg[1]);
@@ -757,11 +780,14 @@ function buildBg() {
   g.fillStyle = vg; g.fillRect(VX, VY, VW, VH);
   g.restore();
   g.strokeStyle = 'rgba(255,255,255,0.14)'; g.lineWidth = 2; rr(g, VX - 1, VY - 1, VW + 2, VH + 2, T * 0.3); g.stroke();
+  applyCam(cam);
 }
 function paintHardToBg(x, y) {
+  const cam = CAM; applyCam(0);
   bctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   wallShadow(bctx, x, y);
   bctx.drawImage(SPR.hard, FX + x * T, FY + y * T, T, T);
+  applyCam(cam);
 }
 
 // ================= world setup =================
@@ -1566,7 +1592,7 @@ const SX = x => FX + (x + 0.5) * T, SY = y => FY + (y + 0.5) * T;
 function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
-  ctx.drawImage(bg, 0, 0, W, H);
+  ctx.drawImage(bg, 0, Math.round(CAM * DPR), canvas.width, canvas.height, 0, 0, W, H);
   ctx.save();
   if (G.shake > 0.01) { const m = G.shake * G.shake * T * 0.32; ctx.translate(rnd(-m, m), rnd(-m, m)); }
   glows.length = 0;
@@ -2075,11 +2101,7 @@ function setMusic(key) {
   if (settings.music) Sound.music(true, bpm, tr);
 }
 let wakeLock = null;
-function lockLandscape() {
-  try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* iOS can't lock */ }
-}
 function enterGame() {
-  lockLandscape();
   show(null); $('controls').hidden = false; $('powers').hidden = false; G.paused = false;
   requestWake();
 }
@@ -2229,7 +2251,7 @@ function frame(now) {
     while (acc >= STEP && n < 14) { update(STEP); acc -= STEP; n++; }
     if (n === 14) acc = 0;
   }
-  render(); hudTick();
+  updateCam(dt); render(); hudTick();
 }
 AVATARS = PALS.map(avatar);
 layout();
