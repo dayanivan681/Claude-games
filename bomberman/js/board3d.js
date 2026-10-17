@@ -503,7 +503,8 @@ const Board3D = (() => {
     }
     levelGroup.add(pillars, hardAo, rocks, stumpS, stumpT, roots, pmoss);
     // destructible blocks: one slot per cell, shown or hidden by sync()
-    soft = new THREE.InstancedMesh(k.geo.brick, k.mats.brick, n); soft.frustumCulled = false; soft.castShadow = soft.receiveShadow = true;
+    // Bricks don't cast into the shadow map (a soft offset decal stands in), so breaking one never re-bakes the shadows.
+    soft = new THREE.InstancedMesh(k.geo.brick, k.mats.brick, n); soft.frustumCulled = false; soft.castShadow = false; soft.receiveShadow = true;
     softAo = new THREE.InstancedMesh(k.geo.ao, k.mats.ao, n); softAo.frustumCulled = false; softAo.renderOrder = 1; levelGroup.add(softAo);
     for (let j = 0; j < n; j++) soft.setColorAt(j, C.setRGB(1, 1, 1));
     levelGroup.add(soft);
@@ -526,21 +527,21 @@ const Board3D = (() => {
   }
 
   // ---------- grid sync & animation ----------
+  // Breaking blocks vanish from the diorama at once (fx3d.js animates the crumble), so an explosion costs the
+  // board a single re-render and no shadow re-bake; only a new hard block (sudden death) re-bakes shadows.
   function sync(st) {
-    const { grid, cols, rows, SOFT, HARD, BURN } = st, n = cols * rows, h = world.scene3d.heights.brick;
-    let changed = false, anim = false;
+    const { grid, cols, rows, SOFT, HARD } = st, n = cols * rows, h = world.scene3d.heights.brick, sd = sunDrop();
+    let changed = false, hard = false, anim = false;
     for (let j = 0; j < n; j++) {
-      const c = grid[j]; if (c === prevGrid[j]) continue;
-      const x = j % cols, y = (j / cols) | 0;
-      if (c === SOFT || c === BURN) { put1(soft, j, x + 0.5, h / 2, y + 0.5, 1); soft.setColorAt(j, C.setRGB(1, 1, 1)); put1(softAo, j, x + 0.5, 0.014, y + 0.5, 1.4); }
-      else { put1(soft, j, 0, -50, 0, 0.0001); put1(softAo, j, 0, -50, 0, 0.0001); }
-      if (c === HARD && prevGrid[j] !== 255 && prevGrid[j] !== HARD) { addPillar(x, y, null); put(hardAo, x + 0.5, 0.014, y + 0.5, 1.45, 1, 1.45); hardAo.instanceMatrix.needsUpdate = true; }
-      prevGrid[j] = c; changed = true;
-    }
-    for (const b of st.burning) {   // breaking blocks glow, swell, then crumble down
-      const k = Math.min(1, b.t / st.burnTime), j = b.y * cols + b.x, s = k < 0.25 ? 1 + k * 0.3 : (1.075 - (k - 0.25) * 1.2);
-      put1(soft, j, b.x + 0.5, h / 2 * Math.max(0.05, s), b.y + 0.5, Math.max(0.05, s));
-      soft.setColorAt(j, C.setRGB(1 + 2.2 * (1 - k), 1 + 0.6 * (1 - k), 1 - 0.3 * k)); anim = true;
+      const c = grid[j], was = prevGrid[j]; if (c === was) continue;
+      const x = j % cols, y = (j / cols) | 0, vis = c === SOFT;
+      if (was === 255 || vis !== (was === SOFT)) {
+        if (vis) { put1(soft, j, x + 0.5, h / 2, y + 0.5, 1); put1(softAo, j, x + 0.5 + sd[0], 0.014, y + 0.5 + sd[1], 1.55); }
+        else { put1(soft, j, 0, -50, 0, 0.0001); put1(softAo, j, 0, -50, 0, 0.0001); }
+        changed = true;
+      }
+      if (c === HARD && was !== 255 && was !== HARD) { addPillar(x, y, null); put(hardAo, x + 0.5, 0.014, y + 0.5, 1.45, 1, 1.45); hardAo.instanceMatrix.needsUpdate = true; hard = true; }
+      prevGrid[j] = c;
     }
     dropping.count = 0;
     for (const f of st.falling) {   // sudden death: a pillar drops from the sky
@@ -548,9 +549,11 @@ const Board3D = (() => {
       put(dropping, x + 0.5, ph / 2 + (1 - k * k) * 5, y + 0.5, 1, 1, 1, 0); anim = true;
     }
     dropping.instanceMatrix.needsUpdate = true;
-    if (changed || anim) { soft.instanceMatrix.needsUpdate = true; soft.instanceColor.needsUpdate = true; softAo.instanceMatrix.needsUpdate = true; }
-    return changed ? 2 : anim ? 1 : 0;
+    if (changed) { soft.instanceMatrix.needsUpdate = true; softAo.instanceMatrix.needsUpdate = true; }
+    return hard ? 2 : changed || anim ? 1 : 0;
   }
+  // Where a block's soft shadow decal sits: nudged away from the sun.
+  function sunDrop() { const f = world.scene3d.sun.from, l = Math.hypot(f[0], f[2]) || 1; return [-f[0] / l * 0.13, -f[2] / l * 0.13]; }
   function put1(mesh, i, x, y, z, s) { M4.compose(V.set(x, y, z), Q.identity(), S.set(s, s, s)); mesh.setMatrixAt(i, M4); }
 
   // ---------- camera ----------
@@ -712,7 +715,7 @@ const Board3D = (() => {
     }
   }
   // Board camera and lens pan, for layers drawn through the same view (fx3d.js).
-  const view = () => (renderer && soft ? { camera, panX, panY, world } : null);
+  const view = () => (renderer && soft ? { camera, panX, panY, world, brick: { geo: kit.geo.brick, mat: kit.mats.brick, h: world.scene3d.heights.brick } } : null);
   return { init, setWorld, resize, build, frame, project, ambient, view, debug: () => ({ scene, camera, renderer, invalidate: () => { dirty = true; } }) };
 })();
 
