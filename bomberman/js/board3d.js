@@ -1,7 +1,7 @@
 // ================= 3D board (WebGL · Three.js) =================
 // Presentation only, like board.js: a lit 3D diorama of the arena built from the same world data
-// (worlds.js) and level plan (levels.js). The game keeps every rule and still draws characters, bombs
-// and effects in its 2D layer on top; project() tells it where each tile lands on screen.
+// (worlds.js) and level plan (levels.js). The game keeps every rule and still draws characters and effects in
+// its 2D layer on top (bombs, blasts and power-ups go to the 3D layer in fx3d.js); project() tells it where each tile lands.
 // The scene is re-rendered only when the board changes (a block breaks or falls), during those short
 // animations, or on resize — an idle frame costs the GPU nothing.
 //
@@ -557,7 +557,10 @@ const Board3D = (() => {
   // Fit the arena (optionally cropping the outer part of the side walls) inside the rectangle the
   // game reserves for it, keeping the world's camera angle; the lens is shifted to centre it there.
   // crop: how much of the outer wall may fall outside the rectangle ({ x, top, bottom } in tiles).
+  // With zoom > 1 the canvas is rendered larger than the screen (covering every pan the lens can reach) and
+  // panning is a CSS translate, so following the hero never re-renders the scene.
   let fitRect = null, crop = { x: 0, top: 0, bottom: 0 }, orient = 'portrait', unitT = 1, zoom = 1, box0 = null, panX = 0, panY = 0, follow = null;
+  let DPR = 1, CW = 1, CH = 1, range = [0, 0, 0, 0], panT = 0;
   function fitCamera() {
     const base = world.scene3d.camera, c = Object.assign({}, base, base[orient] || {});
     const el = c.elevation * Math.PI / 180, center = new THREE.Vector3(7.5, 0, 6.5), dir = new THREE.Vector3(0, Math.sin(el), Math.cos(el));
@@ -573,13 +576,31 @@ const Board3D = (() => {
     }
     d /= zoom;   // zoom > 1: closer view of part of the arena; the lens then pans to follow the hero
     camera.position.copy(center).addScaledVector(dir, d); camera.lookAt(center); camera.updateMatrixWorld(); camera.updateProjectionMatrix();
+    scene.fog.near = d * 0.95; scene.fog.far = d * 2.3;
+    camera.far = d * 4; camera.near = 0.5; camera.updateProjectionMatrix();
     box0 = bounds(pts);
-    const pan = panFor(follow); panX = pan[0]; panY = pan[1];
+    const b = box0, x0 = fitRect.x + fitRect.w - b[2], x1 = fitRect.x - b[0], y0 = fitRect.y + fitRect.h - b[3], y1 = fitRect.y - b[1];
+    range = [Math.min(x0, x1), Math.max(x0, x1), Math.min(y0, y1), Math.max(y0, y1)];
+    if (zoom <= 1) { const c = panFor(null); range = [c[0], c[0], c[1], c[1]]; }
+    CW = Math.ceil(W + range[1] - range[0]); CH = Math.ceil(H + range[3] - range[2]);
+    const pr = Math.min(DPR, 2.5, Math.sqrt(4.5e6 / (CW * CH)));   // keep the oversized canvas within a mobile memory budget
+    renderer.setPixelRatio(pr); renderer.setSize(CW, CH, false);
+    composer.setPixelRatio(pr); composer.setSize(CW, CH);
+    canvas.style.width = CW + 'px'; canvas.style.height = CH + 'px';
+    focus.uniforms.texel.value.set(1 / CW, 1 / CH);
+    // the canvas shows the screen window shifted by the largest pan; refocus in canvas space
+    camera.setViewOffset(W, H, -range[1], -range[3], CW, CH); camera.updateProjectionMatrix();
+    const fb = bounds(all, true);
+    focus.uniforms.rect.value.set((fb[0] + fb[2]) / 2 / CW, 1 - (fb[1] + fb[3]) / 2 / CH, (fb[2] - fb[0]) / 2 / CW * 1.02, (fb[3] - fb[1]) / 2 / CH * 1.04);
+    setPan(0, 0); const pan = panFor(follow); setPan(pan[0], pan[1]);
+  }
+  // Screen-space projection (used by the game's 2D layer) for a pan, and the CSS offset of the oversized canvas.
+  function setPan(px, py) {
+    panX = px; panY = py;
     camera.setViewOffset(W, H, -panX, -panY, W, H); camera.updateProjectionMatrix();
     VP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-    allPts = all; refocus();
-    scene.fog.near = d * 0.95; scene.fog.far = d * 2.3;
-    camera.far = d * 4; camera.near = 0.5; camera.updateProjectionMatrix(); VP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    camera.setViewOffset(W, H, -range[1], -range[3], CW, CH); camera.updateProjectionMatrix();
+    shakeCss = null;
   }
   // Lens shift that centres a board point (or the arena) in the fit rectangle without showing past the arena's edges.
   function panFor(pt) {
@@ -587,20 +608,16 @@ const Board3D = (() => {
     let px = (b[0] + b[2]) / 2, py = (b[1] + b[3]) / 2;
     if (pt && zoom > 1) {
       const e = VP.elements, x = pt[0], z = pt[1], w = e[3] * x + e[11] * z + e[15];
-      px = ((e[0] * x + e[8] * z + e[12]) / w + 1) * 0.5 * W - panX; py = (1 - (e[1] * x + e[9] * z + e[13]) / w) * 0.5 * H - panY;
+      px = ((e[0] * x + e[8] * z + e[12]) / w + 1) * 0.5 * W - panX; py = (1 - (e[1] * x + e[9] * z + e[13]) / w) * 0.5 * H - panY;   // VP includes the current pan
     }
     const clamp = (v, lo, hi) => lo > hi ? (lo + hi) / 2 : Math.max(lo, Math.min(hi, v));
     return [clamp(cx - px, fitRect.x + fitRect.w - b[2], fitRect.x - b[0]), clamp(cy - py, fitRect.y + fitRect.h - b[3], fitRect.y - b[1])];
   }
-  let allPts = [];
-  function refocus() {   // keep the whole arena in focus
-    const b = bounds(allPts);
-    focus.uniforms.rect.value.set((b[0] + b[2]) / 2 / W, 1 - (b[1] + b[3]) / 2 / H, (b[2] - b[0]) / 2 / W * 1.02, (b[3] - b[1]) / 2 / H * 1.04);
-  }
-  function bounds(pts) {
+  // Screen box of points under the camera's current projection (canvas pixels when `canvasSpace`).
+  function bounds(pts, canvasSpace) {
     VP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-    const b = [1e9, 1e9, -1e9, -1e9], o = [0, 0];
-    for (const p of pts) { toScreen(p.x, p.y, p.z, o); b[0] = Math.min(b[0], o[0]); b[1] = Math.min(b[1], o[1]); b[2] = Math.max(b[2], o[0]); b[3] = Math.max(b[3], o[1]); }
+    const b = [1e9, 1e9, -1e9, -1e9], o = [0, 0], sx = canvasSpace ? CW / W : 1, sy = canvasSpace ? CH / H : 1;
+    for (const p of pts) { toScreen(p.x, p.y, p.z, o); o[0] *= sx; o[1] *= sy; b[0] = Math.min(b[0], o[0]); b[1] = Math.min(b[1], o[1]); b[2] = Math.max(b[2], o[0]); b[3] = Math.max(b[3], o[1]); }
     return b;
   }
   function toScreen(x, y, z, o) {
@@ -657,11 +674,7 @@ const Board3D = (() => {
   }
   function resize(o) {
     if (!renderer) return;
-    W = o.W; H = o.H; unitT = o.T; fitRect = o.fit; crop = o.crop; orient = o.orient; zoom = o.zoom || 1; panX = panY = 0;
-    const pr = Math.min(o.DPR, 2.5);
-    renderer.setPixelRatio(pr); renderer.setSize(W, H, false);
-    composer.setPixelRatio(pr); composer.setSize(W, H);
-    focus.uniforms.texel.value.set(1 / W, 1 / H);
+    W = o.W; H = o.H; unitT = o.T; fitRect = o.fit; crop = o.crop; orient = o.orient; zoom = o.zoom || 1; panX = panY = 0; DPR = o.DPR;
     if (world) fitCamera(); dirty = true;
   }
   function build(st) {
@@ -672,14 +685,13 @@ const Board3D = (() => {
   function frame(st, shx, shy, focusPt) {
     if (!renderer || !soft) return;
     follow = focusPt || null;
-    if (zoom > 1 && box0) {   // glide the lens toward the hero
-      const t = panFor(follow), nx = panX + (t[0] - panX) * 0.12, ny = panY + (t[1] - panY) * 0.12;
-      if (Math.abs(nx - panX) > 0.25 || Math.abs(ny - panY) > 0.25) {
-        panX = nx; panY = ny; camera.setViewOffset(W, H, -panX, -panY, W, H); camera.updateProjectionMatrix();
-        VP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); refocus(); dirty = true;
-      }
+    const now = performance.now(), dt = Math.min(0.1, (now - panT) / 1000); panT = now;
+    if (zoom > 1 && box0) {   // glide the lens toward the hero (frame-rate independent)
+      const t = panFor(follow), k = 1 - Math.exp(-dt * 7);
+      if (Math.abs(t[0] - panX) > 0.05 || Math.abs(t[1] - panY) > 0.05) setPan(panX + (t[0] - panX) * k, panY + (t[1] - panY) * k);
     }
-    const css = shx || shy ? `translate(${shx.toFixed(1)}px,${shy.toFixed(1)}px)` : '';
+    const ox = panX - range[1] + (shx || 0), oy = panY - range[3] + (shy || 0);
+    const css = ox || oy ? `translate3d(${ox.toFixed(2)}px,${oy.toFixed(2)}px,0)` : '';
     if (css !== shakeCss) { canvas.style.transform = css; shakeCss = css; }
     const moved = sync(st);
     if (moved || dirty) {
@@ -699,7 +711,9 @@ const Board3D = (() => {
       if (a > 0.03) { toScreen(x, y, z, AP); emit(AP[0], AP[1], project(x, z)[2] * 0.15, M.color, a); }
     }
   }
-  return { init, setWorld, resize, build, frame, project, ambient, debug: () => ({ scene, camera, renderer, invalidate: () => { dirty = true; } }) };
+  // Board camera and lens pan, for layers drawn through the same view (fx3d.js).
+  const view = () => (renderer && soft ? { camera, panX, panY, world } : null);
+  return { init, setWorld, resize, build, frame, project, ambient, view, debug: () => ({ scene, camera, renderer, invalidate: () => { dirty = true; } }) };
 })();
 
 window.Board3D = Board3D;
