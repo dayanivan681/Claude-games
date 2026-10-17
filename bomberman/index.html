@@ -131,6 +131,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 .stat b{font-size:22px;font-variant-numeric:tabular-nums}
 .foot{font-size:12px;color:var(--muted);font-weight:700;max-width:320px;line-height:1.45}
 .foot b{color:#fff}
+.foot.rot{color:var(--gold);font-size:14px}
 h2{margin:0;font-size:clamp(34px,10vw,54px);font-weight:900;color:var(--gold);-webkit-text-stroke:6px var(--shade);paint-order:stroke fill;
   text-shadow:0 5px 0 rgba(0,0,0,.4);text-wrap:balance;line-height:1.02}
 h2.warn{color:var(--warn)} h2.good{color:var(--good)}
@@ -203,6 +204,7 @@ h2.warn{color:var(--warn)} h2.good{color:var(--good)}
       <div class="stat"><small>NIVEL MÁX.</small><b id="tMax">1</b></div>
       <div class="stat"><small>COPAS</small><b id="tCups">0</b></div>
     </div>
+    <div class="foot rot" id="rotateHint" hidden>📱↻ Gira el teléfono: el juego se ve mejor en horizontal.</div>
     <div class="foot" id="installHint" hidden>Instálalo como app: toca <b>Compartir</b> y luego <b>Agregar a inicio</b>.</div>
   </section>
 
@@ -447,10 +449,10 @@ const Sound = (() => {
     let lfsr = 1, hold = 0, acc = 0, phase = 0;
     for (let i = 0; i < n; i++) {
       const k = i / n;
-      const rate = 7000 * Math.pow(0.11, k);                            // noise clock: 7 kHz → ~800 Hz
+      const rate = 4200 * Math.pow(0.15, k);                            // noise clock: 4.2 kHz → ~650 Hz
       acc += rate / sr;
       while (acc >= 1) { acc -= 1; const bit = (lfsr ^ (lfsr >> 1)) & 1; lfsr = (lfsr >> 1) | (bit << 14); hold = (lfsr & 1) ? 1 : -1; }
-      const vol = Math.floor(15 * Math.pow(1 - k, 1.6)) / 15;           // 16-step volume
+      const vol = Math.floor(15 * Math.pow(1 - k, 2.1)) / 15 * Math.min(1, i / (sr * 0.004)); // 16-step volume, soft attack
       const tf = 110 * Math.pow(0.3, Math.min(1, k * 3));               // triangle drop 110 → 33 Hz
       phase = (phase + Math.round(tf / 4) * 4 / sr) % 1;                // stepped pitch
       const tri = (Math.floor((phase < 0.5 ? phase * 4 - 1 : 3 - phase * 4) * 8) / 8);
@@ -464,8 +466,9 @@ const Sound = (() => {
     const t = ac.currentTime + 0.005, chained = t - lastBoom < 0.08; lastBoom = t;
     const src = ac.createBufferSource(), g = ac.createGain();
     src.buffer = blastBuf; src.playbackRate.value = 0.94 + Math.random() * 0.1 - Math.min(0.08, power * 0.006);
-    g.gain.value = chained ? 0.5 : 0.85;
-    src.connect(g);
+    g.gain.value = chained ? 0.28 : 0.48;
+    const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2400; lp.Q.value = 0.5;  // round off the harsh top so it sits with the chiptune
+    src.connect(lp); lp.connect(g);
     if (ac.createStereoPanner) { const p = ac.createStereoPanner(); p.pan.value = Math.max(-1, Math.min(1, pan * 0.4)); g.connect(p); p.connect(sfxBus); }
     else g.connect(sfxBus);
     src.start(t);
@@ -616,6 +619,7 @@ function layout() {
   if (input.stick.id === null) stickRest();
   $('banner').style.top = (VY + VH * 0.45) + 'px';
   buildSprites(); buildBg(); placePowers();
+  $('rotateHint').hidden = !portrait || !('ontouchstart' in window);
 }
 function placePowers() {
   if (portrait) return;
@@ -2055,6 +2059,7 @@ function updateTitle() {
   const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   let framed = false; try { framed = window.self !== window.top; } catch (e) { framed = true; }
   $('installHint').hidden = !(ios && !navigator.standalone && !framed);
+  $('rotateHint').hidden = !portrait || !('ontouchstart' in window);
 }
 function syncToggles() {
   for (const b of document.querySelectorAll('.tog')) { const on = !!settings[b.dataset.k]; b.classList.toggle('on', on); b.querySelector('span').textContent = on ? 'SÍ' : 'NO'; }
@@ -2070,7 +2075,11 @@ function setMusic(key) {
   if (settings.music) Sound.music(true, bpm, tr);
 }
 let wakeLock = null;
+function lockLandscape() {
+  try { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {}); } catch (e) { /* iOS can't lock */ }
+}
 function enterGame() {
+  lockLandscape();
   show(null); $('controls').hidden = false; $('powers').hidden = false; G.paused = false;
   requestWake();
 }
