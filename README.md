@@ -19,3 +19,16 @@ Juego estilo Bomberman para iPhone, hecho como PWA (se instala en la pantalla de
 ```sh
 npx http-server bomberman -p 8080
 ```
+
+### Arquitectura de mundos y niveles
+
+La lógica del juego y la presentación están separadas:
+
+| Archivo | Rol |
+|---|---|
+| `bomberman/js/worlds.js` | **Datos.** Cada mundo define materiales (piso, pilares, muro, ladrillos, obstáculos), iluminación, escenario exterior y reglas de niveles. `CAMPAIGN` asigna niveles a mundos. |
+| `bomberman/js/levels.js` | **Lógica.** `LevelGen` genera cada nivel con una semilla (siempre el mismo diseño por nivel): distribución (`classic`, `grove`, `clearings`, `plaza`), obstáculos extra con conectividad garantizada, densidad de bloques con claros y matorrales, y la lista de enemigos. |
+| `bomberman/js/board.js` | **Presentación.** `Board` pinta el mundo: todo lo estático se hornea una vez por nivel en el fondo; por frame solo dibuja bloques destructibles y luces ambientales. |
+| `bomberman/index.html` | Reglas del juego, personajes, HUD, audio y controles. |
+
+**Agregar un mundo nuevo** (desierto, nieve, volcán…): copia la entrada `forest` en `WORLDS`, cambia colores, luz, accesorios y reglas, y añade `{ from: <nivel>, world: '<id>' }` a `CAMPAIGN`. No hace falta tocar el motor.
