@@ -5,6 +5,7 @@
 //
 // World space matches board3d.js: one unit per tile; tile (x, y) is centred at (x + 0.5, 0, y + 0.5).
 import * as THREE from '../vendor/three.module.min.js';
+import { makeChars } from './chars3d.js';
 
 const Fx3D = (() => {
   let renderer = null, scene, camera, hemi, sun, fill, key, canvas = null, onLost = null, world = null;
@@ -12,7 +13,7 @@ const Fx3D = (() => {
   const bombs = new Map(), cards = new Map(), icons = {}, sparks = [], lights = [];
   const V = new THREE.Vector3(), M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), S = new THREE.Vector3(), C = new THREE.Color();
   const UP = new THREE.Vector3(0, 1, 0), AX = new THREE.Vector3();
-  let K = null;   // shared geometries and materials
+  let K = null, chars = null;   // shared geometries and materials; the 3D characters (chars3d.js)
   const ICON_R = 0.32;   // half-size of the board area an item icon canvas covers (the card face is ±0.3)
 
   // Soft round blob used for contact shadows and floor glows.
@@ -449,7 +450,7 @@ const Fx3D = (() => {
     key = new THREE.DirectionalLight('#fff4e0', 1.6); key.position.set(3, 14, 18); key.target.position.set(7.5, 0, 6.5);   // studio key from the camera side: glossy highlights
     scene.add(hemi, sun, sun.target, fill, fill.target, key, key.target);
     for (let i = 0; i < 3; i++) { const L = new THREE.PointLight('#ff9a3a', 0, 4, 1.6); lights.push(L); scene.add(L); }
-    K = makeKit();
+    K = makeKit(); chars = makeChars(scene, K.env);
     cv.addEventListener('webglcontextlost', e => { e.preventDefault(); renderer = null; if (onLost) onLost(); }, false);
     return true;
   }
@@ -468,7 +469,8 @@ const Fx3D = (() => {
     drawn = true;   // force a clear on the next frame
   }
   // st: { t, bombs, bombTime, armed(b), explosions, items, grid, EMPTY, cols, icon(type, px), itemDefs,
-  //       burning (breaking blocks: x, y, t), burns (enemies burning up: x, y, deadT, burnBig) }
+  //       burning (breaking blocks: x, y, t), burns (enemies burning up: x, y, deadT, burnBig),
+  //       players, enemies, phase, mode, pals, enemyDefs (3D characters, chars3d.js) }
   // view: the board camera and current lens pan (Board3D.view()).
   function frame(st, view, shx, shy) {
     sparks.length = 0;
@@ -482,16 +484,16 @@ const Fx3D = (() => {
     if (css !== shakeCss) { canvas.style.transform = css; shakeCss = css; }
     const dt = Math.min(0.05, Math.max(0, st.t - lastT)); lastT = st.t;
     if (!warm) { updateBlocks(st, view); prewarm(st); }
-    let busy = st.bombs.length > 0 || st.explosions.length > 0 || st.burning.length > 0 || st.burns.length > 0 || parts.length > 0;
+    let busy = st.players.length > 0 || st.enemies.length > 0 || st.bombs.length > 0 || st.explosions.length > 0 || st.burning.length > 0 || st.burns.length > 0 || parts.length > 0;
     if (!busy) for (let j = 0; j < st.items.length; j++) if (st.items[j] && st.grid[j] === st.EMPTY) { busy = true; break; }
     if (!busy) {
-      if (bombs.size || cards.size || parts.length) { updateBombs(st); updateCards(st, 0); updateFlames(st); drawParts(); if (bricks) bricks.count = 0; }
+      if (bombs.size || cards.size || parts.length) { chars.update(st, dt); updateBombs(st); updateCards(st, 0); updateFlames(st); drawParts(); if (bricks) bricks.count = 0; }
       if (drawn) { renderer.clear(); drawn = false; }
       return;
     }
     // cards lean back toward the camera, a little less than facing it so their bevel catches the light
     const el = Math.atan2(bc.position.y, Math.hypot(bc.position.z - 6.5, bc.position.x - 7.5));
-    updateBombs(st); updateCards(st, el - 0.22); updateBlocks(st, view); updateFlames(st);
+    chars.update(st, dt); updateBombs(st); updateCards(st, el - 0.22); updateBlocks(st, view); updateFlames(st);
     stepParts(dt); drawParts();
     renderer.render(scene, camera); drawn = true;
   }
@@ -499,12 +501,12 @@ const Fx3D = (() => {
   // crumble of a game never stalls a frame on a shader compile.
   function prewarm(st) {
     warm = true;
-    const b = makeBomb(), c = makeCard('bomb', st);
+    const b = makeBomb(), c = makeCard('bomb', st), cs = chars.samples(st.pals, st.enemyDefs);
     const all = [K.puffOut, K.puffIn, K.armOut, K.armIn, K.embers, K.smoke, K.ash, ...(K.chunkMeshes || []), bricks].filter(Boolean), keep = all.map(m => m.count);
     all.forEach(m => { m.count = Math.max(1, m.count); });
     try { renderer.compile(scene, camera); } catch (e) { /* compile is only an optimisation */ }
     all.forEach((m, i) => { m.count = keep[i]; });
-    scene.remove(b.g); b.mat.dispose(); b.led.material.dispose(); dropCard(-1, c);
+    scene.remove(b.g); b.mat.dispose(); b.led.material.dispose(); dropCard(-1, c); cs.remove();
   }
   // Screen points of lit fuses (kind 1) and blinking detonator lights (kind 2) from the last frame.
   const SP = new THREE.Vector3();

@@ -715,7 +715,8 @@ const fxArmed = b => !(b.remote && !b.chain && b.owner.alive);
 const fxBurns = [];
 function fxState() {
   fxBurns.length = 0; for (const e of G.enemies) if (!e.alive && e.burnBig) fxBurns.push(e);
-  return { t: G.t, bombs: G.bombs, bombTime: BOMB_TIME, armed: fxArmed, explosions: G.explosions, items: G.items, grid: G.grid, EMPTY, cols: COLS, icon: itemIcon, itemDefs: ITEMS, burning: G.burning, burns: fxBurns };
+  return { t: G.t, bombs: G.bombs, bombTime: BOMB_TIME, armed: fxArmed, explosions: G.explosions, items: G.items, grid: G.grid, EMPTY, cols: COLS, icon: itemIcon, itemDefs: ITEMS, burning: G.burning, burns: fxBurns,
+    players: G.players, enemies: G.enemies, phase: G.phase, mode: G.mode, pals: PALS, enemyDefs: ENEMIES };
 }
 // A power-up's face (tile colour, glyph, gloss) painted into a canvas for the 3D card.
 function itemIcon(type, px) {
@@ -1815,6 +1816,7 @@ function ribbon(x, y, ang, len, w, col, ph, amp) {
   limb(pts, w, col);
 }
 function drawBomber(p) {
+  if (F3) return;   // the bombers are 3D models (js/chars3d.js)
   const pal = p.pal, dt = Math.min(0.05, renderDt);
   let alpha = 1, sc = 1, rot = 0, lift = 0;
   if (!p.alive) {
@@ -2168,6 +2170,7 @@ const ENEMY_DRAW = {
   },
 };
 function drawEnemy(e) {
+  if (F3) return;   // the enemies are 3D models (js/chars3d.js)
   const cx = SX(e.x), cy = SY(e.y), big = e.def.boss ? 1.75 : 1;
   let a = 1, sx = 1, sy = 1;
   if (!e.alive) { drawEnemyBurning(e, cx, cy, big); return; }
