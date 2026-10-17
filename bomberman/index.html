@@ -674,7 +674,7 @@ function layout() {
     const fit = portrait ? { x: SA.l + 2, y: SA.t + 52, w: W - SA.l - SA.r - 4, h: VY0 + T * (ER + CROP) - SA.t - 52 }
       : { x: SA.l, y: TOPBAR + 2, w: W - SA.l - SA.r, h: H - TOPBAR - SA.b - 4 };
     // landscape: the outer edge of the wall may slip under the HUD band so the arena itself can be bigger
-    B3.setWorld(G.world); B3.resize({ W, H, DPR, T, fit, orient: portrait ? 'portrait' : 'landscape', crop: portrait ? { x: CROP, top: 0, bottom: 0 } : { x: 0, top: 0.62, bottom: 0.22 } });
+    B3.setWorld(G.world); B3.resize({ W, H, DPR, T, fit, orient: portrait ? 'portrait' : 'landscape', crop: portrait ? { x: CROP, top: 0, bottom: 0 } : { x: 0, top: 0.62, bottom: 0.22 }, zoom: portrait ? 1 : 1.45 });
   }
   CAMX = 0; applyCam(camTarget(), camTargetX());
   placeAt($('bombBtn'), ctrl.bombX, ctrl.bombY);
@@ -1535,7 +1535,7 @@ function render() {
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
   PROJ = !!B3; shx = shy = 0;
   if (G.shake > 0.01) { const m = G.shake * G.shake * T * 0.32; shx = rnd(-m, m); shy = rnd(-m, m); }
-  if (PROJ) { ctx.clearRect(0, 0, W, H); B3.frame(boardState(), shx, shy); }
+  if (PROJ) { ctx.clearRect(0, 0, W, H); B3.frame(boardState(), shx, shy, G.hero && G.mode !== 'demo' ? [G.hero.x + 0.5, G.hero.y + 0.5] : null); }
   else ctx.drawImage(bg, Math.round(CAMX * DPR), Math.round(CAM * DPR), canvas.width, canvas.height, 0, 0, W, H);
   ctx.save();
   if (!PROJ) ctx.translate(shx, shy);
