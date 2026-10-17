@@ -52,11 +52,11 @@ const WORLDS = {
     },
     // 3D diorama (board3d.js): camera, lights and proportions; colours come from the materials above.
     scene3d: {
-      camera: { elevation: 64, fov: 30 },          // degrees above the horizon, vertical field of view
+      camera: { elevation: 64, fov: 30, landscape: { elevation: 62, fov: 21 } },   // degrees above the horizon, vertical field of view
       sun: { color: '#ffd29c', intensity: 4.2, from: [-5, 12, -5.5] },
       sky: { color: '#ffe6c6', ground: '#3d4a26', intensity: 0.78 },
       fill: { color: '#9fc0ff', intensity: 0.32 },
-      lamp: { color: '#ffb25c', intensity: 3.2, distance: 4.5 },
+      lamp: { color: '#ffb25c', intensity: 6, distance: 5 },
       fog: '#17210f', exposure: 1.28,
       heights: { wall: 0.66, pillar: 0.6, brick: 0.6 },
       brick: { colors: ['#de6c2c', '#c4561f', '#e67a38', '#b54c1b'], mortar: '#b07446' },

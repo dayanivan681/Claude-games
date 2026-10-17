@@ -673,7 +673,8 @@ function layout() {
   if (B3) {   // room for the 3D arena: between the HUD and the power-ups (portrait) or below the HUD band (landscape)
     const fit = portrait ? { x: SA.l + 2, y: SA.t + 52, w: W - SA.l - SA.r - 4, h: VY0 + T * (ER + CROP) - SA.t - 52 }
       : { x: SA.l, y: TOPBAR + 2, w: W - SA.l - SA.r, h: H - TOPBAR - SA.b - 4 };
-    B3.setWorld(G.world); B3.resize({ W, H, DPR, T, fit, crop: portrait ? CROP : 0 });
+    // landscape: the outer edge of the wall may slip under the HUD band so the arena itself can be bigger
+    B3.setWorld(G.world); B3.resize({ W, H, DPR, T, fit, orient: portrait ? 'portrait' : 'landscape', crop: portrait ? { x: CROP, top: 0, bottom: 0 } : { x: 0, top: 0.62, bottom: 0.22 } });
   }
   CAMX = 0; applyCam(camTarget(), camTargetX());
   placeAt($('bombBtn'), ctrl.bombX, ctrl.bombY);

@@ -7,9 +7,32 @@
 //
 // World space: one unit per tile; tile (x, y) covers x..x+1 and z = y..y+1; the floor's top is y = 0.
 import * as THREE from '../vendor/three.module.min.js';
+import { EffectComposer } from '../vendor/postprocessing/EffectComposer.js';
+import { RenderPass } from '../vendor/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from '../vendor/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from '../vendor/postprocessing/ShaderPass.js';
+import { OutputPass } from '../vendor/postprocessing/OutputPass.js';
+
+// Soft focus: the arena stays sharp while the surroundings melt into a gentle blur (fake depth of field).
+const FocusShader = {
+  uniforms: { tDiffuse: { value: null }, texel: { value: new THREE.Vector2(1, 1) }, rect: { value: new THREE.Vector4(0.5, 0.5, 0.5, 0.5) }, strength: { value: 3.5 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform vec2 texel; uniform vec4 rect; uniform float strength; varying vec2 vUv;
+    void main() {
+      vec2 d = abs(vUv - rect.xy) / rect.zw;
+      float m = smoothstep(1.0, 1.45, max(d.x, d.y)) * strength;
+      vec4 c = texture2D(tDiffuse, vUv);
+      if (m > 0.05) {
+        vec4 acc = c;
+        for (int i = 0; i < 12; i++) { float a = float(i) * 2.39996; float r = sqrt(float(i) + 0.5) / 3.5; acc += texture2D(tDiffuse, vUv + vec2(cos(a), sin(a)) * r * m * texel); }
+        c = acc / 13.0;
+      }
+      gl_FragColor = c;
+    }`,
+};
 
 const Board3D = (() => {
-  let renderer = null, scene, camera, sun, fill, sky, canvas = null, onLost = null;
+  let renderer = null, composer = null, bloom = null, focus = null, scene, camera, sun, fill, sky, canvas = null, onLost = null;
   let world = null, cfg = null, kit = null, worldGroup = null, levelGroup = null, plan = null;
   let soft = null, softAo = null, hardAo = null, pillars = null, dropping = null, prevGrid = null, lamps = [];
   let W = 1, H = 1, dirty = true, shakeCss = '';
@@ -160,6 +183,28 @@ const Board3D = (() => {
     }
     return g;
   }
+  // Raise the middle of a box's top into a soft dome ("pillow" stone); normals follow the slope.
+  function pillow(g, w, h, d, dome) {
+    const p = g.attributes.position, nr = g.attributes.normal, top = h / 2;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i), u = Math.max(-1, Math.min(1, x / (w / 2))), v = Math.max(-1, Math.min(1, z / (d / 2)));
+      const wgt = Math.max(0, Math.min(1, (y - top * 0.35) / (top * 0.65))), f = (1 - u * u) * (1 - v * v);
+      p.setY(i, y + dome * f * wgt * wgt);
+      const gx = dome * -2 * u / (w / 2) * (1 - v * v) * wgt, gz = dome * -2 * v / (d / 2) * (1 - u * u) * wgt;
+      V.set(nr.getX(i) - gx * Math.max(0, nr.getY(i)), nr.getY(i), nr.getZ(i) - gz * Math.max(0, nr.getY(i))).normalize(); nr.setXYZ(i, V.x, V.y, V.z);
+    }
+    return g;
+  }
+  // A hand-cut stone: rounded block with a slightly uneven, chipped surface.
+  function cutStone(seed) {
+    const g = roundedBox(1, 1, 1, 0.16, 2), p = g.attributes.position, nr = g.attributes.normal;
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+      const n = 0.035 * Math.sin(x * 7.1 + seed) * Math.sin(y * 6.3 + seed * 2.1) * Math.sin(z * 8.7 + seed * 0.7) + 0.02 * Math.sin((x + z) * 15 + y * 9 + seed);
+      p.setXYZ(i, x + nr.getX(i) * n, y + nr.getY(i) * n, z + nr.getZ(i) * n);
+    }
+    return g;
+  }
   // Merge parts into one vertex-coloured geometry. part: [geometry, colour | (x,y,z,nx,ny,nz) => Color, matrix?]
   function merge(parts, withUv = false) {
     let n = 0;
@@ -215,7 +260,7 @@ const Board3D = (() => {
     k.mats.leaf = std({ vertexColors: true, roughness: 0.8 });
     k.mats.blade = std({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide });
     k.mats.metal = std({ color: lin(o.lantern.metal), roughness: 0.45, metalness: 0.6 });
-    k.mats.glass = std({ color: lin(o.lantern.light), emissive: lin(o.lantern.glow), emissiveIntensity: 2.4, roughness: 0.3 });
+    k.mats.glass = std({ color: lin(o.lantern.light), emissive: lin(o.lantern.glow), emissiveIntensity: 6, roughness: 0.3 });
     k.mats.cobble = pair(stoneTex(o.path, 53), 2.5, 1, { roughness: 0.85 });
     const H = sc.heights;
     {
@@ -226,16 +271,18 @@ const Board3D = (() => {
       k.geo.ao = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
     }
     k.geo.slab = roundedBox(0.95, 0.16, 0.95, 0.05, 2);
-    k.geo.pillar = roundedBox(0.9, H.pillar, 0.9, 0.11);
+    k.geo.pillar = pillow(roundedBox(0.9, H.pillar, 0.9, 0.13, 3), 0.9, H.pillar, 0.9, 0.07);
+    k.geo.cut = [1, 2, 3].map(cutStone);
     k.geo.brick = roundedBox(0.9, H.brick, 0.9, 0.07, 2);
     k.geo.stone = roundedBox(1, 1, 1, 0.12);
     k.geo.cobble = roundedBox(1, 1, 1, 0.3, 1);
     k.geo.flag = roundedBox(1, 1, 1, 0.04, 1);
     // grass tuft: a fan of thin blades, dark at the root and bright at the tip
     {
-      const pos = [], col = [], nor = [], dark = lin(f.blades[3]), light = lin(f.blades[2]), r = rng(4);
-      for (let i = 0; i < 9; i++) {
-        const a = i / 9 * Math.PI * 2 + r(), lean = 0.25 + r() * 0.35, h = 0.07 + r() * 0.07, bx = Math.cos(a) * 0.02, bz = Math.sin(a) * 0.02, w = 0.012;
+      k.geo.tufts = [[14, 0.06, 0.05, 0.03], [9, 0.1, 0.09, 0.02]].map(([blades, h0, hv, spread], tv) => {
+      const pos = [], col = [], nor = [], dark = lin(f.blades[3]), light = lin(f.blades[2]), r = rng(4 + tv * 9);
+      for (let i = 0; i < blades; i++) {
+        const a = i / blades * Math.PI * 2 + r(), lean = 0.25 + r() * 0.35, h = h0 + r() * hv, bx = Math.cos(a) * spread, bz = Math.sin(a) * spread, w = 0.012;
         const tx = bx + Math.cos(a) * h * lean, tz = bz + Math.sin(a) * h * lean, px = -Math.sin(a) * w, pz = Math.cos(a) * w;
         pos.push(bx - px, 0, bz - pz, bx + px, 0, bz + pz, tx, h, tz);
         for (let q = 0; q < 3; q++) nor.push(0, 1, 0);
@@ -243,7 +290,9 @@ const Board3D = (() => {
         col.push(dark.r, dark.g, dark.b, dark.r, dark.g, dark.b, tip.r, tip.g, tip.b);
       }
       const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-      k.geo.tuft = g;
+      return g;
+      });
+      k.geo.tuft = k.geo.tufts[1];
     }
     // flower: five petals round a yellow heart
     {
@@ -263,7 +312,7 @@ const Board3D = (() => {
       k.geo.moss = merge(clump.map(([cx, cy, cz, r], i) => [blob(r, 1, i + 3, 0.3), (x, y, z, nx, ny) => mixC(m1, m0, ny * 0.7 + 0.3 + Math.sin(x * 9 + z * 7) * 0.2), mat4(cx, cy, cz)]));
     }
     // trees and bushes: clusters of lumpy spheres coloured dark below and sunlit on top
-    const leaf = o.leaf.map(lin), trunk = o.trunk.map(lin), sunLeaf = lin('#d8f08a');
+    const leaf = o.leaf.map(lin), trunk = o.trunk.map(lin), sunLeaf = lin('#bfdf74');
     const foliage = (cx, cy, cz, rad, sd, det = 2) => [blob(rad, det, sd, 0.14), (x, y, z, nx, ny, nz) => {
       const t = ny * 0.62 + 0.38 - nx * 0.18 - nz * 0.05 + 0.16 * Math.sin(x * 13 + y * 11 + z * 7 + sd);
       return t > 0.78 ? mixC(leaf[0], sunLeaf, (t - 0.78) * 3) : t > 0.55 ? mixC(leaf[1], leaf[0], (t - 0.55) * 4.3) : t > 0.3 ? mixC(leaf[2], leaf[1], (t - 0.3) * 4) : mixC(leaf[3], leaf[2], t * 3.3);
@@ -271,8 +320,10 @@ const Board3D = (() => {
     k.geo.trees = [0, 1, 2].map(v => {
       const r = rng(17 + v * 5), Hh = 1.05 + v * 0.18, R = 0.78 + v * 0.1, parts = [];
       parts.push([new THREE.CylinderGeometry(0.09, 0.15, Hh, 8), (x, y) => mixC(trunk[1], trunk[0], y / Hh + 0.5), mat4(0, Hh / 2, 0)]);
-      parts.push(foliage(0, Hh + R * 0.55, 0, R * 0.82, v, 2));
-      for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 + r(), el = 0.15 + r() * 0.9; parts.push(foliage(Math.cos(a) * R * 0.62 * Math.cos(el), Hh + R * 0.55 + Math.sin(el) * R * 0.55, Math.sin(a) * R * 0.62 * Math.cos(el), R * (0.38 + r() * 0.16), v * 10 + i)); }
+      for (let i = 0; i < 4; i++) { const a = i * 1.7 + v; parts.push([blob(0.1, 1, i, 0.2), trunk[1], mat4(Math.cos(a) * 0.12, 0.03, Math.sin(a) * 0.12, 1.4, 0.5, 0.8, -a)]); }
+      parts.push(foliage(0, Hh + R * 0.55, 0, R * 0.8, v, 2));
+      for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2 + r(), el = 0.1 + r() * 0.7; parts.push(foliage(Math.cos(a) * R * 0.6 * Math.cos(el), Hh + R * 0.5 + Math.sin(el) * R * 0.5, Math.sin(a) * R * 0.6 * Math.cos(el), R * (0.42 + r() * 0.12), v * 10 + i, 2)); }
+      for (let i = 0; i < 16; i++) { const a = r() * Math.PI * 2, el = -0.1 + r() * 1.3, rr = R * (0.82 + r() * 0.12); parts.push(foliage(Math.cos(a) * rr * Math.cos(el), Hh + R * 0.55 + Math.sin(el) * rr * 0.8, Math.sin(a) * rr * Math.cos(el), R * (0.16 + r() * 0.1), v * 40 + i, 1)); }
       return merge(parts);
     });
     k.geo.bush = merge([foliage(0, 0.2, 0, 0.3, 1, 1), foliage(0.22, 0.16, 0.05, 0.22, 2, 1), foliage(-0.2, 0.15, -0.04, 0.22, 3, 1), foliage(0.02, 0.33, -0.05, 0.2, 4, 1)]);
@@ -344,23 +395,29 @@ const Board3D = (() => {
     }
     worldGroup.add(cob);
     // border wall: two dressed stones per tile with moss and hanging vines
-    const wall = inst(k.geo.stone, k.mats.wall, 120), moss = inst(k.geo.moss, k.mats.vc, 260, false), vines = inst(k.geo.vine, k.mats.leaf, 40, false);
+    const walls = k.geo.cut.map(g => inst(g, k.mats.wall, 260)), moss = inst(k.geo.moss, k.mats.vc, 360, false), vines = inst(k.geo.vine, k.mats.leaf, 40, false);
     for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
       if (!(x === 0 || y === 0 || x === cols - 1 || y === rows - 1)) continue;
-      const corner = (x === 0 || x === cols - 1) && (y === 0 || y === rows - 1), gap = 0.05 + hsh(x, y, 4) * 0.03;
-      const pieces = [[0, 0, 1, 1]];
-      pieces.forEach(([px, pz, pw, pd], i) => {
-        const h = Hh.wall * (0.9 + hsh(x * 2 + i, y, 5) * 0.16) * (corner ? 1.08 : 1), t = 0.78 + hsh(x, y * 2 + i, 7) * 0.32, jx = (hsh(x, y, 11) - 0.5) * 0.04, jz = (hsh(x, y, 12) - 0.5) * 0.04;
-        put(wall, x + px + pw / 2 + jx, h / 2 - 0.04, y + pz + pd / 2 + jz, pw - gap, h, pd - gap, (hsh(x, y, 15) - 0.5) * 0.06, C.setRGB(t, t * 0.99, t * 0.95));
-        if (hsh(x, y, 9 + i) < 0.6) for (let m = 0; m < 3; m++) { const mx = x + px + 0.12 + hsh(x, i, m) * (pw - 0.24), mz = y + pz + 0.12 + hsh(y, i, m + 3) * (pd - 0.24), s = 0.08 + hsh(x + m, y, i) * 0.1; put(moss, mx, h - 0.05, mz, s, s * 0.45, s * 0.9, hsh(m, x, y) * 6); }
-      });
+      const corner = (x === 0 || x === cols - 1) && (y === 0 || y === rows - 1), alongZ = (x === 0 || x === cols - 1) && !corner;
+      // two courses of stones laid along the wall; the upper course is offset like real masonry
+      const h1 = Hh.wall * (0.5 + hsh(x, y, 4) * 0.1), h2 = Hh.wall - h1 + (hsh(x, y, 5) - 0.5) * 0.06, s1 = 0.38 + hsh(x, y, 6) * 0.24, s2 = (s1 + 0.5) % 1 * 0.6 + 0.2;
+      const courses = corner ? [[0, h1, [[0, 1]]], [h1, h2, [[0, 0.55], [0.55, 0.45]]]] : [[0, h1, [[0, s1], [s1, 1 - s1]]], [h1, h2, [[0, s2], [s2, 1 - s2]]]];
+      let si = 0;
+      for (const [y0, ch, pieces] of courses) for (const [a0, len] of pieces) {
+        const sd = hsh(x * 7 + si, y * 5 + si, 21), gap = 0.035, t = 0.72 + sd * 0.36, depth = 0.86 + hsh(x, y + si, 22) * 0.12, off = (hsh(x + si, y, 23) - 0.5) * 0.06;
+        const cx = alongZ ? x + 0.5 + off : x + a0 + len / 2, cz = alongZ ? y + a0 + len / 2 : y + 0.5 + off;
+        const sx = alongZ ? depth : len - gap, sz = alongZ ? len - gap : depth, sh = ch - gap;
+        put(walls[(si + x + y) % 3], cx, y0 + sh / 2 - 0.03, cz, sx, sh, sz, (sd - 0.5) * 0.12, C.setRGB(t, t * (0.97 + sd * 0.05), t * 0.94));
+        if (y0 > 0 && sd < 0.55) for (let m = 0; m < 2; m++) { const s = 0.08 + hsh(x + m, y, si) * 0.09; put(moss, cx + (hsh(m, x, si) - 0.5) * sx * 0.6, y0 + sh - 0.04, cz + (hsh(si, y, m) - 0.5) * sz * 0.6, s, s * 0.45, s * 0.9, hsh(m, x, y) * 6); }
+        si++;
+      }
       if (y === 0 && !corner && hsh(x, y, 13) < 0.45) put(vines, x + 0.25 + hsh(x, 1, 1) * 0.4, Hh.wall - 0.04, 1.0, 1, 1, 1);
       if (y === rows - 1 && !corner && hsh(x, y, 14) < 0.35) put(vines, x + 0.25 + hsh(x, 2, 2) * 0.4, Hh.wall - 0.04, rows, 1, 1, 1);
     }
     const wallAo = inst(k.geo.ao, k.mats.ao, 60, false); wallAo.castShadow = false; wallAo.renderOrder = 1;
     for (let x = 1; x < cols - 1; x++) { put(wallAo, x + 0.5, 0.014, 0.85, 1.25, 1, 1.0); put(wallAo, x + 0.5, 0.014, rows - 0.85, 1.25, 1, 1.0); }
     for (let y = 1; y < rows - 1; y++) { put(wallAo, 0.85, 0.014, y + 0.5, 1.0, 1, 1.25); put(wallAo, cols - 0.85, 0.014, y + 0.5, 1.0, 1, 1.25); }
-    worldGroup.add(wall, moss, vines, wallAo);
+    worldGroup.add(...walls, moss, vines, wallAo);
     // trees, bushes, rocks and the rest — tall things never stand where they would hide the arena
     const trees = k.geo.trees.map(g => inst(g, k.mats.leaf, 120)), bush = inst(k.geo.bush, k.mats.leaf, 240), rock = inst(k.geo.rockSmall, k.mats.vc, 120), mush = inst(k.geo.mushroom, k.mats.vc, 80, false), flow = inst(k.geo.flower, k.mats.vc, 900, false);
     const r2 = rng(5);
@@ -400,7 +457,7 @@ const Board3D = (() => {
     const skin = j => (pl && pl.skins[j]) || 'pillar', paved = j => pl && pl.decals[j] === 'paving';
     // turf slabs (four texture variants) or flagstones on the plaza
     const slabs = k.mats.grass.map(m => inst(k.geo.slab, m, n, false)), flags = inst(k.geo.flag, k.mats.paving, n * 3, false);
-    const tufts = inst(k.geo.tuft, k.mats.blade, n * 6, false), flowers = inst(k.geo.flower, k.mats.vc, n, false), clovers = inst(k.geo.clover, k.mats.vc, n, false);
+    const tufts = inst(k.geo.tufts[1], k.mats.blade, n * 6, false), tufts2 = inst(k.geo.tufts[0], k.mats.blade, n * 6, false), flowers = inst(k.geo.flower, k.mats.vc, n, false), clovers = inst(k.geo.clover, k.mats.vc, n, false);
     for (let y = 1; y < rows - 1; y++) for (let x = 1; x < cols - 1; x++) {
       const j = y * cols + x, hard = grid[j] === HARD;
       if (paved(j)) {
@@ -412,10 +469,11 @@ const Board3D = (() => {
       put(slabs[v], x + 0.5, -0.08 + hsh(x, y, 3) * 0.008, y + 0.5, 1, 1, 1, ((hsh(x, y, 2) * 4) | 0) * Math.PI / 2, C.setRGB(t, t, t * 0.96));
       if (hard && skin(j) === 'pillar') continue;
       for (let i = 0; i < 6; i++) { const e = hsh(x, y, 20 + i), along = hsh(x, y, 30 + i), side = i % 4; const px = side < 2 ? x + 0.06 + along * 0.88 : x + (side === 2 ? 0.07 : 0.93), pz = side < 2 ? y + (side === 0 ? 0.07 : 0.93) : y + 0.06 + along * 0.88; if (e < 0.8) put(tufts, px, 0, pz, 1 + e * 0.8, 1 + e, 1 + e * 0.8, e * 6); }
+      for (let i = 0; i < 6; i++) { const e = hsh(x, y, 40 + i); put(tufts2, x + 0.12 + hsh(x, y, 50 + i) * 0.76, 0, y + 0.12 + hsh(x, y, 60 + i) * 0.76, 0.9 + e * 0.6, 0.8 + e * 0.5, 0.9 + e * 0.6, e * 6); }
       if (hsh(x, y, 7) < world.floor.flowerRate * 1.3) for (let i = 0; i < 1 + ((hsh(x, y, 8) * 3) | 0); i++) { const c = world.floor.flowers[((hsh(x, y, 9) * world.floor.flowers.length) | 0)]; put(flowers, x + 0.2 + hsh(i, x, y) * 0.6, 0.005, y + 0.2 + hsh(x, i, y) * 0.6, 1, 1, 1, hsh(i, i, x) * 6, lin(c[0] === '#ffffff' ? '#ffffff' : c[0])); }
       if (hsh(x, y, 4) < world.floor.cloverRate) for (let i = 0; i < 3; i++) put(clovers, x + 0.25 + hsh(i, y, x + 1) * 0.5, 0.003, y + 0.25 + hsh(y, i, x + 2) * 0.5, 1, 1, 1, hsh(x, i, 5) * 6);
     }
-    levelGroup.add(...slabs, flags, tufts, flowers, clovers);
+    levelGroup.add(...slabs, flags, tufts, tufts2, flowers, clovers);
     // plaza centrepiece: a ring of dressed stone round a flower bed
     if (pl && pl.decals.some(d => d === 'paving')) {
       let x0 = 99, y0 = 99, x1 = -1, y1 = -1;
@@ -498,12 +556,15 @@ const Board3D = (() => {
   // ---------- camera ----------
   // Fit the arena (optionally cropping the outer part of the side walls) inside the rectangle the
   // game reserves for it, keeping the world's camera angle; the lens is shifted to centre it there.
-  let fitRect = null, crop = 0, unitT = 1;
+  // crop: how much of the outer wall may fall outside the rectangle ({ x, top, bottom } in tiles).
+  let fitRect = null, crop = { x: 0, top: 0, bottom: 0 }, orient = 'portrait', unitT = 1;
   function fitCamera() {
-    const c = world.scene3d.camera, el = c.elevation * Math.PI / 180, center = new THREE.Vector3(7.5, 0, 6.5), dir = new THREE.Vector3(0, Math.sin(el), Math.cos(el));
+    const base = world.scene3d.camera, c = Object.assign({}, base, base[orient] || {});
+    const el = c.elevation * Math.PI / 180, center = new THREE.Vector3(7.5, 0, 6.5), dir = new THREE.Vector3(0, Math.sin(el), Math.cos(el));
     camera.fov = c.fov; camera.aspect = W / H; camera.clearViewOffset();
-    const hw = world.scene3d.heights.wall, pts = [];
-    for (const x of [crop, 15 - crop]) for (const z of [0, 13]) for (const y of [0, hw]) pts.push(new THREE.Vector3(x, y, z));
+    const hw = world.scene3d.heights.wall, pts = [], all = [];
+    for (const x of [crop.x, 15 - crop.x]) for (const z of [crop.top, 13 - crop.bottom]) for (const y of [0, hw]) pts.push(new THREE.Vector3(x, y, z));
+    for (const x of [0, 15]) for (const z of [0, 13]) all.push(new THREE.Vector3(x, 0, z));
     let d = 26, box = null;
     for (let it = 0; it < 8; it++) {
       camera.position.copy(center).addScaledVector(dir, d); camera.lookAt(center); camera.updateMatrixWorld(); camera.updateProjectionMatrix();
@@ -515,6 +576,8 @@ const Board3D = (() => {
     const dx = fitRect.x + fitRect.w / 2 - (box[0] + box[2]) / 2, dy = fitRect.y + fitRect.h / 2 - (box[1] + box[3]) / 2;
     camera.setViewOffset(W, H, -dx, -dy, W, H); camera.updateProjectionMatrix();
     VP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    const b = bounds(all);   // keep the whole arena in focus
+    focus.uniforms.rect.value.set((b[0] + b[2]) / 2 / W, 1 - (b[1] + b[3]) / 2 / H, (b[2] - b[0]) / 2 / W * 1.02, (b[3] - b[1]) / 2 / H * 1.04);
     scene.fog.near = d * 0.95; scene.fog.far = d * 2.3;
     camera.far = d * 4; camera.near = 0.5; camera.updateProjectionMatrix(); VP.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
   }
@@ -555,6 +618,12 @@ const Board3D = (() => {
     const sc = sun.shadow.camera; sc.left = -15; sc.right = 15; sc.top = 15; sc.bottom = -15; sc.near = 1; sc.far = 60;
     scene.add(sun, sun.target);
     fill = new THREE.DirectionalLight('#fff', 0.4); scene.add(fill, fill.target);
+    // post-processing: MSAA scene → bloom (lanterns, sunlit highlights) → soft focus around the arena → tone map
+    composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 }));
+    composer.addPass(new RenderPass(scene, camera));
+    bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.32, 0.45, 1.15); composer.addPass(bloom);
+    focus = new ShaderPass(FocusShader); composer.addPass(focus);
+    composer.addPass(new OutputPass());
     document.addEventListener('visibilitychange', () => { dirty = true; });
     cv.addEventListener('webglcontextlost', e => { e.preventDefault(); renderer = null; if (onLost) onLost(); }, false);
     return true;
@@ -572,8 +641,11 @@ const Board3D = (() => {
   }
   function resize(o) {
     if (!renderer) return;
-    W = o.W; H = o.H; unitT = o.T; fitRect = o.fit; crop = o.crop;
-    renderer.setPixelRatio(Math.min(o.DPR, 2.5)); renderer.setSize(W, H, false);
+    W = o.W; H = o.H; unitT = o.T; fitRect = o.fit; crop = o.crop; orient = o.orient;
+    const pr = Math.min(o.DPR, 2.5);
+    renderer.setPixelRatio(pr); renderer.setSize(W, H, false);
+    composer.setPixelRatio(pr); composer.setSize(W, H);
+    focus.uniforms.texel.value.set(1 / W, 1 / H);
     if (world) fitCamera(); dirty = true;
   }
   function build(st) {
@@ -588,7 +660,7 @@ const Board3D = (() => {
     const moved = sync(st);
     if (moved || dirty) {
       if (dirty || moved === 2) renderer.shadowMap.needsUpdate = true;   // animation frames reuse the last shadow map
-      renderer.render(scene, camera); dirty = false;
+      composer.render(); dirty = false;
     }
   }
   // Lantern flicker and drifting motes, handed to the game's additive glow pass in screen space.
