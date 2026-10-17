@@ -296,6 +296,9 @@ h2.warn{color:var(--warn)} h2.good{color:var(--good)}
 </div>
 <div id="safe"></div>
 
+<script src="js/worlds.js"></script>
+<script src="js/levels.js"></script>
+<script src="js/board.js"></script>
 <script>
 (() => {
 'use strict';
@@ -326,13 +329,8 @@ const store = {
 const settings = { music: store.get('music', true), sfx: store.get('sfx', true), haptics: store.get('haptics', true) };
 
 // ================= content tables =================
-const THEMES = [
-  { name: 'PRADERA', bg: ['#1f4a32', '#0a1710'], floor: ['#62ad4f', '#59a147'], det: '#7cc766', det2: '#3f7f32', hard: ['#c3cad4', '#8e97a4', '#4f5663'], border: ['#8f98a5', '#6a7380', '#3a404b'], soft: ['#e48d4b', '#b9612d', '#6e3416'], mortar: '#7a3a18', accent: '#b8ff6a', grass: true },
-  { name: 'DESIERTO', bg: ['#4d3416', '#190f07'], floor: ['#ebc47c', '#e0b76c'], det: '#f5d698', det2: '#c39250', hard: ['#d0a46c', '#a3753f', '#5e4020'], border: ['#a77b48', '#83592d', '#4a3218'], soft: ['#e4a252', '#b8752e', '#6b4014'], mortar: '#8a5220', accent: '#ffd36b', sand: true },
-  { name: 'GLACIAR', bg: ['#173a5e', '#071426'], floor: ['#cdebf7', '#bfe1f1'], det: '#ffffff', det2: '#8fc2dc', hard: ['#8cbade', '#5b8cb6', '#2f5578'], border: ['#6d9cc2', '#4c7aa2', '#264466'], soft: ['#bdeaff', '#76c1ec', '#2f80b8'], mortar: '#effcff', accent: '#9ff2ff', ice: true },
-  { name: 'VOLCÁN', bg: ['#3d100b', '#110303'], floor: ['#4f3c3a', '#473634'], det: '#ff6a2a', det2: '#2a1f1d', hard: ['#75625d', '#4d3e3b', '#251c1a'], border: ['#5c4b48', '#3d312e', '#1e1715'], soft: ['#8e5b46', '#62392a', '#311a12'], mortar: '#ff7a2a', accent: '#ff8a3a', lava: true },
-  { name: 'NEÓN', bg: ['#1c1042', '#04020d'], floor: ['#231c4e', '#1e1846'], det: '#3a2f8a', det2: '#ff3df2', hard: ['#5243a6', '#352a80', '#180f44'], border: ['#3f338c', '#2b2268', '#140c38'], soft: ['#8240c2', '#58268f', '#2a0f4a'], mortar: '#ff4df5', accent: '#3df5ff', neon: true },
-];
+// Worlds (materials, lighting, scenery and level rules) live in js/worlds.js; levels are built by js/levels.js
+// and painted by js/board.js. This file keeps the rules of the game.
 const PALS = [
   { name: 'TÚ', style: 'classic', suit: '#2361c9', suit2: '#103479', shirt: '#e7e2fb', ball: '#ff6fb8', ball2: '#b8287a', glove: '#ff7dbd', glove2: '#c92a7f', boot: '#ff7dbd', boot2: '#c92a7f', trim: '#5ff6ff', visor: '#ffdcc0' },
   { name: 'PUNK', style: 'punk', suit: '#e8283a', suit2: '#7d0d1c', shirt: '#fff0e6', ball: '#ffd23f', ball2: '#c27a00', glove: '#ffe066', glove2: '#c28f00', boot: '#3a2a66', boot2: '#170d33', trim: '#ffd23f', visor: '#ffdcc0' },
@@ -378,7 +376,7 @@ const G = {
   grid: new Uint8Array(N), items: new Array(N).fill(null), fire: new Float32Array(N), fireChain: new Int32Array(N), fireOwner: new Array(N).fill(null),
   bombGrid: new Array(N).fill(null), danger: new Float32Array(N),
   bombs: [], explosions: [], burning: [], players: [], enemies: [], particles: [], texts: [], falling: [],
-  exit: null, theme: THEMES[0], stage: 1, score: 0, lives: 3, nextLife: 10000, timeLeft: 200, hurry: false, timeUp: false,
+  exit: null, world: WORLDS.forest, plan: null, stage: 1, score: 0, lives: 3, nextLife: 10000, timeLeft: 200, hurry: false, timeUp: false,
   chainSeq: 0, chainKills: {}, kills: [], shake: 0, flash: 0, hero: null, round: 0, target: 3, difficulty: 1,
   sudden: false, suddenIdx: 0, suddenT: 0, spiral: null, fieldT: 0, musicKey: 'title', snapshot: null,
 };
@@ -616,7 +614,7 @@ let TOPBAR = 0, VX = 0, VY = 0, VW = 0, VH = 0, VX0 = 0, VY0 = 0, CAM = 0, CAMX 
 function applyCam(c, cx = CAMX) { CAM = c; CAMX = cx; VY = VY0 - c; VX = VX0 - cx; FX = VX - CROP * T; FY = VY - CROP * T; }
 function camTarget() {
   if (!zoomed) return 0;
-  const lo = VY0 - TOPBAR, hi = VY0 + VH - H + SA.b + 4;
+  const lo = VY0 - TOPBAR - CROP * T, hi = VY0 + VH + CROP * T - H + SA.b + 4;   // full border wall in reach
   if (hi <= lo) return (lo + hi) / 2;
   const h = G.hero && G.mode !== 'demo' ? G.hero : null;
   const y = h ? VY0 + (h.y + 0.5 - CROP) * T : VY0 + VH / 2;
@@ -645,8 +643,9 @@ function layout() {
     const maxW = W - 8 - SA.l - SA.r, maxH = H - top - SA.b - ctlH - 44;
     T = Math.max(8, Math.floor(Math.min(maxW / EC, maxH / ER) * DPR) / DPR);
     const block = T * ER + 44, spare = Math.max(0, H - SA.b - ctlH - top - block);
-    VX0 = snap((W - T * EC) / 2); VY0 = snap(top + spare / 2);
-    const y0 = VY0 + T * ER, y1 = H - SA.b, mid = y0 + 44 + (y1 - y0 - 44) * 0.5;
+    // The whole border wall is drawn (its outer part sits beyond the playfield), so leave room for it when there is space.
+    VX0 = snap((W - T * EC) / 2); VY0 = snap(top + Math.max(spare / 2, Math.min(spare, CROP * T)));
+    const y0 = VY0 + T * (ER + CROP), y1 = H - SA.b, mid = y0 + 44 + (y1 - y0 - 44) * 0.5;
     ctrl = { stickX: W * 0.27, stickY: mid, bombX: W * 0.76, bombY: mid + 4, detX: W * 0.76 - 100, detY: mid - 78, zoneTop: y0 };
     pw.className = ''; Object.assign(pw.style, { left: '8px', right: '8px', width: '', top: (y0 + 8) + 'px' });
     $('controls').classList.remove('ghost'); hud.classList.remove('over');
@@ -658,14 +657,14 @@ function layout() {
     const usableH = H - TOPBAR - SA.b, usableW = W - SA.l - SA.r, rowsVis = H < 520 ? 7.2 : 9.2;
     T = Math.max(8, Math.floor((usableH / rowsVis) * DPR) / DPR);
     const fw = T * EC;
-    VX0 = snap(fw <= usableW ? SA.l + (usableW - fw) / 2 : SA.l + 4); VY0 = snap(TOPBAR);
+    VX0 = snap(fw <= usableW ? SA.l + (usableW - fw) / 2 : SA.l + 4); VY0 = snap(TOPBAR + CROP * T);
     const r = Math.min(100, H * 0.27);
     ctrl = { stickX: SA.l + r + 4, stickY: H - SA.b - r, bombX: W - SA.r - r + 6, bombY: H - SA.b - r + 4, detX: W - SA.r - r - 6, detY: H - SA.b - r * 2 - 50, zoneTop: 0 };
     pw.className = 'band'; Object.assign(pw.style, { left: (W / 2) + 'px', right: 'auto', width: 'auto', top: (SA.t + 8) + 'px' });
     $('controls').classList.add('ghost'); hud.classList.add('over');
   }
   VW = T * EC; VH = T * ER;
-  BH = Math.max(H, VY0 + VH + SA.b + 10); BW = Math.max(W, VX0 + VW + SA.r + 10);
+  BH = Math.max(H, VY0 + VH + CROP * T + SA.b + 10); BW = Math.max(W, VX0 + VW + SA.r + 10);
   CAMX = 0; applyCam(camTarget(), camTargetX());
   placeAt($('bombBtn'), ctrl.bombX, ctrl.bombY);
   placeAt($('detBtn'), ctrl.detX, ctrl.detY);
@@ -677,143 +676,24 @@ function layout() {
 function placePowers() { /* positioned in layout() */ }
 function placeAt(el, x, y) { el.style.transform = `translate(${x}px,${y}px)`; }
 
-function drawBlock(g, s, col, th, border) {
-  const p = s * 0.03, r = s * 0.16, front = s * 0.21;
-  g.fillStyle = col[2]; rr(g, p, p, s - 2 * p, s - 2 * p, r); g.fill();
-  const gr = g.createLinearGradient(0, p, 0, s - front); gr.addColorStop(0, col[0]); gr.addColorStop(1, col[1]);
-  g.fillStyle = gr; rr(g, p, p, s - 2 * p, s - front - p, r); g.fill();
-  g.strokeStyle = 'rgba(255,255,255,0.3)'; g.lineWidth = s * 0.035; rr(g, p + s * 0.05, p + s * 0.05, s - 2 * p - s * 0.1, s - front - p - s * 0.1, r * 0.75); g.stroke();
-  if (border) {
-    g.fillStyle = 'rgba(0,0,0,0.28)';
-    for (const [bx, by] of [[0.24, 0.22], [0.76, 0.22], [0.24, 0.6], [0.76, 0.6]]) { g.beginPath(); g.arc(s * bx, s * by, s * 0.05, 0, 7); g.fill(); }
-    g.fillStyle = 'rgba(255,255,255,0.35)';
-    for (const [bx, by] of [[0.24, 0.22], [0.76, 0.22], [0.24, 0.6], [0.76, 0.6]]) { g.beginPath(); g.arc(s * bx - s * 0.012, s * by - s * 0.015, s * 0.022, 0, 7); g.fill(); }
-  } else {
-    g.fillStyle = 'rgba(0,0,0,0.16)'; rr(g, s * 0.28, s * 0.24, s * 0.44, s * 0.32, s * 0.08); g.fill();
-    g.fillStyle = 'rgba(255,255,255,0.2)'; rr(g, s * 0.28, s * 0.21, s * 0.44, s * 0.06, s * 0.03); g.fill();
-  }
-  // front face grooves
-  g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = s * 0.03; g.beginPath();
-  g.moveTo(s * 0.35, s - front + s * 0.03); g.lineTo(s * 0.35, s - p * 2); g.moveTo(s * 0.68, s - front + s * 0.03); g.lineTo(s * 0.68, s - p * 2); g.stroke();
-  if (th.neon) { g.save(); g.shadowColor = th.accent; g.shadowBlur = s * 0.3; g.strokeStyle = th.accent; g.lineWidth = s * 0.045; rr(g, p * 2.5, p * 2.5, s - 5 * p, s - front - 3 * p, r); g.stroke(); g.restore(); }
-  if (th.lava && !border) { g.save(); g.shadowColor = '#ff5a1a'; g.shadowBlur = s * 0.2; g.strokeStyle = '#ff8a3a'; g.lineWidth = s * 0.03; g.beginPath(); g.moveTo(s * 0.2, s * 0.15); g.lineTo(s * 0.32, s * 0.3); g.lineTo(s * 0.27, s * 0.45); g.stroke(); g.restore(); }
-  g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = s * 0.032; rr(g, p, p, s - 2 * p, s - 2 * p, r); g.stroke();
-}
-function drawSoft(g, s, th) {
-  const p = s * 0.04, front = s * 0.2, top = s - front, c = th.soft;
-  g.fillStyle = c[2]; rr(g, p, p, s - 2 * p, s - 2 * p, s * 0.1); g.fill();
-  const gr = g.createLinearGradient(0, p, 0, top); gr.addColorStop(0, c[0]); gr.addColorStop(1, c[1]);
-  g.fillStyle = gr; rr(g, p, p, s - 2 * p, top - p, s * 0.1); g.fill();
-  g.save(); rr(g, p, p, s - 2 * p, s - 2 * p, s * 0.1); g.clip();
-  const rows = 3, rh = (top - p) / rows;
-  g.strokeStyle = th.mortar; g.lineWidth = Math.max(1, s * 0.045);
-  if (th.lava || th.neon) { g.shadowColor = th.mortar; g.shadowBlur = s * 0.22; }
-  g.beginPath();
-  for (let i = 1; i <= rows; i++) { g.moveTo(p, p + i * rh); g.lineTo(s - p, p + i * rh); }
-  for (let i = 0; i < rows; i++) {
-    const xs = i % 2 ? [0.25, 0.75] : [0.5];
-    for (const fx of xs) { g.moveTo(s * fx, p + i * rh); g.lineTo(s * fx, p + (i + 1) * rh); }
-  }
-  g.moveTo(s * 0.36, top); g.lineTo(s * 0.36, s); g.moveTo(s * 0.7, top); g.lineTo(s * 0.7, s);
-  g.stroke(); g.shadowBlur = 0;
-  g.strokeStyle = 'rgba(255,255,255,0.25)'; g.lineWidth = s * 0.028; g.beginPath();
-  for (let i = 0; i < rows; i++) { g.moveTo(p + s * 0.05, p + i * rh + s * 0.05); g.lineTo(s - p - s * 0.05, p + i * rh + s * 0.05); }
-  g.stroke();
-  if (th.ice) {
-    g.fillStyle = 'rgba(255,255,255,0.35)'; g.beginPath(); g.moveTo(s * 0.15, s * 0.7); g.lineTo(s * 0.55, s * 0.08); g.lineTo(s * 0.7, s * 0.08); g.lineTo(s * 0.3, s * 0.7); g.fill();
-  }
-  g.restore();
-  g.strokeStyle = 'rgba(0,0,0,0.45)'; g.lineWidth = s * 0.032; rr(g, p, p, s - 2 * p, s - 2 * p, s * 0.1); g.stroke();
-}
+// ================= board (painted by js/board.js) =================
+function boardView() { return { T, FX, FY, BW, BH, DPR, cols: COLS, rows: ROWS, grid: G.grid, plan: G.plan, HARD, SOFT }; }
 function buildSprites() {
-  const s = Math.max(8, Math.round(T * DPR)), th = G.theme;
-  SPR.hard = mk(s, s); drawBlock(SPR.hard.getContext('2d'), s, th.hard, th, false);
-  SPR.border = mk(s, s); drawBlock(SPR.border.getContext('2d'), s, th.border, th, true);
-  SPR.soft = mk(s, s); drawSoft(SPR.soft.getContext('2d'), s, th);
-  SPR.burn = mk(s, s); const b = SPR.burn.getContext('2d'); b.drawImage(SPR.soft, 0, 0);
-  b.globalCompositeOperation = 'source-atop'; b.fillStyle = 'rgba(255,110,30,0.65)'; b.fillRect(0, 0, s, s);
-  SPR.fire = glowOf('#ff8a2a'); SPR.yellow = glowOf('#ffd84a'); SPR.white = glowOf('#ffffff'); SPR.accent = glowOf(th.accent);
-}
-function zig(g, x, y, t, seed) {
-  g.beginPath(); g.moveTo(x, y);
-  for (let i = 1; i <= 3; i++) g.lineTo(x + t * (0.12 * i + (hash(i, seed, 7) - 0.5) * 0.12), y + t * (hash(seed, i, 9) - 0.5) * 0.3);
-  g.stroke();
-}
-function drawFloor(g, x, y, px, py, t, th) {
-  g.fillStyle = (x + y) & 1 ? th.floor[1] : th.floor[0]; g.fillRect(px, py, t + 0.6, t + 0.6);
-  const r1 = hash(x, y, 1), r2 = hash(x, y, 2), r3 = hash(x, y, 3);
-  g.lineCap = 'round';
-  if (th.grass) {
-    if (r3 < 0.35) { g.fillStyle = th.det2; g.globalAlpha = 0.18; g.beginPath(); g.ellipse(px + t * 0.5, py + t * 0.55, t * 0.32, t * 0.2, 0, 0, 7); g.fill(); g.globalAlpha = 1; }
-    g.strokeStyle = th.det; g.lineWidth = Math.max(1, t * 0.05);
-    for (let i = 0; i < 3; i++) {
-      const bx = px + t * (0.15 + hash(x, y, 10 + i) * 0.7), by = py + t * (0.25 + hash(x, y, 20 + i) * 0.62);
-      g.beginPath(); g.moveTo(bx - t * 0.05, by); g.lineTo(bx - t * 0.02, by - t * 0.12); g.moveTo(bx + t * 0.02, by); g.lineTo(bx + t * 0.06, by - t * 0.1); g.stroke();
-    }
-    if (r1 < 0.07) {
-      const fx = px + t * (0.25 + r2 * 0.5), fy = py + t * 0.4;
-      g.fillStyle = r2 < 0.5 ? '#fff4a3' : '#ffffff';
-      for (let k = 0; k < 4; k++) { g.beginPath(); g.arc(fx + Math.cos(k * 1.57) * t * 0.05, fy + Math.sin(k * 1.57) * t * 0.05, t * 0.04, 0, 7); g.fill(); }
-      g.fillStyle = '#ffb020'; g.beginPath(); g.arc(fx, fy, t * 0.03, 0, 7); g.fill();
-    }
-  } else if (th.sand) {
-    g.strokeStyle = th.det; g.lineWidth = Math.max(1, t * 0.04); g.globalAlpha = 0.7;
-    for (let i = 0; i < 2; i++) { g.beginPath(); g.arc(px + t * (0.3 + r1 * 0.4), py + t * (0.45 + i * 0.4), t * 0.3, 1.15 * Math.PI, 1.85 * Math.PI); g.stroke(); }
-    g.globalAlpha = 1;
-    if (r2 < 0.25) { g.fillStyle = th.det2; g.beginPath(); g.arc(px + t * (0.2 + r3 * 0.6), py + t * 0.75, t * 0.04, 0, 7); g.fill(); }
-  } else if (th.ice) {
-    g.strokeStyle = 'rgba(255,255,255,0.6)'; g.lineWidth = Math.max(1, t * 0.035);
-    g.beginPath(); g.moveTo(px + t * 0.15, py + t * (0.55 + r1 * 0.25)); g.lineTo(px + t * 0.45, py + t * (0.25 + r1 * 0.25)); g.stroke();
-    if (r2 < 0.22) { g.strokeStyle = 'rgba(70,130,170,0.35)'; zig(g, px + t * 0.2, py + t * (0.3 + r3 * 0.4), t, x * 31 + y); }
-  } else if (th.lava) {
-    g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = Math.max(1, t * 0.035); zig(g, px + t * 0.15, py + t * (0.2 + r2 * 0.6), t, x * 17 + y);
-    if (r1 < 0.13) { g.save(); g.shadowColor = '#ff4a10'; g.shadowBlur = t * 0.35; g.strokeStyle = '#ff8a3a'; g.lineWidth = Math.max(1, t * 0.05); zig(g, px + t * 0.2, py + t * (0.3 + r3 * 0.4), t, x * 7 + y * 3); g.restore(); }
-  } else if (th.neon) {
-    g.strokeStyle = 'rgba(61,245,255,0.13)'; g.lineWidth = 1; g.strokeRect(px + 0.5, py + 0.5, t - 1, t - 1);
-    if (r1 < 0.08) { g.save(); g.shadowColor = th.det2; g.shadowBlur = t * 0.4; g.fillStyle = th.det2; g.beginPath(); g.arc(px + t * 0.5, py + t * 0.5, t * 0.05, 0, 7); g.fill(); g.restore(); }
-  }
-}
-function wallShadow(g, x, y) {
-  const px = FX + x * T, py = FY + y * T;
-  if (y + 1 < ROWS && G.grid[idx(x, y + 1)] !== HARD) {
-    const gr = g.createLinearGradient(0, py + T, 0, py + T * 1.35); gr.addColorStop(0, 'rgba(0,0,0,0.3)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = gr; g.fillRect(px + T * 0.04, py + T, T * 0.96, T * 0.35);
-  }
-  if (x + 1 < COLS && G.grid[idx(x + 1, y)] !== HARD) {
-    const gr = g.createLinearGradient(px + T, 0, px + T * 1.2, 0); gr.addColorStop(0, 'rgba(0,0,0,0.22)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
-    g.fillStyle = gr; g.fillRect(px + T, py + T * 0.12, T * 0.2, T * 0.95);
-  }
+  Board.prepare(G.world, Math.max(8, Math.round(T * DPR)));
+  SPR.fire = glowOf('#ff8a2a'); SPR.yellow = glowOf('#ffd84a'); SPR.white = glowOf('#ffffff'); SPR.accent = glowOf(G.world.accent);
 }
 const isBorder = (x, y) => x === 0 || y === 0 || x === COLS - 1 || y === ROWS - 1;
 function buildBg() {
   const cam = CAM, camx = CAMX; applyCam(0, 0);
   bg.width = Math.round(BW * DPR); bg.height = Math.round(BH * DPR);
-  const g = bctx, th = G.theme, W = BW, H = BH, cx = VX + VW / 2, cy = FY + T * ROWS / 2;
-  g.setTransform(DPR, 0, 0, DPR, 0, 0);
-  const gr = g.createRadialGradient(cx, cy, 10, cx, cy, Math.max(W, H) * 0.8);
-  gr.addColorStop(0, th.bg[0]); gr.addColorStop(1, th.bg[1]);
-  g.fillStyle = gr; g.fillRect(0, 0, W, H);
-  g.save(); g.globalAlpha = 0.045; g.strokeStyle = '#fff'; g.lineWidth = 16;
-  for (let i = -H; i < W; i += 52) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + H, H); g.stroke(); }
-  g.restore();
-  g.save(); g.shadowColor = 'rgba(0,0,0,0.7)'; g.shadowBlur = 30; g.shadowOffsetY = 12; g.fillStyle = '#000';
-  g.fillRect(VX + 4, VY + 4, VW - 8, VH - 8); g.restore();
-  g.save(); rr(g, VX, VY, VW, VH, T * 0.3); g.clip();
-  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) drawFloor(g, x, y, FX + x * T, FY + y * T, T, th);
-  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (G.grid[idx(x, y)] === HARD) wallShadow(g, x, y);
-  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (G.grid[idx(x, y)] === HARD) g.drawImage(isBorder(x, y) ? SPR.border : SPR.hard, FX + x * T, FY + y * T, T, T);
-  const vg = g.createRadialGradient(cx, cy, T * 3, cx, cy, T * ROWS * 0.9);
-  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(0,0,0,0.3)');
-  g.fillStyle = vg; g.fillRect(VX, VY, VW, VH);
-  g.restore();
-  g.strokeStyle = 'rgba(255,255,255,0.14)'; g.lineWidth = 2; rr(g, VX - 1, VY - 1, VW + 2, VH + 2, T * 0.3); g.stroke();
+  bctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  Board.paintBackground(bctx, boardView());
   applyCam(cam, camx);
 }
 function paintHardToBg(x, y) {
   const cam = CAM, camx = CAMX; applyCam(0, 0);
   bctx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  wallShadow(bctx, x, y);
-  bctx.drawImage(SPR.hard, FX + x * T, FY + y * T, T, T);
+  Board.paintHard(bctx, boardView(), x, y);
   applyCam(cam, camx);
 }
 
@@ -836,13 +716,11 @@ function resetWorld() {
   G.exit = null; G.chainKills = {}; G.kills.length = 0; G.shake = 0; G.flash = 0; G.fast = false; G.fieldT = 0;
   G.sudden = false; G.suddenIdx = 0; G.suddenT = 0; G.hurry = false; G.timeUp = false;
 }
-function buildArena(density, protect) {
-  const prot = new Set(protect.map(([x, y]) => idx(x, y)));
-  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
-    const j = idx(x, y);
-    if (isBorder(x, y) || (x % 2 === 0 && y % 2 === 0)) G.grid[j] = HARD;
-    else G.grid[j] = !prot.has(j) && Math.random() < density ? SOFT : EMPTY;
-  }
+// Builds the arena from the world's level rules (js/levels.js) and keeps the plan for the renderer.
+function buildArena(rng, density, protect, layout) {
+  const plan = LevelGen.create({ cols: COLS, rows: ROWS, codes: { EMPTY, HARD, SOFT }, rules: G.world.levels, rng, density, protect, layout });
+  G.plan = plan; G.grid.set(plan.grid);
+  return plan;
 }
 function cells(type) { const out = []; for (let j = 0; j < N; j++) if (G.grid[j] === type) out.push(j); return out; }
 
@@ -856,21 +734,17 @@ function newAdventure(stage) {
   enterGame();
   startStage();
 }
-function stageEnemies(s) {
-  const count = Math.min(3 + Math.ceil(s * 0.55), 11), top = Math.min(6, Math.floor(s / 2)), out = [];
-  for (let i = 0; i < count; i++) out.push(Math.max(0, top - Math.floor(Math.pow(Math.random(), 1.6) * (top + 1))));
-  return out;
-}
 function startStage() {
   const s = G.stage, p = G.hero;
-  G.theme = THEMES[Math.floor((s - 1) / 3) % THEMES.length];
+  G.world = worldForStage(s);
   resetWorld();
   Object.assign(p, { x: 1, y: 1, alive: true, deadT: 0, active: 0, face: 0, moving: false, shieldT: 0, inv: 0 });
   G.players = [p];
   G.snapshot = { score: G.score, lives: G.lives, bombs: p.bombs, power: p.power, speed: p.speed, kick: p.kick, remote: p.remote, bpass: p.bpass, wpass: p.wpass };
-  const boss = s % 5 === 0;
-  buildArena(boss ? 0.22 : Math.min(0.5, 0.36 + s * 0.006), [[1, 1], [2, 1], [1, 2], [3, 1], [1, 3]]);
-  const softs = shuffle(cells(SOFT));
+  // Each stage has its own seed, so a level is always the same layout (and a retry replays it).
+  const boss = s % 5 === 0, rules = G.world.levels, dn = rules.density, rng = makeRng(s * 7919 + 101);
+  const plan = buildArena(rng, boss ? dn.boss : Math.min(dn.max, dn.base + s * dn.perStage), [[1, 1], [2, 1], [1, 2], [3, 1], [1, 3]], boss ? rules.bossLayout : s === 1 ? rules.firstLayout : null);
+  const softs = LevelGen.cellsOf(plan, SOFT, rng);
   let rest = softs;
   if (boss) G.exit = null; // the portal appears where the boss falls
   else {
@@ -879,21 +753,22 @@ function startStage() {
     G.exit = { x: ej % COLS, y: (ej / COLS) | 0, cd: 0 };
     rest = softs.filter(j => j !== ej);
   }
-  const items = [SPECIAL[(s - 1) % SPECIAL.length], pick(['bomb', 'fire', 'bomb', 'fire', 'speed'])];
-  if (s % 4 === 0) items.push(pick(['bomb', 'fire', 'speed']));
+  const rpick = a => a[(rng() * a.length) | 0];
+  const items = [SPECIAL[(s - 1) % SPECIAL.length], rpick(['bomb', 'fire', 'bomb', 'fire', 'speed'])];
+  if (s % 4 === 0) items.push(rpick(['bomb', 'fire', 'speed']));
   items.forEach((it, i) => { if (rest[i] !== undefined) G.items[rest[i]] = it; });
-  const empties = shuffle(cells(EMPTY).filter(j => manhattan(j, 1, 1) >= 7));
+  const empties = LevelGen.cellsOf(plan, EMPTY, rng).filter(j => manhattan(j, 1, 1) >= 7);
   if (boss) {
     const bj = empties.slice().sort((a, b) => manhattan(b, 1, 1) - manhattan(a, 1, 1))[0];
     G.enemies.push(makeEnemy(BOSS, bj % COLS, (bj / COLS) | 0));
     empties.splice(empties.indexOf(bj), 1);
   }
-  (boss ? [Math.min(6, Math.floor(s / 2)), Math.min(6, Math.floor(s / 2))] : stageEnemies(s))
+  (boss ? [Math.min(6, Math.floor(s / 2)), Math.min(6, Math.floor(s / 2))] : LevelGen.roster(s, rules, rng))
     .forEach((type, i) => { const j = empties[i]; if (j !== undefined) G.enemies.push(makeEnemy(type, j % COLS, (j / COLS) | 0)); });
   G.timeLeft = 200; G.phase = 'intro'; G.phaseT = 0;
   buildSprites(); buildBg();
   if (boss) banner(`NIVEL ${s} · ¡JEFE!`, 'Derrota al Rey Bomba', 1.8, 'warn');
-  else banner(`NIVEL ${s}`, s === 1 ? 'Rompe bloques, vence a todos y entra al portal' : `Zona ${G.theme.name}`, 1.6);
+  else banner(`NIVEL ${s}`, s === 1 ? 'Rompe bloques, vence a todos y entra al portal' : `Mundo ${G.world.name}`, 1.6);
   store.set('lastStage', s); if (s > store.get('maxStage', 1)) store.set('maxStage', s);
   setMusic(boss ? 'battle' : 'adventure');
   buildHud();
@@ -942,7 +817,7 @@ function newBattle(diff, target, demo) {
 }
 function startRound() {
   G.round++;
-  G.theme = pick(THEMES);
+  G.world = pick(battleWorlds());
   resetWorld();
   G.players.forEach((p, i) => Object.assign(p, {
     x: CORNERS[i][0], y: CORNERS[i][1], alive: true, deadT: 0, active: 0, bombs: 1, power: 2, speed: 3.3,
@@ -950,7 +825,7 @@ function startRound() {
     fleeing: false, moving: false, face: 0, winner: false }));
   const prot = [];
   for (const [x, y] of CORNERS) prot.push([x, y], [x + (x === 1 ? 1 : -1), y], [x, y + (y === 1 ? 1 : -1)]);
-  buildArena(0.7, prot);
+  buildArena(makeRng((Math.random() * 4294967296) >>> 0), G.world.levels.density.battle, prot);
   for (const j of cells(SOFT)) if (Math.random() < 0.32) G.items[j] = weighted(BATTLE_ITEMS);
   G.timeLeft = 100; G.phase = G.mode === 'demo' ? 'play' : 'intro'; G.phaseT = 0;
   buildSprites(); buildBg();
@@ -1261,7 +1136,7 @@ function drawBossBar() {
   const b = G.enemies.find(e => e.def.boss && e.alive);
   if (!b || G.mode !== 'adventure') return;
   const cx = portrait ? VX + VW / 2 : W / 2;
-  const w = Math.min(portrait ? VW * 0.62 : 220, 240), h = 12, x = cx - w / 2, y = portrait ? VY + VH + 8 : H - SA.b - 34;
+  const w = Math.min(portrait ? VW * 0.62 : 220, 240), h = 12, x = cx - w / 2, y = portrait ? VY + VH + CROP * T + 8 : H - SA.b - 34;
   ctx.fillStyle = 'rgba(10,8,24,0.75)'; rr(ctx, x - 4, y - 4, w + 8, h + 22, 9); ctx.fill();
   ctx.fillStyle = '#3a1450'; rr(ctx, x, y + 14, w, h, 6); ctx.fill();
   const gr = ctx.createLinearGradient(x, 0, x + w, 0); gr.addColorStop(0, '#ff4df5'); gr.addColorStop(1, '#b04dff');
@@ -1600,7 +1475,7 @@ function fxExplosion(cx, cy, arms, power) {
   }
 }
 function fxDebris(x, y) {
-  const c = G.theme.soft;
+  const c = G.world.debris;
   for (let i = 0; i < 9; i++) addP({ kind: 'debris', x: x + rnd(-0.3, 0.3), y: y + rnd(-0.3, 0.3), z: rnd(0.1, 0.4), vx: rnd(-2.6, 2.6), vy: rnd(-2.6, 2.6), vz: rnd(3, 7), g: 22, life: rnd(0.6, 1.0), size: rnd(0.1, 0.2), rot: rnd(6), vr: rnd(-12, 12), color: pick(c) });
 }
 function fxStars(x, y, color, n) {
@@ -1623,8 +1498,8 @@ function render() {
   ctx.save();
   if (G.shake > 0.01) { const m = G.shake * G.shake * T * 0.32; ctx.translate(rnd(-m, m), rnd(-m, m)); }
   glows.length = 0;
-  const clipTop = Math.max(VY - T * 0.6, TOPBAR - T * 0.4);   // tall heroes may peek into the HUD band
-  ctx.save(); ctx.beginPath(); ctx.rect(VX, clipTop, VW, VY + VH - clipTop); ctx.clip();
+  const clipTop = Math.max(FY, TOPBAR - T * 0.4);   // tall heroes may peek into the HUD band
+  ctx.save(); ctx.beginPath(); ctx.rect(FX, clipTop, COLS * T, FY + ROWS * T - clipTop); ctx.clip();
   drawExit(); drawItems(); drawSoftBlocks(); drawBurning(); drawBombs(); drawExplosions(); drawFalling();
   const ents = [];
   for (const p of G.players) ents.push(p);
@@ -1632,6 +1507,7 @@ function render() {
   ents.sort((a, b) => a.y - b.y);
   for (const e of ents) e.kind === 'player' ? drawBomber(e) : drawEnemy(e);
   drawParticles(false);
+  Board.ambient(boardView(), G.t, (x, y, size, color, a) => glow(x, y, size, glowOf(color), a));
   ctx.globalCompositeOperation = 'lighter';
   for (const g of glows) { ctx.globalAlpha = Math.max(0, Math.min(1, g.a)); ctx.drawImage(g.spr, g.sx - g.size, g.sy - g.size, g.size * 2, g.size * 2); }
   drawParticles(true);
@@ -1641,29 +1517,19 @@ function render() {
   ctx.restore();
   if (G.flash > 0) { ctx.fillStyle = `rgba(255,240,230,${G.flash})`; ctx.fillRect(0, 0, W, H); }
 }
-function drawSoftBlocks() {
-  const g = G.grid;
-  ctx.fillStyle = 'rgba(0,0,0,0.22)'; ctx.beginPath();
-  for (let j = COLS; j < N - COLS; j++) if (g[j] === SOFT) {
-    const x = j % COLS, y = (j / COLS) | 0;
-    if (g[j + COLS] === EMPTY) ctx.rect(FX + x * T + T * 0.06, FY + (y + 1) * T, T * 0.9, T * 0.2);
-    if (g[j + 1] === EMPTY) ctx.rect(FX + (x + 1) * T, FY + y * T + T * 0.12, T * 0.13, T * 0.86);
-  }
-  ctx.fill();
-  for (let j = COLS; j < N - COLS; j++) if (g[j] === SOFT) ctx.drawImage(SPR.soft, FX + (j % COLS) * T, FY + ((j / COLS) | 0) * T, T, T);
-}
+function drawSoftBlocks() { Board.drawSoft(ctx, boardView()); }
 function drawBurning() {
   for (const b of G.burning) {
     const k = b.t / BURN_TIME, sc = 1 - k * 0.3;
     ctx.globalAlpha = 1 - k;
-    ctx.drawImage(SPR.burn, SX(b.x) - T * sc / 2, SY(b.y) - T * sc / 2, T * sc, T * sc);
+    ctx.drawImage(Board.sprite('burn'), SX(b.x) - T * sc / 2, SY(b.y) - T * sc / 2, T * sc, T * sc);
     glow(SX(b.x), SY(b.y), T * (0.9 + k * 0.4), SPR.fire, 0.8 * (1 - k));
   }
   ctx.globalAlpha = 1;
 }
 function drawExit() {
   const e = G.exit; if (!e || G.grid[idx(e.x, e.y)] !== EMPTY) return;
-  const open = aliveEnemies() === 0, cx = SX(e.x), cy = SY(e.y), acc = G.theme.accent;
+  const open = aliveEnemies() === 0, cx = SX(e.x), cy = SY(e.y), acc = G.world.accent;
   ctx.save(); ctx.translate(cx, cy); ctx.scale(T, T);
   ctx.fillStyle = 'rgba(0,0,0,0.3)'; ell(0, 0.08, 0.44, 0.34); ctx.fill();
   const rg = ctx.createRadialGradient(0, 0, 0.02, 0, 0, 0.42);
@@ -1812,7 +1678,7 @@ function drawFalling() {
   for (const f of G.falling) {
     const x = f.j % COLS, y = (f.j / COLS) | 0, k = f.t / 0.35, px = FX + x * T, py = FY + y * T;
     ctx.fillStyle = `rgba(0,0,0,${0.15 + k * 0.35})`; ell(px + T / 2, py + T * 0.7, T * 0.45 * k + T * 0.1, T * 0.18 * k + 2); ctx.fill();
-    ctx.drawImage(SPR.hard, px, py - (1 - k * k) * T * 4, T, T);
+    ctx.drawImage(Board.sprite('pillar'), px, py - (1 - k * k) * T * 4, T, T);
   }
 }
 // Glossy ball shading: bright top-left highlight fading to the colour, then a darker rim.
@@ -2534,7 +2400,7 @@ requestAnimationFrame(t => { last = t; frame(t); });
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
-window.BOMBLAST = { G, step: n => { for (let i = 0; i < n; i++) update(STEP); }, act, avatar };
+window.BOMBLAST = { G, step: n => { for (let i = 0; i < n; i++) update(STEP); }, act, avatar, layout };
 })();
 </script>
 </body>
