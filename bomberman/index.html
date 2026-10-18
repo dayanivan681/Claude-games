@@ -357,8 +357,8 @@ const ENEMIES = [
   { id: 'gota', speed: 2.0, smart: 0.25, wall: false, pts: 200, col: '#3fa9ff' },
   { id: 'murci', speed: 2.7, smart: 0.1, wall: false, pts: 400, col: '#a55cff' },
   { id: 'chispa', speed: 3.0, smart: 0.55, wall: false, pts: 800, col: '#ffd23f' },
-  { id: 'fantasma', speed: 1.5, smart: 0.5, wall: true, pts: 1000, col: '#e6ecff' },
-  { id: 'ojo', speed: 2.3, smart: 0.4, wall: true, pts: 2000, col: '#3ddc84' },
+  { id: 'fantasma', speed: 1.4, smart: 0.3, wall: true, pts: 1000, col: '#e6ecff' },
+  { id: 'ojo', speed: 2.0, smart: 0.3, wall: true, pts: 2000, col: '#3ddc84' },
   { id: 'diablo', speed: 3.3, smart: 0.75, wall: false, pts: 4000, col: '#ff4d4d' },
   { id: 'calavera', speed: 3.9, smart: 0.9, wall: true, pts: 8000, col: '#f3ead8' },
   { id: 'jefe', speed: 1.35, smart: 0.5, wall: false, pts: 20000, col: '#b04dff', boss: true },
@@ -855,7 +855,9 @@ function startStage() {
     G.enemies.push(makeEnemy(BOSS, bj % COLS, (bj / COLS) | 0));
     empties.splice(empties.indexOf(bj), 1);
   }
-  (boss ? [Math.min(4, Math.floor(s / 4)), Math.min(4, Math.floor(s / 4))] : LevelGen.roster(s, rules, rng))
+  // At most two wall-walkers a stage; the rest of their tier are swapped for foes that blocks still hold back.
+  let walkers = 0;
+  (boss ? [Math.min(4, Math.floor(s / 4)), Math.min(4, Math.floor(s / 4))] : LevelGen.roster(s, rules, rng).map(t => { if (!ENEMIES[t].wall || ++walkers <= 2) return t; let k = t - 2; while (k > 0 && ENEMIES[k].wall) k--; return k; }))
     .forEach((type, i) => { const j = empties[i]; if (j !== undefined) G.enemies.push(makeEnemy(type, j % COLS, (j / COLS) | 0)); });
   G.timeLeft = 200; G.phase = 'intro'; G.phaseT = 0;
   buildSprites(); buildBg();
@@ -1335,7 +1337,9 @@ function updateEnemies(dt) {
     if (G.bombGrid[idx(e.tx, e.ty)] && (Math.round(e.x) !== e.tx || Math.round(e.y) !== e.ty) && (e.tx !== e.px || e.ty !== e.py)) {
       [e.tx, e.px] = [e.px, e.tx]; [e.ty, e.py] = [e.py, e.ty]; e.di = 3 - e.di;
     }
-    const sp = e.speed * dt, ddx = e.tx - e.x, ddy = e.ty - e.y;
+    // Wall-walkers ooze slowly through blocks, so there's time to catch them coming out.
+    const inBlock = e.def.wall && (G.grid[idx(e.tx, e.ty)] === SOFT || G.grid[idx(Math.round(e.x), Math.round(e.y))] === SOFT);
+    const sp = e.speed * (inBlock ? 0.5 : 1) * dt, ddx = e.tx - e.x, ddy = e.ty - e.y;
     if (Math.abs(ddx) + Math.abs(ddy) <= sp) {
       e.x = e.tx; e.y = e.ty; e.px = e.tx; e.py = e.ty; chooseDir(e);
       if (e.def.boss && e.restCd <= 0) { e.restT = 1.3; e.restCd = 4 + Math.random() * 2; }
@@ -1357,7 +1361,7 @@ function chooseDir(e) {
     for (const d of opts) {
       const k = idx(e.x + DIRS[d][0], e.y + DIRS[d][1]), v = F[k];
       if (dodge && G.danger[k] !== Infinity) continue;
-      if (v >= 0 && v <= 12 && v < bd) { bd = v; dir = d; }
+      if (v >= 0 && v <= (e.def.wall ? 6 : 12) && v < bd) { bd = v; dir = d; }
     }
   }
   if (dir < 0) {
