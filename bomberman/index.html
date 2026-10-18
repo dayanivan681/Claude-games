@@ -165,6 +165,7 @@ h2.warn{color:var(--warn)} h2.good{color:var(--good)}
 .seg{display:flex;gap:6px;background:rgba(0,0,0,.3);padding:5px;border-radius:16px;border:1px solid var(--line)}
 .seg button{appearance:none;border:0;font:inherit;font-weight:900;font-size:14px;letter-spacing:.06em;color:var(--muted);background:transparent;
   padding:10px 14px;border-radius:12px;cursor:pointer}
+#segWorld{flex-wrap:wrap;justify-content:center;max-width:460px} #segWorld button{padding:9px 10px;font-size:13px}
 .seg button.on{background:linear-gradient(180deg,#ffb53d,#ff6a2a);color:#fff;box-shadow:0 3px 0 #a3330b}
 .lineup{display:flex;gap:8px;justify-content:center}
 .lineup img{width:62px;height:62px;border-radius:16px;background:rgba(255,255,255,.06);border:1px solid var(--line)}
@@ -244,6 +245,8 @@ h2.warn{color:var(--warn)} h2.good{color:var(--good)}
     <div class="seg" id="segDiff"><button data-act="diff" data-v="0">FÁCIL</button><button data-act="diff" data-v="1">NORMAL</button><button data-act="diff" data-v="2">DIFÍCIL</button></div>
     <div class="label">RONDAS PARA GANAR</div>
     <div class="seg" id="segRounds"><button data-act="rounds" data-v="1">1</button><button data-act="rounds" data-v="2">2</button><button data-act="rounds" data-v="3">3</button><button data-act="rounds" data-v="5">5</button></div>
+    <div class="label">MUNDO</div>
+    <div class="seg" id="segWorld"><button data-act="bworld" data-v="random">AL AZAR</button><button data-act="bworld" data-v="forest">BOSQUE</button><button data-act="bworld" data-v="desert">DESIERTO</button><button data-act="bworld" data-v="snow">NIEVE</button><button data-act="bworld" data-v="volcano">VOLCÁN</button></div>
     <div class="menu">
       <button class="btn primary" data-act="battleStart">¡A PELEAR!</button>
       <button class="btn ghost" data-act="title">VOLVER</button>
@@ -820,6 +823,7 @@ function startStage() {
   G.timeLeft = 200; G.phase = 'intro'; G.phaseT = 0;
   buildSprites(); buildBg();
   if (boss) banner(`NIVEL ${s} · ¡JEFE!`, 'Derrota al Rey Bomba', 1.8, 'warn');
+  else if (s > 1 && worldForStage(s - 1) !== G.world) banner(`MUNDO ${G.world.name}`, `Nivel ${s} · ¡un mundo nuevo!`, 2, 'warn');
   else banner(`NIVEL ${s}`, s === 1 ? 'Rompe bloques, vence a todos y entra al portal' : `Mundo ${G.world.name}`, 1.6);
   store.set('lastStage', s); if (s > store.get('maxStage', 1)) store.set('maxStage', s);
   setMusic(boss ? 'battle' : 'adventure');
@@ -869,7 +873,8 @@ function newBattle(diff, target, demo) {
 }
 function startRound() {
   G.round++;
-  G.world = pick(battleWorlds());
+  const bw = G.mode === 'battle' ? store.get('bworld', 'random') : 'random';   // the demo behind the title tours every world
+  G.world = WORLDS[bw] || pick(battleWorlds());
   resetWorld();
   G.players.forEach((p, i) => Object.assign(p, {
     x: CORNERS[i][0], y: CORNERS[i][1], alive: true, deadT: 0, active: 0, bombs: 1, power: 2, speed: 3.3,
@@ -2371,6 +2376,8 @@ function syncToggles() {
   const diff = store.get('diff', 1), rounds = store.get('rounds', 3);
   for (const b of document.querySelectorAll('#segDiff button')) b.classList.toggle('on', +b.dataset.v === diff);
   for (const b of document.querySelectorAll('#segRounds button')) b.classList.toggle('on', +b.dataset.v === rounds);
+  const bw = store.get('bworld', 'random');
+  for (const b of document.querySelectorAll('#segWorld button')) b.classList.toggle('on', b.dataset.v === bw);
 }
 const MUSIC = { title: [112, -5], adventure: [132, 0], hurry: [168, 0], battle: [148, 2] };
 function setMusic(key) {
@@ -2408,6 +2415,7 @@ function act(a, el) {
     case 'battleStart': newBattle(store.get('diff', 1), store.get('rounds', 3), false); break;
     case 'diff': store.set('diff', +el.dataset.v); syncToggles(); break;
     case 'rounds': store.set('rounds', +el.dataset.v); syncToggles(); break;
+    case 'bworld': store.set('bworld', el.dataset.v); syncToggles(); break;
     case 'settings': syncToggles(); show('sSettings'); break;
     case 'title': toTitle(); break;
     case 'pause': pause(); break;

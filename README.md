@@ -34,4 +34,6 @@ La lógica del juego y la presentación están separadas:
 | `bomberman/js/chars3d.js` | **Presentación 3D.** Personajes animados. El héroe es el Bomber del dueño (`models/bomber.blend`/`bomber.glb`), con esqueleto y animaciones añadidos por `tools/rig_bomber.py` (`models/bomber-animado.glb`) y reproducidos con un AnimationMixer; los rivales usan el mismo modelo recoloreado con sus accesorios. Los enemigos son procedurales y amenazantes, con su muerte en llamas. Los dibuja `fx3d.js`. |
 | `bomberman/index.html` | Reglas del juego, personajes, HUD, audio y controles. |
 
-**Agregar un mundo nuevo** (desierto, nieve, volcán…): copia la entrada `forest` en `WORLDS`, cambia colores, luz, accesorios y reglas, y añade `{ from: <nivel>, world: '<id>' }` a `CAMPAIGN`. No hace falta tocar el motor.
+**Mundos:** Bosque (niveles 1–5), Desierto (6–10), Nieve (11–15) y Volcán (16–20); cada quinto nivel es un jefe y después del 20 el recorrido vuelve a empezar, más difícil. En Batalla se puede elegir el mundo (o al azar).
+
+**Agregar un mundo nuevo:** copia una entrada de `WORLDS`, cambia colores, luz y reglas, y añade `{ from: <nivel>, world: '<id>' }` a `CAMPAIGN`. En 3D, `scene3d.theme` elige el kit de `board3d.js` (`forest`, `desert`, `snow`, `volcano`: texturas del piso, pilares y bloques, escenario, obstáculos, lámparas y partículas); un tema nuevo se agrega en `themeKit()`.

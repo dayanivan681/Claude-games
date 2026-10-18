@@ -34,7 +34,7 @@ const FocusShader = {
 const Board3D = (() => {
   let renderer = null, composer = null, bloom = null, focus = null, scene, camera, sun, fill, sky, canvas = null, onLost = null;
   let world = null, cfg = null, kit = null, worldGroup = null, levelGroup = null, plan = null;
-  let soft = null, softAo = null, hardAo = null, pillars = null, dropping = null, prevGrid = null, lamps = [];
+  let soft = null, softAo = null, hardAo = null, pillars = null, pcaps = null, dropping = null, prevGrid = null, lamps = [];
   let W = 1, H = 1, dirty = true, shakeCss = '';
   const VP = new THREE.Matrix4(), M4 = new THREE.Matrix4(), Q = new THREE.Quaternion(), V = new THREE.Vector3(), S = new THREE.Vector3(), C = new THREE.Color();
   const kits = {};
@@ -129,7 +129,7 @@ const Board3D = (() => {
   function brickTex(b) {
     const rows = 4, per = 2, n = 256, cols = b.colors.map(rgb), mort = rgb(b.mortar);
     const [a, h] = paint(n, (u, w, o) => { const m = fbm(u * 8, w * 8, 8, 77, 2); o[0] = mort[0] * (0.82 + m * 0.25); o[1] = mort[1] * (0.82 + m * 0.25); o[2] = mort[2] * (0.82 + m * 0.25); o[3] = 30 + m * 30; });
-    const ga = a.getContext('2d'), gh = h.getContext('2d'), rh = n / rows, bw = n / per, gap = 4, r = rng(5);
+    const ga = a.getContext('2d'), gh = h.getContext('2d'), rh = n / rows, bw = n / per, gap = b.glow ? 6 : 4, r = rng(5), bricksDrawn = [];
     for (let row = 0; row < rows; row++) for (let k = -1; k <= per; k++) {
       const x = (k + (row % 2 ? 0.5 : 0)) * bw + gap / 2, y = row * rh + gap / 2, w = bw - gap, hh = rh - gap, c = cols[(r() * cols.length) | 0], v = 0.9 + r() * 0.2;
       const g = ga.createLinearGradient(x, y, x + w * 0.3, y + hh);
@@ -139,10 +139,29 @@ const Board3D = (() => {
       ga.fillStyle = 'rgba(255,225,190,0.22)'; ga.fillRect(x + 5, y + 2, w - 10, 3);
       ga.fillStyle = 'rgba(70,20,4,0.25)'; ga.fillRect(x + 4, y + hh - 4, w - 8, 3);
       for (let p = 0; p < 14; p++) { const px = x + 4 + r() * (w - 8), py = y + 4 + r() * (hh - 8); ga.fillStyle = `rgba(${r() < 0.5 ? '90,30,8' : '255,210,170'},0.3)`; ga.beginPath(); ga.arc(px, py, 0.8 + r() * 1.4, 0, 7); ga.fill(); gh.fillStyle = '#808080'; gh.beginPath(); gh.arc(px, py, 1.2, 0, 7); gh.fill(); }
+      if (b.glow) bricksDrawn.push([x, y, w, hh]);
+    }
+    if (b.glow) {   // magma: the mortar glows between dark bricks
+      const e = cv(n), ge = e.getContext('2d'); ge.fillStyle = b.glow; ge.fillRect(0, 0, n, n); ge.fillStyle = '#000';
+      for (const [x, y, w, hh] of bricksDrawn) { ge.beginPath(); ge.roundRect(x + 1, y + 1, w - 2, hh - 2, 5); ge.fill(); }
+      return [a, h, e];
     }
     return [a, h];
   }
-  function groundTex(o) {
+  function groundTex(w) {
+    const o = w.outside, theme = w.scene3d.theme;
+    if (theme !== 'forest') {   // sand dunes, snowfields or scorched ash (with lava seams)
+      const lo = rgb(o.ground[1]), hi = rgb(o.ground[0]); let e = null;
+      const [a, h] = paint(256, (u, v, out) => {
+        const n = fbm(u * 5, v * 5, 5, 41, 4), m = fbm(u * 20, v * 20, 20, 43, 2), rip = theme === 'desert' ? Math.sin((u * 9 + v * 4) * Math.PI * 2 + n * 8) : 0;
+        mix3(lo, hi, n * 1.15 - 0.08 + rip * 0.06 + (m - 0.5) * 0.15, out); out[3] = 100 + n * 90 + rip * 30 + m * 30;
+      }, (ga, gh, n) => {
+        const r = rng(9), dot = theme === 'snow' ? 'rgba(255,255,255,0.7)' : theme === 'desert' ? 'rgba(130,90,50,0.45)' : 'rgba(10,6,4,0.6)';
+        for (let i = 0; i < 70; i++) { const x = r() * n, y = r() * n, s2 = 1.2 + r() * 2.4; ga.fillStyle = dot; ga.beginPath(); ga.arc(x, y, s2, 0, 7); ga.fill(); gh.fillStyle = '#d0d0d0'; gh.beginPath(); gh.arc(x, y, s2, 0, 7); gh.fill(); }
+        if (theme === 'volcano') e = glowCracks(n, 23, 3, ga, gh);
+      });
+      return [a, h, e];
+    }
     const lo = rgb(o.ground[1]), hi = rgb(o.ground[0]), dirt = rgb('#4a3b26');
     return paint(256, (u, w, out) => {
       const n = fbm(u * 6, w * 6, 6, 41, 3), m = fbm(u * 20, w * 20, 20, 43, 2);
@@ -153,6 +172,87 @@ const Board3D = (() => {
       for (let i = 0; i < 520; i++) { const x = r() * n, y = r() * n, a = -Math.PI / 2 + (r() - 0.5) * 1.6, l = 3 + r() * 5; ga.strokeStyle = o.tuft[(r() * o.tuft.length) | 0]; ga.lineWidth = 1.3; ga.beginPath(); ga.moveTo(x, y); ga.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); ga.stroke(); }
       for (let i = 0; i < 60; i++) { const x = r() * n, y = r() * n, s = 1.5 + r() * 2.5; ga.fillStyle = `rgba(150,148,130,${0.4 + r() * 0.3})`; ga.beginPath(); ga.arc(x, y, s, 0, 7); ga.fill(); gh.fillStyle = '#e0e0e0'; gh.beginPath(); gh.arc(x, y, s, 0, 7); gh.fill(); }
     });
+  }
+  // Sand: soft wind ripples (tileable: whole wave counts across the tile) and scattered grains.
+  function sandTex(f, v) {
+    const lo = rgb(f.turf[1][1]), hi = rgb(f.turf[0][0]);
+    return paint(256, (u, w, o) => {
+      const n = fbm(u * 3, w * 3, 3, 21 + v, 3), m = fbm(u * 24, w * 24, 24, 9 + v, 2), rip = Math.sin((u * 5 + w * 3) * Math.PI * 2 + n * 7);
+      mix3(lo, hi, 0.4 + n * 0.55 + rip * 0.09 + (m - 0.5) * 0.2, o);
+      o[3] = 120 + rip * 45 + (m - 0.5) * 40;
+    }, (ga, gh, n) => {
+      const r = rng(13 + v * 5);
+      for (let i = 0; i < 700; i++) { const x = r() * n, y = r() * n, d = r() < 0.5; ga.fillStyle = d ? 'rgba(120,80,40,0.35)' : 'rgba(255,245,220,0.45)'; ga.fillRect(x, y, 1.4, 1.4); }
+      for (let i = 0; i < 10; i++) { const x = r() * n, y = r() * n, s2 = 1.5 + r() * 2.5; ga.fillStyle = `rgba(150,110,70,${0.5 + r() * 0.3})`; ga.beginPath(); ga.arc(x, y, s2, 0, 7); ga.fill(); gh.fillStyle = '#e0e0e0'; gh.beginPath(); gh.arc(x, y, s2, 0, 7); gh.fill(); }
+    });
+  }
+  // Snow: soft drifts with blue in the hollows and a few sparkling crystals.
+  function snowTex(f, v) {
+    const lo = rgb(f.turf[1][1]), hi = rgb(f.turf[0][0]), blue = rgb('#b4cce6');
+    return paint(256, (u, w, o) => {
+      const n = fbm(u * 3, w * 3, 3, 31 + v, 4), m = fbm(u * 12, w * 12, 12, 7 + v, 2);
+      mix3(lo, hi, 0.25 + n * 0.85, o); if (n < 0.4) mix3(o, blue, (0.4 - n) * 1.3, o);
+      o[3] = 100 + n * 120 + (m - 0.5) * 30;
+    }, (ga, gh, n) => {
+      const r = rng(17 + v * 3);
+      for (let i = 0; i < 160; i++) { const x = r() * n, y = r() * n; ga.fillStyle = `rgba(255,255,255,${0.5 + r() * 0.5})`; ga.fillRect(x, y, 1.6, 1.6); }
+      for (let i = 0; i < 40; i++) { const x = r() * n, y = r() * n; ga.fillStyle = 'rgba(150,185,225,0.35)'; ga.beginPath(); ga.arc(x, y, 1 + r() * 2, 0, 7); ga.fill(); }
+    });
+  }
+  // Glowing fissures, as an emissive map (black elsewhere); optionally scorched into the albedo too.
+  function glowCracks(n, seed, count, ga, gh) {
+    const e = cv(n), ge = e.getContext('2d'), r = rng(seed); ge.fillStyle = '#000'; ge.fillRect(0, 0, n, n); ge.lineCap = ge.lineJoin = 'round';
+    for (let i = 0; i < count; i++) {
+      let x = r() * n, y = r() * n, a = r() * 6.28; const pts = [[x, y]];
+      for (let k = 0; k < 7; k++) { a += (r() - 0.5) * 1.3; x += Math.cos(a) * n / 20; y += Math.sin(a) * n / 20; pts.push([x, y]); }
+      const line = (g, col, w, blur = 0) => { g.shadowColor = col; g.shadowBlur = blur; g.strokeStyle = col; g.lineWidth = w; g.beginPath(); pts.forEach(([px, py], k) => k ? g.lineTo(px, py) : g.moveTo(px, py)); g.stroke(); g.shadowBlur = 0; };
+      if (ga) line(ga, '#140c0a', n / 50); if (gh) line(gh, '#101010', n / 40);
+      line(ge, '#ff5a10', n / 70, n / 25); line(ge, '#ffb04a', n / 110); line(ge, '#fff0b0', n / 240);
+    }
+    return e;
+  }
+  // Basalt: dark cracked rock; some tiles carry glowing lava fissures (third canvas: emissive).
+  function basaltTex(f, v) {
+    const lo = rgb(f.turf[1][1]), hi = rgb(f.turf[0][0]); let e = null;
+    const [a, h] = paint(256, (u, w, o) => {
+      const n = fbm(u * 4, w * 4, 4, 51 + v, 4), m = fbm(u * 18, w * 18, 18, 3 + v, 2);
+      mix3(lo, hi, n * 1.15 - 0.05 + (m - 0.5) * 0.35, o); o[3] = 100 + n * 120 + (m - 0.5) * 60;
+    }, (ga, gh, n) => { e = glowCracks(n, 41 + v * 13, v % 2 ? 2 : 1, ga, gh); });
+    return [a, h, e];
+  }
+  // Ice: pale blue with frosted streaks and trapped bubbles.
+  function iceTex(base, seed) {
+    const lo = rgb(base[1]), hi = rgb(base[0]);
+    return paint(256, (u, w, o) => {
+      const n = fbm(u * 3, w * 3, 3, seed, 4), st = fbm(u * 2, w * 16, 2, seed + 5, 3);
+      mix3(lo, hi, n * 0.9 + st * 0.35 - 0.1, o); o[3] = 130 + (n - 0.5) * 80;
+    }, (ga, gh, n) => {
+      const r = rng(seed + 1);
+      for (let i = 0; i < 26; i++) { const x = r() * n, y = r() * n, s2 = 1 + r() * 3; ga.strokeStyle = 'rgba(255,255,255,0.55)'; ga.lineWidth = 1; ga.beginPath(); ga.arc(x, y, s2, 0, 7); ga.stroke(); }
+      for (let i = 0; i < 6; i++) { const x = r() * n, y = r() * n, a = r() * 6.28, l = 20 + r() * 40; ga.strokeStyle = 'rgba(255,255,255,0.35)'; ga.lineWidth = 2; ga.beginPath(); ga.moveTo(x, y); ga.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); ga.stroke(); gh.strokeStyle = '#303030'; gh.lineWidth = 2; gh.beginPath(); gh.moveTo(x, y); gh.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); gh.stroke(); }
+    });
+  }
+  // Wooden crate face: planks with grain, a raised frame, a diagonal brace and iron nails.
+  function crateTex(b) {
+    const n = 256, cols = b.colors.map(rgb), fr = rgb(b.mortar);
+    const [a, h] = paint(n, (u, w, o) => {
+      const pl = Math.floor(w * 4), c = cols[pl % cols.length], g = fbm(u * 2, w * 24, 2, 61 + pl, 3), grain = 0.5 + 0.5 * Math.sin(u * 90 + g * 14), seam = Math.min((w * 4) % 1, 1 - (w * 4) % 1) < 0.035;
+      const k = (0.8 + grain * 0.25) * (seam ? 0.45 : 1); o[0] = c[0] * k; o[1] = c[1] * k; o[2] = c[2] * k;
+      o[3] = seam ? 40 : 140 + grain * 30;
+    }, (ga, gh, n) => {
+      const fw = 30, wood = `rgb(${cols[0].map(q => q * 0.82 | 0).join(',')})`, dark = `rgb(${fr.join(',')})`;
+      ga.save(); ga.beginPath(); ga.rect(fw, fw, n - 2 * fw, n - 2 * fw); ga.clip(); gh.save(); gh.beginPath(); gh.rect(fw, fw, n - 2 * fw, n - 2 * fw); gh.clip();
+      for (const g of [ga, gh]) { g.save(); g.translate(n / 2, n / 2); g.rotate(-Math.PI / 4); g.fillStyle = g === ga ? wood : '#d8d8d8'; g.fillRect(-n * 0.75, -fw / 2, n * 1.5, fw); if (g === ga) { g.strokeStyle = dark; g.lineWidth = 3; g.strokeRect(-n * 0.75, -fw / 2, n * 1.5, fw); } g.restore(); }
+      ga.restore(); gh.restore();
+      for (const [x, y, w, hh] of [[0, 0, n, fw], [0, n - fw, n, fw], [0, 0, fw, n], [n - fw, 0, fw, n]]) { ga.fillStyle = wood; ga.fillRect(x, y, w, hh); gh.fillStyle = '#e8e8e8'; gh.fillRect(x, y, w, hh); }
+      ga.strokeStyle = dark; ga.lineWidth = 4; ga.strokeRect(fw, fw, n - 2 * fw, n - 2 * fw); ga.strokeRect(2, 2, n - 4, n - 4);
+      ga.fillStyle = 'rgba(255,230,190,0.25)'; ga.fillRect(4, 4, n - 8, 4);
+      for (const [x, y] of [[fw / 2, fw / 2], [n - fw / 2, fw / 2], [fw / 2, n - fw / 2], [n - fw / 2, n - fw / 2], [n / 2, fw / 2], [n / 2, n - fw / 2]]) {
+        ga.fillStyle = '#2e2a2a'; ga.beginPath(); ga.arc(x, y, 4.5, 0, 7); ga.fill(); ga.fillStyle = 'rgba(255,255,255,0.45)'; ga.beginPath(); ga.arc(x - 1.2, y - 1.2, 1.6, 0, 7); ga.fill();
+        gh.fillStyle = '#ffffff'; gh.beginPath(); gh.arc(x, y, 4.5, 0, 7); gh.fill();
+      }
+    });
+    return [a, h];
   }
   function barkTex(s) {
     const lo = rgb(s.bark[2]), hi = rgb(s.bark[0]);
@@ -246,16 +346,31 @@ const Board3D = (() => {
   function makeKit(w) {
     const f = w.floor, k = { mats: {}, geo: {} }, sc = w.scene3d, o = w.outside;
     const std = (opt) => new THREE.MeshStandardMaterial(Object.assign({ roughness: 0.9, metalness: 0 }, opt));
-    const pair = ([a, h], strength, rep = 1, extra = {}) => std(Object.assign({ map: tex(a, true, rep), normalMap: tex(normalFrom(h, strength), false, rep) }, extra));
-    k.mats.grass = [0, 1, 2, 3].map(v => pair(grassTex(f, v), 3.2, 1, { roughness: 0.95, color: lin('#eef0e0') }));
-    k.mats.pillar = pair(stoneTex(['#d6dad9', '#8a9192'], 13), 6, 1, { roughness: 0.74, color: lin('#dcdedb') });
-    k.mats.wall = pair(stoneTex(['#b2b8b6', '#646c6a'], 29), 7, 1, { roughness: 0.82, color: lin('#b9bebb') });
+    // [albedo, height, emissive?] → material; an emissive canvas (lava) glows through bloom
+    const maps = ([a, h, e], strength, rep) => Object.assign({ map: tex(a, true, rep), normalMap: tex(normalFrom(h, strength), false, rep) }, e ? { emissiveMap: tex(e, true, rep), emissive: lin('#ffffff'), emissiveIntensity: 2.4 } : {});
+    const pair = (layers, strength, rep = 1, extra = {}) => std(Object.assign(maps(layers, strength, rep), extra));
+    const glossy = (layers, strength, extra) => new THREE.MeshPhysicalMaterial(Object.assign({ metalness: 0, clearcoat: 1, clearcoatRoughness: 0.08 }, maps(layers, strength, 1), extra));
+    const theme = k.theme = sc.theme || 'forest', stone = sc.stone, forest = theme === 'forest';
+    const floorTex = { forest: grassTex, desert: sandTex, snow: snowTex, volcano: basaltTex }[theme];
+    k.mats.grass = [0, 1, 2, 3].map(v => pair(floorTex(f, v), { forest: 3.2, desert: 2.2, snow: 1.6, volcano: 4 }[theme], 1, { roughness: theme === 'snow' ? 0.8 : 0.95, color: lin(forest ? '#eef0e0' : '#ffffff') }));
+    if (theme === 'snow') k.mats.pillar = glossy(iceTex(stone.pillar, 13), 3, { roughness: 0.14, emissive: lin('#3f86c8'), emissiveIntensity: 0.14 });   // clear ice
+    else if (theme === 'volcano') { const [a, h] = stoneTex(stone.pillar, 13); k.mats.pillar = pair([a, h, glowCracks(256, 77, 2)], 6, 1, { roughness: 0.28, emissiveIntensity: 2 }); }   // obsidian
+    else k.mats.pillar = pair(stoneTex(stone.pillar, 13), 6, 1, { roughness: forest ? 0.74 : 0.9, color: lin(forest ? '#dcdedb' : '#ffffff') });
+    k.mats.wall = pair(stoneTex(stone.wall, 29), 7, 1, { roughness: 0.82, color: lin(forest ? '#b9bebb' : '#ffffff') });
     k.mats.paving = pair(stoneTex(f.paving, 47), 2.5, 1, { roughness: 0.88 });
-    k.mats.brick = pair(brickTex(sc.brick), 4, 1, { roughness: 0.72 });
-    k.mats.ground = pair(groundTex(o), 1.6, 14, { roughness: 1 });
+    const bs = sc.brick.style;
+    k.mats.brick = bs === 'crate' ? pair(crateTex(sc.brick), 4, 1, { roughness: 0.8 })
+      : bs === 'ice' ? glossy(brickTex(sc.brick), 3, { roughness: 0.22, emissive: lin('#4a8ed0'), emissiveIntensity: 0.1 })
+      : pair(brickTex(sc.brick), 4, 1, { roughness: bs === 'magma' ? 0.8 : 0.72, emissiveIntensity: 1.1 });
+    k.mats.ground = pair(groundTex(w), 1.6, 14, { roughness: theme === 'snow' ? 0.85 : 1, emissiveIntensity: 0.9 });
+    // unlit, over-bright vertex colours: lava, embers and ice crystals that bloom
+    k.mats.glow = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(3, 3, 3) });
+    k.mats.glowSoft = new THREE.MeshBasicMaterial({ vertexColors: true, color: new THREE.Color(1.5, 1.5, 1.5) });
+    k.mats.ice = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: 0.08, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.05, emissive: lin('#4a90d0'), emissiveIntensity: 0.15 });
+    k.mats.snow = std({ color: lin('#f6f9ff'), roughness: 0.7, emissive: lin('#9ab8dc'), emissiveIntensity: 0.06 });
     k.mats.bark = pair(barkTex(w.obstacle.stump), 3, 1);
     k.mats.rings = pair(ringsTex(w.obstacle.stump), 2, 1);
-    k.mats.base = std({ color: lin('#1e3d12'), roughness: 1 });
+    k.mats.base = std({ color: lin(sc.base), roughness: 1 });
     k.mats.vc = std({ vertexColors: true, roughness: 0.88 });
     k.mats.leaf = std({ vertexColors: true, roughness: 0.8 });
     k.mats.blade = std({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide });
@@ -372,7 +487,165 @@ const Board3D = (() => {
       strand(0, 0.05, 0.75, 1); strand(0.16, 0.04, 0.5, 2);
       k.geo.vine = merge(parts);
     }
+    // what buildWorld scatters around the arena, and the lamps; other worlds swap these in themeKit()
+    k.scenery = { tall: k.geo.trees, tallMat: k.mats.leaf, mid: k.geo.bush, midMat: k.mats.leaf, rock: k.geo.rockSmall, rare: k.geo.mushroom, rareMat: k.mats.vc, rareGlow: null, flower: k.geo.flower };
+    k.vineMat = k.mats.leaf; k.vineRate = 1; k.lamp = { y: 1.56, glassY: 1.28 };
+    if (!forest) themeKit(k, w);
     return k;
+  }
+
+  // ---------- the desert, snow and volcano kits: scenery, obstacles, lamps, wall dressing ----------
+  function themeKit(k, w) {
+    const theme = k.theme, o = w.outside, st = w.obstacle.stump, rk = w.obstacle.rock;
+    const leaf = o.leaf.map(lin), trunk = o.trunk.map(lin), white = lin('#ffffff'), snowShade = lin('#b8cde6');
+    const ribbed = (dark, light, ribs) => (x, y, z, nx, ny, nz) => mixC(dark, light, 0.3 + 0.5 * (0.5 + 0.5 * Math.sin(Math.atan2(nz, nx) * ribs)) + ny * 0.15);
+    const lumps = (r, sd, col, m) => [blob(r, 1, sd, 0.22), col, m];
+    // pebbles / snow lumps / ash for the floor
+    const pc = w.floor.clover.map(lin);
+    k.geo.pebble = merge([0, 1, 2].map(i => [blob(0.035 + i * 0.01, 1, i + 2, 0.25), (x, y, z, nx, ny) => mixC(pc[2], pc[1], ny * 0.5 + 0.5), mat4(Math.cos(i * 2.1) * 0.04, 0, Math.sin(i * 2.1) * 0.04, 1, 0.55, 1)]));
+    k.geo.ember = merge([[blob(0.03, 1, 3, 0.3), (x, y, z, nx, ny) => mixC(lin('#ff4a0a'), lin('#ffd060'), ny * 0.5 + 0.5), mat4(0, 0, 0, 1, 0.6, 1)]]);
+    k.vineRate = 0; k.cap = null;
+    if (theme === 'desert') {
+      const palm = v => {
+        const r = rng(91 + v * 7), parts = [], H = 1.5 + v * 0.3, lean = 0.3 + r() * 0.25, P = t => new THREE.Vector3(Math.sin(t * 1.3) * lean * t, t * H, 0);
+        for (let i = 0; i < 8; i++) {
+          const a = P(i / 8), b = P((i + 1) / 8), m = a.clone().add(b).multiplyScalar(0.5);
+          parts.push([new THREE.CylinderGeometry(0.07 - i * 0.003, 0.085 - i * 0.003, a.distanceTo(b) * 1.08, 9), (x, y) => mixC(trunk[1], trunk[0], 0.35 + 0.55 * ((y * 7) % 1)), mat4(m.x, m.y, m.z, 1, 1, 1, 0, 0, -Math.atan2(b.x - a.x, b.y - a.y))]);
+        }
+        const T = P(1);
+        for (let fr = 0; fr < 9; fr++) {
+          const a = fr / 9 * Math.PI * 2 + r() * 0.4, L = 0.75 + r() * 0.3;
+          for (let i = 1; i <= 7; i++) { const t = i / 7, d = t * L, y = Math.sin(t * Math.PI * 0.7) * 0.16 - t * t * 0.5; parts.push([new THREE.SphereGeometry(1, 6, 4), (x, yy, z, nx, ny) => mixC(leaf[1], leaf[0], ny * 0.6 + 0.4), mat4(T.x + Math.cos(a) * d, T.y + y, T.z + Math.sin(a) * d, 0.14 * (1 - t * 0.4), 0.045, 0.09 * (1 - t * 0.5), -a)]); }
+        }
+        for (let i = 0; i < 3; i++) parts.push([new THREE.SphereGeometry(0.055, 8, 6), lin('#6a4a28'), mat4(T.x + Math.cos(i * 2.1) * 0.07, T.y - 0.07, T.z + Math.sin(i * 2.1) * 0.07)]);
+        return merge(parts);
+      };
+      const saguaro = v => {
+        const H = 0.95 + v * 0.3, R = 0.11, col = ribbed(leaf[2], leaf[0], 10), parts = [[new THREE.CylinderGeometry(R, R * 1.08, H, 20), col, mat4(0, H / 2, 0)], [new THREE.SphereGeometry(R, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2), col, mat4(0, H, 0)]];
+        for (const [sd, y0, up] of [[-1, H * (0.38 + v * 0.05), 0.32], [1, H * 0.55, 0.24]]) {
+          parts.push([new THREE.CylinderGeometry(0.075, 0.075, 0.2, 14), col, mat4(sd * 0.13, y0, 0, 1, 1, 1, 0, 0, Math.PI / 2)], [new THREE.SphereGeometry(0.075, 14, 8), col, mat4(sd * 0.23, y0, 0)],
+            [new THREE.CylinderGeometry(0.075, 0.075, up, 14), col, mat4(sd * 0.23, y0 + up / 2, 0)], [new THREE.SphereGeometry(0.075, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2), col, mat4(sd * 0.23, y0 + up, 0)]);
+        }
+        return merge(parts);
+      };
+      k.scenery.tall = [palm(0), palm(1), saguaro(0), saguaro(1)];
+      k.scenery.tallMat = k.mats.vc;
+      const dry = o.tuft.map(lin);
+      k.scenery.mid = merge([[0, 0.12, 0, 0.18], [0.14, 0.09, 0.05, 0.13], [-0.13, 0.08, -0.03, 0.13]].map(([x, y, z, r], i) => lumps(r, i + 1, (px, py, pz, nx, ny) => mixC(dry[1], dry[2], ny * 0.5 + 0.5 + Math.sin(px * 40 + pz * 30) * 0.2), mat4(x, y, z))));
+      k.scenery.midMat = k.mats.vc;
+      const sTop = lin(rk.top[0]), sSide = lin(rk.side[1]);
+      const sandstone = (r, sd) => [blob(r, 2, sd, 0.16), (x, y, z, nx, ny) => mixC(sSide, sTop, ny * 0.45 + 0.45 + 0.12 * Math.sin(y * 45)), mat4(0, r * 0.55, 0, 1, 0.7, 1)];
+      k.scenery.rock = merge([sandstone(0.24, 9)]);
+      k.geo.rock = merge([sandstone(0.42, 5)]);
+      // clay pot in the barrel slot, a few desert flowers
+      const pot = lin(o.barrel[0]), potD = lin(o.barrel[1]), prof = [];
+      for (let i = 0; i <= 10; i++) { const t = i / 10; prof.push(new THREE.Vector2(0.12 + Math.sin(t * Math.PI * 0.95) * 0.16 - (t > 0.85 ? (t - 0.85) * 0.6 : 0), t * 0.5)); }
+      k.geo.barrel = merge([[new THREE.LatheGeometry(prof, 18), (x, y) => mixC(potD, pot, 0.5 + 0.5 * Math.sin(y * 30) * 0.3 + y), mat4(0, 0, 0)], [new THREE.TorusGeometry(0.1, 0.025, 6, 18), pot, mat4(0, 0.5, 0, 1, 1, 1, 0, Math.PI / 2)]]);
+      k.scenery.rare = k.geo.barrel;
+      // barrel cactus with pink blooms on a little sand mound (the 'stump' obstacle)
+      const bloom = lin(st.moss[0]), heart = lin(st.moss[1]), sand = lin(w.floor.turf[0][1]);
+      k.geo.obsStump = merge([
+        [blob(0.4, 2, 4, 0.08), sand, mat4(0, 0.02, 0, 1, 0.18, 1)],
+        [new THREE.SphereGeometry(0.31, 28, 16), ribbed(lin(st.bark[2]), lin(st.bark[0]), 14), mat4(0, 0.28, 0, 1, 0.92, 1)],
+        ...[0, 1, 2, 3].map(i => [new THREE.SphereGeometry(0.045, 8, 5), i === 3 ? heart : bloom, mat4(i === 3 ? 0 : Math.cos(i * 2.1) * 0.06, 0.56, i === 3 ? 0 : Math.sin(i * 2.1) * 0.06, 1, 0.6, 1)]),
+      ]);
+      k.lampStyle = 'brazier';
+    } else if (theme === 'snow') {
+      const pine = v => {
+        const parts = [[new THREE.CylinderGeometry(0.06, 0.085, 0.5, 8), trunk[1], mat4(0, 0.25, 0)]], tiers = 4 + (v % 2);
+        for (let i = 0; i < tiers; i++) {
+          const t = i / tiers, rad = 0.62 * (1 - t * 0.72) * (1 + v * 0.08), h = 0.55 * (1 - t * 0.3), y = 0.3 + i * 0.33 * (1 + v * 0.06);
+          parts.push([new THREE.ConeGeometry(rad, h, 16), (x, yy, z, nx, ny) => mixC(leaf[3], leaf[1], 0.35 + nx * 0.25 + ny * 0.3), mat4(0, y + h / 2, 0, 1, 1, 1, i * 0.7)]);
+          parts.push([new THREE.ConeGeometry(rad * 0.8, h * 0.6, 16), (x, yy, z, nx, ny) => mixC(snowShade, white, 0.55 + ny * 0.5 - nx * 0.15), mat4(0, y + h * 0.7, 0, 1, 1, 1, i * 0.7 + 0.3)]);
+        }
+        return merge(parts);
+      };
+      k.scenery.tall = [pine(0), pine(1), pine(2)];
+      k.scenery.tallMat = k.mats.vc;
+      const snowy = (dark, light) => (x, y, z, nx, ny) => ny > 0.15 + Math.sin(x * 30 + z * 23) * 0.12 ? mixC(snowShade, white, ny) : mixC(dark, light, ny * 0.5 + 0.5);
+      k.scenery.mid = merge([[0, 0.17, 0, 0.26], [0.2, 0.13, 0.05, 0.19], [-0.18, 0.12, -0.04, 0.19]].map(([x, y, z, r], i) => [blob(r, 1, i + 3, 0.18), snowy(leaf[3], leaf[1]), mat4(x, y, z)]));
+      k.scenery.midMat = k.mats.vc;
+      const rTop = lin(rk.top[0]), rSide = lin(rk.side[1]);
+      k.scenery.rock = merge([[blob(0.24, 2, 9, 0.2), snowy(rSide, rTop), mat4(0, 0.1, 0, 1, 0.65, 1)]]);
+      k.geo.rock = merge([[blob(0.42, 3, 5, 0.18), snowy(rSide, rTop), mat4(0, 0.22, 0, 1, 0.68, 1)]]);
+      // ice crystals (glowing) as the rare prop
+      const ice0 = lin('#7fd8ff'), ice1 = lin('#e8fbff');
+      k.scenery.rare = merge([[0, 0, 0, 1], [0.08, -0.02, 0.04, 0.7, 0.5], [-0.07, -0.03, -0.03, 0.6, -0.6], [0.02, -0.03, -0.08, 0.55, 0.3]].map(([x, y, z, s2, tilt = 0]) => [new THREE.OctahedronGeometry(0.09, 0), (px, py, pz, nx, ny) => mixC(ice0, ice1, ny * 0.5 + 0.5), mat4(x, 0.14 * s2 + y + 0.03, z, s2 * 0.6, s2 * 2, s2 * 0.6, 0, tilt * 0.4, tilt * 0.5)]));
+      k.scenery.rareMat = k.mats.glowSoft; k.scenery.flower = null;
+      // snowman (the 'stump' obstacle): coal eyes, carrot nose, stick arms, scarf
+      const carrot = lin(st.moss[0]), coal = lin(st.moss[1]), stick = lin('#5a3a22'), scarf = lin('#d8323c'), sb = (x, y, z, nx, ny) => mixC(snowShade, white, 0.55 + ny * 0.45);
+      k.geo.obsStump = merge([
+        [blob(0.27, 2, 2, 0.05), sb, mat4(0, 0.22, 0)], [blob(0.19, 2, 3, 0.05), sb, mat4(0, 0.55, 0)], [blob(0.135, 2, 4, 0.04), sb, mat4(0, 0.8, 0)],
+        [new THREE.TorusGeometry(0.12, 0.035, 6, 16), scarf, mat4(0, 0.69, 0, 1, 1, 1, 0, Math.PI / 2)], [new THREE.BoxGeometry(0.05, 0.16, 0.025), scarf, mat4(0.07, 0.6, 0.12, 1, 1, 1, 0, 0.3, 0.2)],
+        [new THREE.SphereGeometry(0.022, 6, 4), coal, mat4(-0.045, 0.84, 0.115)], [new THREE.SphereGeometry(0.022, 6, 4), coal, mat4(0.045, 0.84, 0.115)],
+        [new THREE.ConeGeometry(0.025, 0.12, 8), carrot, mat4(0, 0.8, 0.18, 1, 1, 1, 0, Math.PI / 2)],
+        ...[0, 1, 2].map(i => [new THREE.SphereGeometry(0.016, 5, 4), coal, mat4(0, 0.48 + i * 0.07, 0.185)]),
+        [new THREE.CylinderGeometry(0.012, 0.016, 0.34, 5), stick, mat4(-0.3, 0.62, 0, 1, 1, 1, 0, 0, 1.0)], [new THREE.CylinderGeometry(0.012, 0.016, 0.34, 5), stick, mat4(0.3, 0.64, 0, 1, 1, 1, 0, 0, -1.1)],
+      ]);
+      // snow caps on wall tops and ice posts, icicles hanging off the inner wall edges
+      k.cap = pillow(roundedBox(1, 0.08, 1, 0.04, 2), 1, 0.08, 1, 0.025);
+      const pile = (x, y, z, nx, ny) => mixC(snowShade, white, 0.5 + ny * 0.5);
+      k.pcap = merge([[0, 0, 0, 0.3], [0.16, -0.01, 0.12, 0.2], [-0.15, -0.01, 0.1, 0.19], [0.1, -0.01, -0.16, 0.18], [-0.13, -0.01, -0.13, 0.17]].map(([x, y, z, r], i) => [blob(r, 1, i + 7, 0.18), pile, mat4(x, y, z, 1, 0.28, 1)]));
+      const ic = w.wall.vine.map(lin);
+      k.geo.vine = merge([[0.04, 0.22], [0.13, 0.34], [0.21, 0.16], [0.3, 0.27], [0.38, 0.12]].map(([x, l], i) => [new THREE.ConeGeometry(0.025, l, 6), (px, py, pz, nx, ny) => mixC(ic[0], ic[2], 0.4 + py * 2), mat4(x, -l / 2, 0.02, 1, 1, 1, i, Math.PI)]));
+      k.vineMat = k.mats.ice; k.vineRate = 1.4;
+      k.lampStyle = 'snowLantern';
+    } else if (theme === 'volcano') {
+      const bark = trunk[0], char = trunk[1];
+      const deadTree = v => {
+        const r = rng(51 + v * 9), H = 1.0 + v * 0.25, parts = [[new THREE.CylinderGeometry(0.05, 0.12, H, 7), (x, y) => mixC(char, bark, y / H), mat4(0, H / 2, 0, 1, 1, 1, 0, 0, (r() - 0.5) * 0.2)]];
+        for (let i = 0; i < 5; i++) {
+          const a = i * 1.3 + v, y0 = H * (0.45 + i * 0.1), l = 0.35 + r() * 0.3, tilt = 0.7 + r() * 0.5;
+          parts.push([new THREE.CylinderGeometry(0.012, 0.035, l, 5), char, mat4(Math.cos(a) * Math.sin(tilt) * l / 2, y0 + Math.cos(tilt) * l / 2, Math.sin(a) * Math.sin(tilt) * l / 2, 1, 1, 1, -a, 0, -tilt)]);
+        }
+        return merge(parts);
+      };
+      const cTop = lin(rk.top[0]), cSide = lin(rk.side[0]), cDark = lin(rk.side[1]);
+      const columns = (spec) => merge(spec.map(([x, z, r, h], i) => [new THREE.CylinderGeometry(r, r * 1.05, h, 6), (px, py, pz, nx, ny, nz) => ny > 0.9 ? mixC(cSide, cTop, 0.6 + Math.sin(px * 40 + pz * 30) * 0.2) : mixC(cDark, cSide, 0.4 + py * 0.6 + Math.sin(i * 3 + Math.atan2(nz, nx) * 3) * 0.1), mat4(x, h / 2, z, 1, 1, 1, i * 0.4)]));
+      k.scenery.tall = [deadTree(0), deadTree(1), columns([[0, 0, 0.16, 1.1], [0.24, 0.06, 0.14, 0.8], [-0.2, 0.12, 0.15, 0.65], [0.05, -0.24, 0.13, 0.9], [-0.1, -0.12, 0.12, 0.45]])];
+      k.scenery.tallMat = k.mats.vc;
+      k.scenery.mid = columns([[0, 0, 0.13, 0.32], [0.18, 0.05, 0.11, 0.22], [-0.15, 0.08, 0.12, 0.18]]);
+      k.scenery.midMat = k.mats.vc;
+      k.scenery.rock = merge([[blob(0.22, 2, 9, 0.22), (x, y, z, nx, ny) => mixC(cDark, cSide, ny * 0.5 + 0.5), mat4(0, 0.08, 0, 1, 0.6, 1)]]);
+      k.geo.rock = columns([[0, 0, 0.17, 0.62], [0.2, 0.12, 0.14, 0.42], [-0.19, 0.1, 0.15, 0.5], [0.06, -0.2, 0.14, 0.36], [-0.12, -0.16, 0.12, 0.28]]);
+      // lava pool: a dark crust ring round a glowing pool
+      k.scenery.rare = merge([[new THREE.TorusGeometry(0.34, 0.08, 6, 20), (x, y, z, nx, ny) => mixC(cDark, cSide, ny * 0.5 + 0.5), mat4(0, 0.02, 0, 1, 1, 1, 0, Math.PI / 2)]]);
+      k.scenery.rareGlow = merge([[new THREE.CircleGeometry(0.34, 20), (x, y, z) => mixC(lin('#ff3a00'), lin('#ffc040'), 0.5 + 0.5 * Math.sin(x * 20) * Math.sin(z * 17)), mat4(0, 0.03, 0, 1, 1, 1, 0, -Math.PI / 2)]]);
+      k.scenery.flower = null;
+      // charred stump with a smouldering core (the 'stump' obstacle)
+      const sb = st.bark.map(lin), core = st.wood.map(lin);
+      k.geo.obsStump = merge([[new THREE.CylinderGeometry(0.3, 0.36, 0.46, 12), (x, y, z, nx, ny, nz) => mixC(sb[2], sb[0], 0.3 + 0.4 * (0.5 + 0.5 * Math.sin(Math.atan2(nz, nx) * 9 + y * 6))), mat4(0, 0.23, 0)],
+        ...[0, 1, 2, 3].map(i => [blob(0.11, 1, i, 0.2), sb[1], mat4(Math.cos(i * 1.7) * 0.32, 0.04, Math.sin(i * 1.7) * 0.32, 1.4, 0.45, 0.8, -i * 1.7)])]);
+      k.geo.obsStumpGlow = merge([[new THREE.CircleGeometry(0.24, 14), (x, y, z) => mixC(core[2], core[0], 1 - Math.hypot(x, z) * 3.5), mat4(0, 0.465, 0, 1, 1, 1, 0, -Math.PI / 2)]]);
+      // lava drips down the inner wall faces, glowing seams of ash
+      k.geo.vine = merge([[0.08, 0.35], [0.22, 0.22]].map(([x, l]) => [new THREE.CylinderGeometry(0.02, 0.03, l, 6), (px, py) => mixC(lin('#ff3a00'), lin('#ffb040'), 0.5 - py * 2), mat4(x, -l / 2, 0.015)]));
+      k.vineMat = k.mats.glow; k.vineRate = 0.7;
+      k.lampStyle = 'brazier';
+    }
+    // the plaza's centrepiece: an oasis, a frozen pond or a lava pool (the forest keeps its flower bed)
+    k.pool = theme === 'desert' ? new THREE.MeshStandardMaterial({ color: lin('#2a9ec4'), roughness: 0.06, metalness: 0.3, emissive: lin('#0b4a6a'), emissiveIntensity: 0.4 })
+      : theme === 'snow' ? new THREE.MeshPhysicalMaterial({ color: lin('#d4f0ff'), roughness: 0.04, clearcoat: 1, emissive: lin('#4a90d0'), emissiveIntensity: 0.12 })
+      : new THREE.MeshStandardMaterial({ color: lin('#1c1412'), roughness: 0.32, emissiveMap: tex(glowCracks(256, 99, 6), true), emissive: lin('#ffffff'), emissiveIntensity: 1.8 });   // cooled lava crust, still glowing in the cracks
+    // lamps: a brazier with a fire bowl, or the forest lantern wearing a snow cap
+    const iron = lin(o.lantern.metal), stoneC = lin(theme === 'snow' ? '#6a7480' : theme === 'desert' ? '#b38c58' : '#3a302c');
+    if (k.lampStyle === 'brazier') {
+      k.geo.lanternFrame = merge([
+        [new THREE.CylinderGeometry(0.16, 0.2, 0.12, 8), stoneC, mat4(0, 0.06, 0)],
+        ...[0, 1, 2].map(i => [new THREE.CylinderGeometry(0.018, 0.022, 0.72, 5), iron, mat4(Math.cos(i * 2.094) * 0.09, 0.45, Math.sin(i * 2.094) * 0.09, 1, 1, 1, -i * 2.094, 0, 0.2)]),
+        [new THREE.SphereGeometry(0.2, 14, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), iron, mat4(0, 0.86, 0, 1, 0.65, 1)],
+        [new THREE.TorusGeometry(0.2, 0.025, 6, 16), iron, mat4(0, 0.86, 0, 1, 1, 1, 0, Math.PI / 2)],
+      ]);
+      k.geo.lanternGlass = new THREE.ConeGeometry(0.13, 0.3, 8).translate(0, 0.12, 0);
+      k.lamp = { y: 1.25, glassY: 0.86 };
+    } else if (k.lampStyle === 'snowLantern') {
+      const cap = (x, y, z, nx, ny) => mixC(snowShade, white, 0.6 + ny * 0.4);
+      k.geo.lanternFrame = merge([
+        [new THREE.BoxGeometry(0.26, 0.14, 0.26), stoneC, mat4(0, 0.07, 0)], [blob(0.15, 1, 2, 0.15), cap, mat4(0, 0.15, 0, 1, 0.35, 1)],
+        [new THREE.CylinderGeometry(0.035, 0.045, 1.0, 8), iron, mat4(0, 0.62, 0)], [new THREE.BoxGeometry(0.3, 0.04, 0.3), iron, mat4(0, 1.13, 0)],
+        ...[[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([sx, sz]) => [new THREE.BoxGeometry(0.03, 0.26, 0.03), iron, mat4(sx * 0.115, 1.28, sz * 0.115)]),
+        [new THREE.ConeGeometry(0.21, 0.16, 4), iron, mat4(0, 1.49, 0, 1, 1, 1, Math.PI / 4)], [new THREE.ConeGeometry(0.2, 0.1, 4), cap, mat4(0, 1.55, 0, 1, 1, 1, Math.PI / 4)],
+      ]);
+    }
   }
 
   // ---------- static scenery around the arena (per world) ----------
@@ -395,7 +668,7 @@ const Board3D = (() => {
     }
     worldGroup.add(cob);
     // border wall: two dressed stones per tile with moss and hanging vines
-    const walls = k.geo.cut.map(g => inst(g, k.mats.wall, 260)), moss = inst(k.geo.moss, k.mats.vc, 360, false), vines = inst(k.geo.vine, k.mats.leaf, 40, false);
+    const walls = k.geo.cut.map(g => inst(g, k.mats.wall, 260)), moss = inst(k.geo.moss, k.mats.vc, 360, false), vines = inst(k.geo.vine, k.vineMat, 60, false), caps = k.cap ? inst(k.cap, k.mats.snow, 60) : null;
     for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
       if (!(x === 0 || y === 0 || x === cols - 1 || y === rows - 1)) continue;
       const corner = (x === 0 || x === cols - 1) && (y === 0 || y === rows - 1), alongZ = (x === 0 || x === cols - 1) && !corner;
@@ -411,28 +684,30 @@ const Board3D = (() => {
         if (y0 > 0 && sd < 0.55) for (let m = 0; m < 2; m++) { const s = 0.08 + hsh(x + m, y, si) * 0.09; put(moss, cx + (hsh(m, x, si) - 0.5) * sx * 0.6, y0 + sh - 0.04, cz + (hsh(si, y, m) - 0.5) * sz * 0.6, s, s * 0.45, s * 0.9, hsh(m, x, y) * 6); }
         si++;
       }
-      if (y === 0 && !corner && hsh(x, y, 13) < 0.45) put(vines, x + 0.25 + hsh(x, 1, 1) * 0.4, Hh.wall - 0.04, 1.0, 1, 1, 1);
-      if (y === rows - 1 && !corner && hsh(x, y, 14) < 0.35) put(vines, x + 0.25 + hsh(x, 2, 2) * 0.4, Hh.wall - 0.04, rows, 1, 1, 1);
+      if (y === 0 && !corner && hsh(x, y, 13) < 0.45 * k.vineRate) put(vines, x + 0.25 + hsh(x, 1, 1) * 0.4, Hh.wall - 0.04, 1.0, 1, 1, 1);
+      if (y === rows - 1 && !corner && hsh(x, y, 14) < 0.35 * k.vineRate) put(vines, x + 0.25 + hsh(x, 2, 2) * 0.4, Hh.wall - 0.04, rows, 1, 1, 1);
+      if (caps) put(caps, x + 0.5, Hh.wall - 0.035, y + 0.5, 1, 1, 1, ((hsh(x, y, 15) * 4) | 0) * Math.PI / 2);   // snow on top
     }
     const wallAo = inst(k.geo.ao, k.mats.ao, 60, false); wallAo.castShadow = false; wallAo.renderOrder = 1;
     for (let x = 1; x < cols - 1; x++) { put(wallAo, x + 0.5, 0.014, 0.85, 1.25, 1, 1.0); put(wallAo, x + 0.5, 0.014, rows - 0.85, 1.25, 1, 1.0); }
     for (let y = 1; y < rows - 1; y++) { put(wallAo, 0.85, 0.014, y + 0.5, 1.0, 1, 1.25); put(wallAo, cols - 0.85, 0.014, y + 0.5, 1.0, 1, 1.25); }
-    worldGroup.add(...walls, moss, vines, wallAo);
+    worldGroup.add(...walls, moss, vines, wallAo); if (caps) worldGroup.add(caps);
     // trees, bushes, rocks and the rest — tall things never stand where they would hide the arena
-    const trees = k.geo.trees.map(g => inst(g, k.mats.leaf, 120)), bush = inst(k.geo.bush, k.mats.leaf, 240), rock = inst(k.geo.rockSmall, k.mats.vc, 120), mush = inst(k.geo.mushroom, k.mats.vc, 80, false), flow = inst(k.geo.flower, k.mats.vc, 900, false);
+    const sc3 = k.scenery, trees = sc3.tall.map(g => inst(g, sc3.tallMat, 120)), bush = inst(sc3.mid, sc3.midMat, 240), rock = inst(sc3.rock, k.mats.vc, 120), mush = inst(sc3.rare, sc3.rareMat, 80, false);
+    const rareGlow = sc3.rareGlow ? inst(sc3.rareGlow, k.mats.glowSoft, 80, false) : null, flow = inst(sc3.flower || k.geo.flower, k.mats.vc, sc3.flower ? 900 : 1, false);
     const r2 = rng(5);
     for (let gz = -7; gz < rows + 8; gz += 1.5) for (let gx = -8.5; gx < cols + 8.5; gx += 1.5) {
       const x = gx + r2() * 1.2, z = gz + r2() * 1.2, dx = Math.max(-x, x - cols, 0), dz = Math.max(-z, z - rows, 0), d = Math.hypot(dx, dz), roll = r2();
       if (d < 1.6) continue;
       const south = z > rows, tall = d > 2.4 && !(south && z < rows + 6.5) && roll < 0.6;
-      if (tall) { const v = (r2() * 3) | 0, s = 0.85 + r2() * 0.45; put(trees[v], x, -0.1, z, s, s * (0.9 + r2() * 0.25), s, r2() * 6.28); }
+      if (tall) { const v = (r2() * trees.length) | 0, s = 0.85 + r2() * 0.45; put(trees[v], x, -0.1, z, s, s * (0.9 + r2() * 0.25), s, r2() * 6.28); }
       else if (roll < 0.82) { const s = 0.8 + r2() * 0.7; put(bush, x, -0.1, z, s, s, s, r2() * 6.28); }
       else if (roll < 0.92) { const s = 0.7 + r2() * 0.9; put(rock, x, -0.1, z, s, s, s, r2() * 6.28); }
-      else put(mush, x, -0.1, z, 1, 1, 1, r2() * 6.28);
-      if (r2() < 0.35) for (let i = 0; i < 3; i++) { const t = r2(); put(flow, x + (r2() - 0.5) * 0.9, -0.08, z + (r2() - 0.5) * 0.9, 1.3, 1.3, 1.3, r2() * 6, C.setRGB(1, 0.9 + t * 0.1, t < 0.4 ? 0.55 : 1)); }
+      else { const ry = r2() * 6.28, s = rareGlow ? 1 + r2() * 0.8 : 1; put(mush, x, -0.1, z, s, 1, s, ry); if (rareGlow) put(rareGlow, x, -0.1, z, s, 1, s, ry); }
+      if (sc3.flower && r2() < 0.35) for (let i = 0; i < 3; i++) { const t = r2(); put(flow, x + (r2() - 0.5) * 0.9, -0.08, z + (r2() - 0.5) * 0.9, 1.3, 1.3, 1.3, r2() * 6, C.setRGB(1, 0.9 + t * 0.1, t < 0.4 ? 0.55 : 1)); }
     }
     for (const t of trees) worldGroup.add(t);
-    worldGroup.add(bush, rock, mush, flow);
+    worldGroup.add(bush, rock, mush, flow); if (rareGlow) worldGroup.add(rareGlow);
     // barrels by the path
     const barrel = inst(k.geo.barrel, k.mats.vc, 6);
     for (const [x, z, ry] of [[-1.1, 11.4, 0.3], [-1.05, 10.75, 1.2], [16.15, 1.2, 0.6], [16.05, 12.1, 2]]) put(barrel, x, -0.1, z, 1, 1, 1, ry);
@@ -441,9 +716,9 @@ const Board3D = (() => {
     lamps = [];
     const frame = inst(k.geo.lanternFrame, k.mats.vc, 8), glass = inst(k.geo.lanternGlass, k.mats.glass, 8, false), L = sc.lamp;
     for (const [x, z] of [[-0.62, 3.5], [-0.62, 9.5], [cols + 0.62, 3.5], [cols + 0.62, 9.5], [-0.66, -0.66], [cols + 0.66, -0.66]]) {
-      put(frame, x, -0.1, z, 1.3, 1.3, 1.3); put(glass, x, -0.1 + 1.28 * 1.3, z, 1.3, 1.3, 1.3);
-      const pl = new THREE.PointLight(lin(L.color), L.intensity, L.distance, 1.6); pl.position.set(x, 1.55, z); worldGroup.add(pl);
-      lamps.push(new THREE.Vector3(x, 1.56, z));
+      put(frame, x, -0.1, z, 1.3, 1.3, 1.3); put(glass, x, -0.1 + k.lamp.glassY * 1.3, z, 1.3, 1.3, 1.3);
+      const pl = new THREE.PointLight(lin(L.color), L.intensity, L.distance, 1.6); pl.position.set(x, k.lamp.y - 0.01, z); worldGroup.add(pl);
+      lamps.push(new THREE.Vector3(x, k.lamp.y, z));
     }
     worldGroup.add(frame, glass);
     for (const m of worldGroup.children) if (m.isInstancedMesh) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
@@ -458,6 +733,7 @@ const Board3D = (() => {
     // turf slabs (four texture variants) or flagstones on the plaza
     const slabs = k.mats.grass.map(m => inst(k.geo.slab, m, n, false)), flags = inst(k.geo.flag, k.mats.paving, n * 3, false);
     const tufts = inst(k.geo.tufts[1], k.mats.blade, n * 6, false), tufts2 = inst(k.geo.tufts[0], k.mats.blade, n * 6, false), flowers = inst(k.geo.flower, k.mats.vc, n, false), clovers = inst(k.geo.clover, k.mats.vc, n, false);
+    const forest = k.theme === 'forest', pebbles = forest ? null : inst(k.geo.pebble, k.mats.vc, n * 2, false), embers = k.theme === 'volcano' ? inst(k.geo.ember, k.mats.glow, n, false) : null;
     for (let y = 1; y < rows - 1; y++) for (let x = 1; x < cols - 1; x++) {
       const j = y * cols + x, hard = grid[j] === HARD;
       if (paved(j)) {
@@ -468,40 +744,53 @@ const Board3D = (() => {
       const v = (hsh(x, y, 1) * 4) | 0, t = (x + y) & 1 ? 0.9 : 1.02;
       put(slabs[v], x + 0.5, -0.08 + hsh(x, y, 3) * 0.008, y + 0.5, 1, 1, 1, ((hsh(x, y, 2) * 4) | 0) * Math.PI / 2, C.setRGB(t, t, t * 0.96));
       if (hard && skin(j) === 'pillar') continue;
+      if (!forest) {   // dry grass in the desert, pebbles / snow lumps / ash everywhere, embers on the volcano
+        if (k.theme === 'desert') for (let i = 0; i < 3; i++) { const e = hsh(x, y, 20 + i); if (e < 0.5) put(tufts, x + 0.1 + hsh(x, y, 30 + i) * 0.8, 0, y + 0.1 + hsh(x, y, 40 + i) * 0.8, 0.8 + e, 0.7 + e * 0.6, 0.8 + e, e * 6); }
+        if (hsh(x, y, 4) < world.floor.cloverRate) for (let i = 0; i < 2; i++) put(pebbles, x + 0.2 + hsh(i, y, x + 1) * 0.6, 0, y + 0.2 + hsh(y, i, x + 2) * 0.6, 1, 1, 1, hsh(x, i, 5) * 6);
+        if (embers && hsh(x, y, 11) < 0.14) put(embers, x + 0.2 + hsh(x, y, 12) * 0.6, 0.004, y + 0.2 + hsh(x, y, 13) * 0.6, 1, 1, 1, 0);
+        if (hsh(x, y, 7) < world.floor.flowerRate * 1.3) { const c = world.floor.flowers[((hsh(x, y, 9) * world.floor.flowers.length) | 0)]; put(flowers, x + 0.2 + hsh(1, x, y) * 0.6, 0.005, y + 0.2 + hsh(x, 1, y) * 0.6, 1, 1, 1, hsh(1, 1, x) * 6, lin(c[0])); }
+        continue;
+      }
       for (let i = 0; i < 6; i++) { const e = hsh(x, y, 20 + i), along = hsh(x, y, 30 + i), side = i % 4; const px = side < 2 ? x + 0.06 + along * 0.88 : x + (side === 2 ? 0.07 : 0.93), pz = side < 2 ? y + (side === 0 ? 0.07 : 0.93) : y + 0.06 + along * 0.88; if (e < 0.8) put(tufts, px, 0, pz, 1 + e * 0.8, 1 + e, 1 + e * 0.8, e * 6); }
       for (let i = 0; i < 6; i++) { const e = hsh(x, y, 40 + i); put(tufts2, x + 0.12 + hsh(x, y, 50 + i) * 0.76, 0, y + 0.12 + hsh(x, y, 60 + i) * 0.76, 0.9 + e * 0.6, 0.8 + e * 0.5, 0.9 + e * 0.6, e * 6); }
       if (hsh(x, y, 7) < world.floor.flowerRate * 1.3) for (let i = 0; i < 1 + ((hsh(x, y, 8) * 3) | 0); i++) { const c = world.floor.flowers[((hsh(x, y, 9) * world.floor.flowers.length) | 0)]; put(flowers, x + 0.2 + hsh(i, x, y) * 0.6, 0.005, y + 0.2 + hsh(x, i, y) * 0.6, 1, 1, 1, hsh(i, i, x) * 6, lin(c[0] === '#ffffff' ? '#ffffff' : c[0])); }
       if (hsh(x, y, 4) < world.floor.cloverRate) for (let i = 0; i < 3; i++) put(clovers, x + 0.25 + hsh(i, y, x + 1) * 0.5, 0.003, y + 0.25 + hsh(y, i, x + 2) * 0.5, 1, 1, 1, hsh(x, i, 5) * 6);
     }
-    levelGroup.add(...slabs, flags, tufts, tufts2, flowers, clovers);
-    // plaza centrepiece: a ring of dressed stone round a flower bed
+    levelGroup.add(...slabs, flags, tufts, tufts2, flowers, clovers); if (pebbles) levelGroup.add(pebbles); if (embers) levelGroup.add(embers);
+    // plaza centrepiece: a ring of dressed stone round a flower bed (or a pool)
     if (pl && pl.decals.some(d => d === 'paving')) {
       let x0 = 99, y0 = 99, x1 = -1, y1 = -1;
       pl.decals.forEach((d, j) => { if (d === 'paving') { const x = j % cols, y = (j / cols) | 0; x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); } });
       const cx = (x0 + x1 + 1) / 2, cz = (y0 + y1 + 1) / 2, R = Math.min(x1 - x0 + 1, y1 - y0 + 1) * 0.36;
       const ring = inst(k.geo.stone, k.mats.paving, 24);
       for (let i = 0; i < 20; i++) { const a = i / 20 * Math.PI * 2; put(ring, cx + Math.cos(a) * R, 0.02, cz + Math.sin(a) * R, 0.5, 0.16, 0.26, -a + Math.PI / 2, C.setRGB(1.05, 1.02, 0.95)); }
-      const bed = new THREE.Mesh(new THREE.CylinderGeometry(R - 0.12, R - 0.12, 0.1, 40), k.mats.grass[1]); bed.position.set(cx, -0.04, cz); bed.receiveShadow = true;
-      const bf = inst(k.geo.flower, k.mats.vc, 40, false), bt = inst(k.geo.tuft, k.mats.blade, 60, false), rr = rng(3);
-      for (let i = 0; i < 26; i++) { const a = rr() * 6.28, d = Math.sqrt(rr()) * (R - 0.25), c = world.floor.flowers[i % world.floor.flowers.length][0]; put(bf, cx + Math.cos(a) * d, 0.02, cz + Math.sin(a) * d, 1.3, 1.3, 1.3, rr() * 6, lin(c)); }
-      for (let i = 0; i < 50; i++) { const a = rr() * 6.28, d = Math.sqrt(rr()) * (R - 0.2); put(bt, cx + Math.cos(a) * d, 0.01, cz + Math.sin(a) * d, 1, 1, 1, rr() * 6); }
-      levelGroup.add(ring, bed, bf, bt);
+      const bed = new THREE.Mesh(new THREE.CylinderGeometry(R - 0.12, R - 0.12, 0.1, 40), k.pool || k.mats.grass[1]); bed.position.set(cx, -0.04, cz); bed.receiveShadow = true;
+      levelGroup.add(ring, bed);
+      if (!k.pool) {   // the forest's flower bed (other worlds fill the ring with water, ice or lava)
+        const bf = inst(k.geo.flower, k.mats.vc, 40, false), bt = inst(k.geo.tuft, k.mats.blade, 60, false), rr = rng(3);
+        for (let i = 0; i < 26; i++) { const a = rr() * 6.28, d = Math.sqrt(rr()) * (R - 0.25), c = world.floor.flowers[i % world.floor.flowers.length][0]; put(bf, cx + Math.cos(a) * d, 0.02, cz + Math.sin(a) * d, 1.3, 1.3, 1.3, rr() * 6, lin(c)); }
+        for (let i = 0; i < 50; i++) { const a = rr() * 6.28, d = Math.sqrt(rr()) * (R - 0.2); put(bt, cx + Math.cos(a) * d, 0.01, cz + Math.sin(a) * d, 1, 1, 1, rr() * 6); }
+        levelGroup.add(bf, bt);
+      }
     }
     // indestructible posts and obstacles
     pillars = inst(k.geo.pillar, k.mats.pillar, n);
     hardAo = inst(k.geo.ao, k.mats.ao, n, false); hardAo.renderOrder = 1;
     const rocks = inst(k.geo.rock, k.mats.vc, 16), stumpS = inst(k.geo.stumpSide, k.mats.bark, 16), stumpT = inst(k.geo.stumpTop, k.mats.rings, 16), roots = inst(k.geo.roots, k.mats.vc, 16), pmoss = inst(k.geo.moss, k.mats.vc, n * 2, false);
+    const obs = k.geo.obsStump ? inst(k.geo.obsStump, k.mats.vc, 16) : null, obsGlow = k.geo.obsStumpGlow ? inst(k.geo.obsStumpGlow, k.mats.glowSoft, 16, false) : null;   // cactus, snowman, charred stump
+    pcaps = k.pcap ? inst(k.pcap, k.mats.vc, n) : null;
     for (let y = 1; y < rows - 1; y++) for (let x = 1; x < cols - 1; x++) {
       const j = y * cols + x; if (grid[j] !== HARD) continue;
       const s = skin(j), ry = hsh(x, y, 3) * 6.28;
       put(hardAo, x + 0.5, 0.014, y + 0.5, s === 'pillar' ? 1.45 : 1.3, 1, s === 'pillar' ? 1.45 : 1.3);
       if (s === 'rock') put(rocks, x + 0.5, 0, y + 0.5, 1, 1, 1, ry);
+      else if (s === 'stump' && obs) { put(obs, x + 0.5, 0, y + 0.5, 1, 1, 1, ry); if (obsGlow) put(obsGlow, x + 0.5, 0, y + 0.5, 1, 1, 1, ry); }
       else if (s === 'stump') {
         put(stumpS, x + 0.5, 0.25, y + 0.5, 1, 1, 1, ry); put(roots, x + 0.5, 0, y + 0.5, 1, 1, 1, ry);
         Q.setFromEuler(new THREE.Euler(-Math.PI / 2, 0, ry)); M4.compose(V.set(x + 0.5, 0.5, y + 0.5), Q, S.set(1, 1, 1)); stumpT.setMatrixAt(stumpT.count++, M4);
       } else addPillar(x, y, pmoss);
     }
-    levelGroup.add(pillars, hardAo, rocks, stumpS, stumpT, roots, pmoss);
+    levelGroup.add(pillars, hardAo, rocks, stumpS, stumpT, roots, pmoss, ...[obs, obsGlow, pcaps].filter(Boolean));
     // destructible blocks: one slot per cell, shown or hidden by sync()
     // Bricks don't cast into the shadow map (a soft offset decal stands in), so breaking one never re-bakes the shadows.
     soft = new THREE.InstancedMesh(k.geo.brick, k.mats.brick, n); soft.frustumCulled = false; soft.castShadow = false; soft.receiveShadow = true;
@@ -518,6 +807,7 @@ const Board3D = (() => {
     const t = 0.88 + hsh(x, y, 5) * 0.2, h = world.scene3d.heights.pillar;
     put(pillars, x + 0.5, h / 2, y + 0.5, 1, 1, 1, ((hsh(x, y, 6) * 4) | 0) * Math.PI / 2, C.setRGB(t, t, t));
     pillars.instanceMatrix.needsUpdate = true; if (pillars.instanceColor) pillars.instanceColor.needsUpdate = true;
+    if (pcaps) { put(pcaps, x + 0.5, h + 0.045, y + 0.5, 1, 1, 1, hsh(x, y, 7) * 6.28); pcaps.instanceMatrix.needsUpdate = true; }   // a pile of snow on the ice posts
     if (mossMesh && hsh(x, y, 8) < world.pillar.mossRate) {
       const c = hsh(x, y, 9) < 0.5 ? -1 : 1;
       put(mossMesh, x + 0.5 + c * 0.38, 0.06, y + 0.92, 0.13, 0.08, 0.1, hsh(x, 1, y) * 6);
@@ -709,9 +999,19 @@ const Board3D = (() => {
     const M = world.light.motes, lc = world.outside.lantern.glow;
     lamps.forEach((l, i) => { toScreen(l.x, l.y, l.z, AP); const u = project(l.x, l.z)[2]; emit(AP[0], AP[1], u * (0.95 + 0.07 * Math.sin(t * 7 + i)), lc, 0.55 + 0.1 * Math.sin(t * 11 + i * 3) + 0.07 * Math.sin(t * 29 + i)); });
     for (let i = 0; i < M.count; i++) {
-      const sp = 0.15 + hsh(i, 3, 77) * 0.25, x = 1 + hsh(i, 1, 77) * 13 + Math.sin(t * sp + i * 1.7) * 0.9, z = 1 + hsh(i, 2, 77) * 11 + Math.cos(t * sp * 0.8 + i) * 0.7, y = 0.35 + 0.3 * Math.sin(t * 0.5 + i);
-      const a = Math.max(0, Math.sin(t * (0.5 + sp) + i * 2.3)) * 0.5;
-      if (a > 0.03) { toScreen(x, y, z, AP); emit(AP[0], AP[1], project(x, z)[2] * 0.15, M.color, a); }
+      const sp = 0.15 + hsh(i, 3, 77) * 0.25, x0 = 1 + hsh(i, 1, 77) * 13, z0 = 1 + hsh(i, 2, 77) * 11;
+      let x, y, z, a, size = 0.15;
+      if (M.kind === 'fall') {        // snowflakes: drift down and sideways, fade in at the top and out at the ground
+        const k = (t * (0.18 + sp * 0.5) + hsh(i, 4, 77)) % 1; y = 2.6 * (1 - k); x = x0 + Math.sin(t * sp * 2 + i) * 0.6 + k * 0.8; z = z0 + Math.cos(t * sp + i) * 0.4;
+        a = Math.min(1, k * 6, (1 - k) * 8) * 0.75; size = 0.08 + hsh(i, 5, 77) * 0.08;
+      } else if (M.kind === 'rise') { // embers: rise from the floor, flicker and die out
+        const k = (t * (0.22 + sp * 0.6) + hsh(i, 4, 77)) % 1; y = 0.1 + k * 2.2; x = x0 + Math.sin(t * 1.3 + i * 2) * 0.25 * k; z = z0 + Math.cos(t * 1.1 + i) * 0.2 * k;
+        a = Math.min(1, k * 8) * (1 - k) * (0.7 + 0.3 * Math.sin(t * 17 + i)); size = 0.07 + hsh(i, 5, 77) * 0.07;
+      } else {
+        x = x0 + Math.sin(t * sp + i * 1.7) * 0.9; z = z0 + Math.cos(t * sp * 0.8 + i) * 0.7; y = 0.35 + 0.3 * Math.sin(t * 0.5 + i);
+        a = Math.max(0, Math.sin(t * (0.5 + sp) + i * 2.3)) * 0.5;
+      }
+      if (a > 0.03) { toScreen(x, y, z, AP); emit(AP[0], AP[1], project(x, z)[2] * size, M.color, a); }
     }
   }
   // Board camera and lens pan, for layers drawn through the same view (fx3d.js).
