@@ -175,9 +175,11 @@ export function makeChars(scene, env) {
   // ---------- the hero model (glTF, rigged and animated) ----------
   // models/bomber-animado.glb: the owner's Bomber (models/bomber.blend) with the rig and clips added by
   // tools/rig_bomber.py — idle, caminar, correr, poner_bomba, victoria, dano, morir — played with an AnimationMixer.
+  const HEAD_UP = -0.4;   // radians; negative lifts the face toward the camera
+  const hq1 = new THREE.Quaternion(), hq2 = new THREE.Quaternion(), hq3 = new THREE.Quaternion(), hax = new THREE.Vector3();
   const GLB_SCALE = 0.31;   // model units (Blender metres, 5.5 tall) → tiles (about 1.7 tall, head ~0.65 wide)
   let heroTpl = null, heroClips = [], onReady = null;
-  const MODEL_REV = 4;   // bump when the model changes, so no browser keeps a stale copy
+  const MODEL_REV = 5;   // bump when the model changes, so no browser keeps a stale copy
   const loader = new GLTFLoader(), heroUrl = f => new URL('../models/' + f + '?v=' + MODEL_REV, import.meta.url).href;
   const onHero = g => {
     heroTpl = g.scene; heroClips = g.animations;
@@ -186,6 +188,11 @@ export function makeChars(scene, env) {
       const mt = m.material, dark = mt.color.r + mt.color.g + mt.color.b < 0.1;
       mt.envMap = env; mt.envMapIntensity = 0.75;
       if (dark) { mt.roughness = 0.85; mt.envMapIntensity = 0.05; if ('clearcoat' in mt) mt.clearcoat = 0; }   // inky eyes stay black, no sheen across them
+      // Brows, eyes and glints sit a hair above the face plate; from the far game camera the depth buffer can't tell
+      // them apart and the skin would stripe through. Draw them as decals that always win over the face.
+      if (/^(Ceja|Ojo.negro|Reflejo.ojo)/.test(m.name)) {
+        m.material = mt.clone(); Object.assign(m.material, { polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 }); m.renderOrder = 1;
+      }
     });
     if (onReady) onReady();
   };
@@ -257,7 +264,7 @@ export function makeChars(scene, env) {
     halo.position.y = 0.015; root.add(halo);
     const shadow = new THREE.Mesh(shadowGeo, shadowMat); shadow.position.y = 0.012; shadow.scale.setScalar(0.6); root.add(shadow);
     scene.add(root);
-    return { root, yaw, body, mixer, acts, cur: null, placeEnd: 0, lastPlace: 0, shield, ring: halo, shadow, style, glb: true, yawNow: 0 };
+    return { root, yaw, body, mixer, acts, head, cur: null, placeEnd: 0, lastPlace: 0, shield, ring: halo, shadow, style, glb: true, yawNow: 0 };
   }
   // Which clip the game state calls for, cross-faded; walking and running play at the bomber's speed.
   function animateHero(o, p, st, dt) {
@@ -279,6 +286,13 @@ export function makeChars(scene, env) {
     }
     if (next) next.setEffectiveTimeScale(want === 'caminar' ? (p.speed || 3.3) / 2.3 : want === 'correr' ? (p.speed || 5) / 3.6 : want === 'poner_bomba' ? 2.3 : 1);
     o.mixer.update(dt);
+    // The game camera looks down steeply, which squashes the face until the brows sit on the eyes. Tip the head
+    // back toward the camera, on top of whatever clip plays, so the face reads as it does in the front render.
+    if (o.head) {   // about the body's own side-to-side axis, expressed in the head's parent space
+      const inv = o.head.parent.getWorldQuaternion(hq1).invert();
+      hax.set(1, 0, 0).applyQuaternion(o.body.getWorldQuaternion(hq2)).applyQuaternion(inv).normalize();
+      o.head.quaternion.premultiply(hq3.setFromAxisAngle(hax, HEAD_UP));
+    }
     let vis = !(p.alive && p.inv > 0 && Math.floor(t * 20) % 2);
     if (!p.alive && p.deadT > 1.7) vis = false;
     o.root.visible = vis;

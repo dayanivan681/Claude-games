@@ -41,7 +41,7 @@ else:
             for v in o.data.vertices:
                 w = o.matrix_world @ v.co
                 hit = tree.ray_cast(Vector((w.x, -5.0, w.z)), Vector((0, 1, 0)))[0]   # first hit from the front = outer skin
-                if hit is not None: v.co = inv @ Vector((w.x, hit.y - 0.012, w.z))
+                if hit is not None: v.co = inv @ Vector((w.x, hit.y - 0.035, w.z))   # clear of the skin even at game depth precision
             o.data.update()
 sc.render.fps = FPS
 
