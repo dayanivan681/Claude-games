@@ -415,6 +415,49 @@ const Fx3D = (() => {
     }
     bm.instanceMatrix.needsUpdate = true; if (bm.instanceColor) bm.instanceColor.needsUpdate = true;
   }
+  // The standing breakable blocks and their soft shadow decals (the board hands them over, see Board3D.view):
+  // rebuilt only when the set of blocks changes.
+  let walls = null, wallsAo = null, wallSoft = null;
+  function updateWalls(st, view) {
+    if (!view || !view.brick) return;
+    if (!walls || walls.geometry !== view.brick.geo) {
+      if (walls) scene.remove(walls, wallsAo);
+      walls = K.inst(view.brick.geo, view.brick.mat, 200); wallsAo = K.inst(view.ao.geo, view.ao.mat, 200); wallsAo.renderOrder = -1; wallSoft = null;
+    }
+    const g = st.grid, n = g.length;
+    let changed = !wallSoft || wallSoft.length !== n;
+    if (!changed) for (let j = 0; j < n; j++) if ((g[j] === st.SOFT) !== !!wallSoft[j]) { changed = true; break; }
+    if (!changed) return;
+    wallSoft = wallSoft && wallSoft.length === n ? wallSoft : new Uint8Array(n);
+    walls.count = wallsAo.count = 0;
+    const h = view.brick.h, [ox, oz] = view.ao.off;
+    for (let j = 0; j < n; j++) {
+      wallSoft[j] = g[j] === st.SOFT ? 1 : 0; if (!wallSoft[j] || walls.count >= 200) continue;
+      const x = j % st.cols + 0.5, z = ((j / st.cols) | 0) + 0.5;
+      M4.compose(V.set(x, h / 2, z), Q.identity(), S.set(1, 1, 1)); walls.setMatrixAt(walls.count, M4); walls.setColorAt(walls.count++, C.setRGB(1, 1, 1));
+      M4.compose(V.set(x + ox, 0.014, z + oz), Q.identity(), S.set(1.55, 1.55, 1.55)); wallsAo.setMatrixAt(wallsAo.count, M4); wallsAo.setColorAt(wallsAo.count++, C.setRGB(1, 1, 1));
+    }
+    for (const m of [walls, wallsAo]) { m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; }
+  }
+  // Invisible stand-ins for the board's posts and border walls: they only write depth, so whatever this layer
+  // draws (blocks, bombers, enemies, bombs) is hidden behind them exactly as if it stood in the board.
+  let occ = null, occWall = null, occPlan = null;
+  const occMat = new THREE.MeshBasicMaterial({ colorWrite: false }), occBox = new THREE.BoxGeometry(1, 1, 1);
+  function updateOccluders(st, view) {
+    if (!view || !view.pillar || !st.plan) return;
+    if (!occ || occ.geometry !== view.pillar.geo) { if (occ) scene.remove(occ); occ = K.inst(view.pillar.geo, occMat, 200); occ.renderOrder = -10; occPlan = null; }
+    if (!occWall) { occWall = K.inst(occBox, occMat, 200); occWall.renderOrder = -10; }
+    if (occPlan === st.plan) return;
+    occPlan = st.plan; occ.count = occWall.count = 0;
+    const { grid, cols } = st, rows = grid.length / cols, ph = view.pillar.h, wh = view.wall.h;
+    for (let j = 0; j < grid.length; j++) {
+      if (grid[j] !== st.HARD) continue;
+      const x = j % cols, y = (j / cols) | 0;
+      if (x === 0 || y === 0 || x === cols - 1 || y === rows - 1) { M4.compose(V.set(x + 0.5, wh / 2 - 0.04, y + 0.5), Q.identity(), S.set(1, wh - 0.06, 0.88)); occWall.setMatrixAt(occWall.count++, M4); }
+      else if ((st.plan.skins[j] || 'pillar') === 'pillar') { M4.compose(V.set(x + 0.5, ph / 2, y + 0.5), Q.identity(), S.set(0.98, 0.98, 0.98)); occ.setMatrixAt(occ.count++, M4); }
+    }
+    occ.instanceMatrix.needsUpdate = occWall.instanceMatrix.needsUpdate = true;
+  }
   let bricks = null, chunkMat = null;
   function brickMesh(view) {
     if (!view.brick) return null;
@@ -506,7 +549,7 @@ const Fx3D = (() => {
     if (css !== shakeCss) { canvas.style.transform = css; shakeCss = css; }
     const dt = Math.min(0.05, Math.max(0, st.t - lastT)); lastT = st.t;
     if (!warm) { updateBlocks(st, view); prewarm(st, view); }
-    let busy = !!st.exit || st.players.length > 0 || st.enemies.length > 0 || st.bombs.length > 0 || st.explosions.length > 0 || st.burning.length > 0 || st.burns.length > 0 || parts.length > 0;
+    let busy = !!st.exit || !!(walls && walls.count) || st.players.length > 0 || st.enemies.length > 0 || st.bombs.length > 0 || st.explosions.length > 0 || st.burning.length > 0 || st.burns.length > 0 || parts.length > 0;
     if (!busy) for (let j = 0; j < st.items.length; j++) if (st.items[j] && st.grid[j] === st.EMPTY) { busy = true; break; }
     if (!busy) {
       if (bombs.size || cards.size || parts.length) { chars.update(st, dt); updateBombs(st); updateCards(st, 0); updateFlames(st); drawParts(); if (bricks) bricks.count = 0; }
@@ -516,7 +559,7 @@ const Fx3D = (() => {
     }
     // cards lean back toward the camera, a little less than facing it so their bevel catches the light
     const el = Math.atan2(bc.position.y, Math.hypot(bc.position.z - 6.5, bc.position.x - 7.5));
-    chars.update(st, dt); updateBombs(st); updateCards(st, el - 0.22); updateBlocks(st, view); updateFlames(st); updatePortal(st); updateFalling(st, view);
+    updateOccluders(st, view); chars.update(st, dt); updateWalls(st, view); updateBombs(st); updateCards(st, el - 0.22); updateBlocks(st, view); updateFlames(st); updatePortal(st); updateFalling(st, view);
     stepParts(dt); drawParts();
     renderer.render(scene, camera); drawn = true;
   }
