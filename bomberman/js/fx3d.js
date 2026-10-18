@@ -257,6 +257,27 @@ const Fx3D = (() => {
     }
     for (const [j, o] of cards) if (!seen.has(j)) dropCard(j, o);
   }
+  // ---------- the exit portal: a disc on the floor with spinning arms, so characters walk over it ----------
+  let portal = null; const portalTexs = {};
+  function updatePortal(st) {
+    const e = st.exit;
+    if (!e) { if (portal) portal.g.visible = false; return; }
+    if (!portal) {
+      const flat = new THREE.CircleGeometry(0.5, 40).rotateX(-Math.PI / 2), mat = () => new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, toneMapped: false });
+      const g = new THREE.Group(), disc = new THREE.Mesh(flat, mat()), swirl = new THREE.Mesh(flat, mat());
+      disc.position.y = 0.012; swirl.position.y = 0.016; disc.renderOrder = swirl.renderOrder = -1; g.add(disc, swirl); scene.add(g);
+      portal = { g, disc, swirl, key: '' };
+    }
+    const key = e.accent + (e.open ? '1' : '0');
+    if (key !== portal.key) {
+      portal.key = key;
+      const tx = sw => portalTexs[key + sw] || (portalTexs[key + sw] = (() => { const t = new THREE.CanvasTexture(st.portalTex(e.open, sw, e.accent, 256)); t.colorSpace = THREE.SRGBColorSpace; return t; })());
+      portal.disc.material.map = tx(false); portal.swirl.material.map = tx(true); portal.disc.material.needsUpdate = portal.swirl.material.needsUpdate = true;
+    }
+    portal.g.visible = true; portal.g.position.set(e.x + 0.5, 0, e.y + 0.5);
+    portal.swirl.rotation.y = -st.t * (e.open ? 5 : 1.2);
+    const pulse = e.open ? 1 + 0.04 * Math.sin(st.t * 6) : 1; portal.g.scale.set(pulse, 1, pulse);
+  }
   function dropCard(j, o) { scene.remove(o.g, o.shadow, o.halo); o.halo.material.dispose(); cards.delete(j); }
 
   // ---------- explosions ----------
@@ -485,16 +506,17 @@ const Fx3D = (() => {
     if (css !== shakeCss) { canvas.style.transform = css; shakeCss = css; }
     const dt = Math.min(0.05, Math.max(0, st.t - lastT)); lastT = st.t;
     if (!warm) { updateBlocks(st, view); prewarm(st); }
-    let busy = st.players.length > 0 || st.enemies.length > 0 || st.bombs.length > 0 || st.explosions.length > 0 || st.burning.length > 0 || st.burns.length > 0 || parts.length > 0;
+    let busy = !!st.exit || st.players.length > 0 || st.enemies.length > 0 || st.bombs.length > 0 || st.explosions.length > 0 || st.burning.length > 0 || st.burns.length > 0 || parts.length > 0;
     if (!busy) for (let j = 0; j < st.items.length; j++) if (st.items[j] && st.grid[j] === st.EMPTY) { busy = true; break; }
     if (!busy) {
       if (bombs.size || cards.size || parts.length) { chars.update(st, dt); updateBombs(st); updateCards(st, 0); updateFlames(st); drawParts(); if (bricks) bricks.count = 0; }
+      updatePortal(st);
       if (drawn) { renderer.clear(); drawn = false; }
       return;
     }
     // cards lean back toward the camera, a little less than facing it so their bevel catches the light
     const el = Math.atan2(bc.position.y, Math.hypot(bc.position.z - 6.5, bc.position.x - 7.5));
-    chars.update(st, dt); updateBombs(st); updateCards(st, el - 0.22); updateBlocks(st, view); updateFlames(st);
+    chars.update(st, dt); updateBombs(st); updateCards(st, el - 0.22); updateBlocks(st, view); updateFlames(st); updatePortal(st);
     stepParts(dt); drawParts();
     renderer.render(scene, camera); drawn = true;
   }

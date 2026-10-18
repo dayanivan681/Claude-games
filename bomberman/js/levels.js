@@ -85,7 +85,7 @@ const LevelGen = (() => {
     for (let y = 1; y < rows - 1; y++) for (let x = 1; x < cols - 1; x++) {
       const j = at(x, y); if (grid[j] !== EMPTY || prot.has(j)) continue;
       let p = density * (1 + L.clump * (noise(x, y) * 2 - 1) * 1.3);
-      if (inPlaza(x, y)) p *= 0.35;
+      if (inPlaza(x, y)) { p *= 0.35; if (rules.plazaPool && Math.hypot(x - mx, y - my) < (2 * L.plaza + 1) * 0.36 - 0.2) continue; }
       if (rng() < Math.max(0.04, Math.min(0.92, p))) grid[j] = SOFT;
     }
     return { layout: name, grid, skins, decals };
