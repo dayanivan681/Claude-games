@@ -1208,7 +1208,7 @@ function collisions() {
     if (!p.alive || G.phase === 'clear') continue;
     const j = idx(Math.round(p.x), Math.round(p.y));
     if (G.fire[j] > 0 && p.shieldT <= 0 && p.inv <= 0) { killPlayer(p, G.fireOwner[j]); continue; }
-    if (G.mode === 'adventure') for (const e of G.enemies) {
+    if (G.mode === 'adventure' && p.shieldT <= 0 && p.inv <= 0) for (const e of G.enemies) {   // the shield and respawn grace also hold off enemies
       const r = e.def.boss ? 0.78 : 0.62;
       if (e.alive && e.spawnT <= 0 && Math.abs(e.x - p.x) < r && Math.abs(e.y - p.y) < r) { killPlayer(p); break; }
     }
