@@ -169,10 +169,10 @@ export function makeChars(scene, env) {
     const HR = HEAD_R, head = new THREE.Group(); head.position.y = 0.91; body.add(head);
     const helmetMat = M('helmet', () => glossy('#ffffff', { roughness: 0.3, clearcoat: 0.9, envMapIntensity: 0.9 }));
     mesh(helmetGeo, helmetMat, head); mesh(rimGeo, helmetMat, head);
-    const face = makeFace();
-    const faceMat = new THREE.MeshPhysicalMaterial({ map: face.tex[0], bumpMap: face.tex[1], bumpScale: 1.6, clearcoat: 1, clearcoatMap: face.tex[2], clearcoatRoughness: 0.08, roughness: 0.6, metalness: 0, alphaTest: 0.5, envMap: env, envMapIntensity: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+    const face = faceTex(pal, style, 'normal');
+    const faceMat = new THREE.MeshPhysicalMaterial({ map: face[0], bumpMap: face[1], bumpScale: 1.6, clearcoat: 1, clearcoatMap: face[2], clearcoatRoughness: 0.08, roughness: 0.6, metalness: 0, alphaTest: 0.5, envMap: env, envMapIntensity: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
     head.add(new THREE.Mesh(faceGeo, faceMat));
-    paintFace(face, 'normal', pal, style); const eyes = [];
+    const eyes = [];
     let antenna = null;
     if (style === 'classic') {
       antenna = new THREE.Group(); antenna.position.y = HR.y - 0.03; head.add(antenna);
@@ -206,11 +206,19 @@ export function makeChars(scene, env) {
     halo.position.y = 0.015; root.add(halo);
     const shadow = new THREE.Mesh(shadowGeo, shadowMat); shadow.position.y = 0.012; shadow.scale.setScalar(0.6); root.add(shadow);
     scene.add(root);
-    return { root, yaw, body, legs, arms, head, eyes, antenna, shield, ring: halo, shadow, style, mats: [faceMat], tex: face.tex, face, faceMode: 'normal', yawNow: 0, lx: null, ly: 0, av: 0, ao: 0, mv: 0, bob: Math.random() * 6 };
+    return { root, yaw, body, legs, arms, head, eyes, antenna, shield, ring: halo, shadow, style, mats: [faceMat], faceMat, faceMode: 'normal', yawNow: 0, lx: null, ly: 0, av: 0, ao: 0, mv: 0, bob: Math.random() * 6 };
   }
   // ---------- the hero model (glTF, rigged and animated) ----------
   // The bomber's face, painted with the 2D sprite's shapes (index.html drawBomber) into three canvases wrapped over
   // the face opening: colour, height (bump: eyes domed, brows raised) and gloss (clearcoat on eyes and brows).
+  // Every expression is painted once per palette and kept: a face change (a blink, the worried look when a bomb
+  // lands nearby) only swaps textures, instead of repainting and re-uploading three canvases mid-game.
+  const faceCache = {}, FACE_MODES = ['normal', 'worried', 'blink', 'happy', 'dead'];
+  function faceTex(pal, style, mode) {
+    const key = style + '|' + (pal.ball || '') + '|' + mode;
+    if (!faceCache[key]) { const f = makeFace(); paintFace(f, mode, pal, style); faceCache[key] = f.tex; }
+    return faceCache[key];
+  }
   function makeFace() {
     const ctx = [0, 1, 2].map(() => { const c = document.createElement('canvas'); c.width = 256; c.height = Math.round(256 * (FB - FT) / (2 * FW)); return c.getContext('2d'); });
     const tex = ctx.map((g, i) => { const t = new THREE.CanvasTexture(g.canvas); if (!i) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; });
@@ -430,11 +438,11 @@ export function makeChars(scene, env) {
     o.head.position.y = (o.headY ?? 0.91) + (p.moving ? cw * (o.headBob ?? 0.008) : 0);
     // eyes: blink, squint when dancing or dead
     const blink = Math.sin(t * 1.3 + o.bob * 3) > 0.985;
-    if (o.face) {   // the sprite's expressions: dead ×, happy arcs, worried when standing in a blast's path, blink
+    if (o.faceMat) {   // the sprite's expressions: dead ×, happy arcs, worried when standing in a blast's path, blink
       let danger = false;
       if (p.alive && st.danger && !p.calm) { const j = Math.round(p.y) * st.cols + Math.round(p.x); danger = j >= 0 && j < st.danger.length && st.danger[j] < 1.2; }
       const mode = !p.alive ? 'dead' : dance ? 'happy' : danger ? 'worried' : blink ? 'blink' : 'normal';
-      if (mode !== o.faceMode) { o.faceMode = mode; paintFace(o.face, mode, o.pal || {}, o.style); }
+      if (mode !== o.faceMode) { o.faceMode = mode; const t = faceTex(o.pal || {}, o.style, mode), m = o.faceMat; m.map = t[0]; m.bumpMap = t[1]; m.clearcoatMap = t[2]; }
     }
     // death: spin up and shrink away; invincibility blink; shield bubble
     let vis = true, sc = SCALE;
@@ -609,7 +617,8 @@ export function makeChars(scene, env) {
     const out = [];
     for (const pal of pals) out.push(heroTpl ? makeHeroGLB(pal) : makeBomber(pal));
     for (const def of defs) out.push(makeEnemy({ def, bob: 0 }));
-    return { remove: () => out.forEach(dispose) };
+    for (const pal of pals) for (const mode of FACE_MODES) faceTex(pal, pal.style || 'classic', mode);   // paint every expression up front
+    return { remove: () => out.forEach(o => scene.remove(o.root)), dispose: () => out.forEach(dispose) };
   }
-  return { update, samples, set onReady(f) { onReady = f; }, get ready() { return !!heroTpl; } };
+  return { update, samples, textures: () => Object.values(faceCache).flat(), set onReady(f) { onReady = f; }, get ready() { return !!heroTpl; } };
 }
