@@ -716,7 +716,7 @@ const fxBurns = [];
 function fxState() {
   fxBurns.length = 0; for (const e of G.enemies) if (!e.alive && e.burnBig) fxBurns.push(e);
   return { t: G.t, bombs: G.bombs, bombTime: BOMB_TIME, armed: fxArmed, explosions: G.explosions, items: G.items, grid: G.grid, EMPTY, cols: COLS, icon: itemIcon, itemDefs: ITEMS, burning: G.burning, burns: fxBurns,
-    players: G.players, enemies: G.enemies, phase: G.phase, mode: G.mode, pals: PALS, enemyDefs: ENEMIES };
+    players: G.players, enemies: G.enemies, phase: G.phase, mode: G.mode, pals: PALS, enemyDefs: ENEMIES, danger: G.danger };
 }
 // A power-up's face (tile colour, glyph, gloss) painted into a canvas for the 3D card.
 function itemIcon(type, px) {

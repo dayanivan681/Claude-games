@@ -123,21 +123,16 @@ export function makeChars(scene, env) {
     // head: helmet with a flat skin face plate, tall black eyes, thick determined brows
     const HR = new THREE.Vector3(0.27, 0.285, 0.262), head = new THREE.Group(); head.position.y = 0.91; body.add(head);
     mesh(sph, M('helmet', () => glossy('#ffffff', { roughness: 0.35, clearcoat: 0.8, envMapIntensity: 0.9 })), head, 0, 0, 0, HR.x, HR.y, HR.z);
-    const faceMat = style === 'ninja' ? M('ninjaVisor', () => glossy('#141f33', { roughness: 0.18, clearcoat: 1 })) : M('face', () => matte('#f0bf96', { roughness: 0.55 }));
-    const face = new THREE.Mesh(new THREE.SphereGeometry(1, 36, 18, Math.PI / 2 - 0.78, 1.56, 1.06, 1.12), faceMat); face.scale.copy(HR).multiplyScalar(1.012); head.add(face);
+    // the face: a sphere patch a hair above the helmet, centred on the front, wearing the painted sprite face
+    const fc = document.createElement('canvas'); fc.width = 256; fc.height = Math.round(256 * (FB - FT) / (2 * FW));
+    const faceG = fc.getContext('2d'), faceTex = new THREE.CanvasTexture(fc); faceTex.colorSpace = THREE.SRGBColorSpace; faceTex.anisotropy = 4;
+    const faceMat = new THREE.MeshStandardMaterial({ map: faceTex, transparent: true, alphaTest: 0.02, roughness: 0.55, metalness: 0, envMap: env, envMapIntensity: 0.45, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+    // sprite units → angles on the helmet: the patch spans the canvas (x ±FW, y FT..FB) measured around the head
+    // (a bit larger than the sprite and raised toward the top, since the game camera looks down on the head)
+    const fPhi = 2 * FW / HR.x * 1.02, fTh = (FB - FT) / HR.y * 1.08, fTh0 = Math.PI / 2 + FT / HR.y * 1.08 - 0.3;
+    const face = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 20, Math.PI / 2 - fPhi / 2, fPhi, fTh0, fTh), faceMat); face.scale.copy(HR).multiplyScalar(1.01); head.add(face);
     const faceR = HR.clone().multiplyScalar(1.02);
-    let eyes;
-    if (style === 'ninja') {
-      const glow = M('ninjaEye' + pal.ball, () => new THREE.MeshBasicMaterial({ color: pal.ball, toneMapped: false }));
-      eyes = [-1, 1].map(s => { const g = decal(head, faceR, s * 0.27, -0.02); const e = mesh(box, glow, g, 0, 0, 0, 0.1, 0.03, 0.012); e.rotation.z = s * -0.3; return { g, pupil: e, base: 0.03 }; });
-    } else {
-      eyes = [-1, 1].map(s => {
-        const g = decal(head, faceR, s * 0.25, -0.08), e = mesh(sphLo, INK, g, 0, 0, 0, 0.036, 0.085, 0.016);
-        mesh(sphLo, SHINE, e, -0.25, 0.5, 0.9, 0.25, 0.1, 0.2);
-        const b = mesh(browGeo, INK, decal(head, faceR, s * 0.25, 0.2), 0, 0, 0, 0.13, 0.05, 0.02); b.rotation.z = s * 0.42; if (s > 0) b.rotation.y = Math.PI;
-        return { g, pupil: e, base: 0.085 };
-      });
-    }
+    paintFace(faceG, 'normal', pal, style); const eyes = [];
     let antenna = null;
     if (style === 'classic') {
       antenna = new THREE.Group(); antenna.position.y = HR.y - 0.03; head.add(antenna);
@@ -170,9 +165,46 @@ export function makeChars(scene, env) {
     halo.position.y = 0.015; root.add(halo);
     const shadow = new THREE.Mesh(shadowGeo, shadowMat); shadow.position.y = 0.012; shadow.scale.setScalar(0.6); root.add(shadow);
     scene.add(root);
-    return { root, yaw, body, legs, arms, head, eyes, antenna, shield, ring: halo, shadow, style, yawNow: 0, lx: null, ly: 0, av: 0, ao: 0, mv: 0, bob: Math.random() * 6 };
+    return { root, yaw, body, legs, arms, head, eyes, antenna, shield, ring: halo, shadow, style, mats: [faceMat], tex: [faceTex], faceG, faceTex, faceMode: 'normal', yawNow: 0, lx: null, ly: 0, av: 0, ao: 0, mv: 0, bob: Math.random() * 6 };
   }
   // ---------- the hero model (glTF, rigged and animated) ----------
+  // The bomber's face, painted with the same shapes as the 2D sprite (index.html drawBomber) into a canvas that is
+  // wrapped over the 3D face plate: skin plate, tall eyes with a glint, thick tapered brows, and the expressions.
+  // Units are the sprite's (head radius ~0.3); the canvas covers x ±FW, y FT..FB around the head centre.
+  const FW = 0.24, FT = -0.16, FB = 0.18, FPX = 256 / (2 * FW);
+  function paintFace(g, mode, pal, style) {
+    const c = g.canvas; g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height);
+    g.setTransform(FPX, 0, 0, FPX, FW * FPX, -FT * FPX); g.lineJoin = g.lineCap = 'round';
+    const OUT = '#1a1530', ninja = style === 'ninja', fg = g.createLinearGradient(0, -0.13, 0, 0.16);
+    if (ninja) { fg.addColorStop(0, '#2a3a52'); fg.addColorStop(1, '#070b14'); } else { fg.addColorStop(0, '#ffe7d2'); fg.addColorStop(1, '#efb48b'); }
+    g.fillStyle = fg; g.beginPath(); g.roundRect(-0.205, -0.12, 0.41, 0.28, 0.12); g.fill(); g.lineWidth = 0.022; g.strokeStyle = OUT; g.stroke();
+    const ey = 0.035, line = (pts, w) => { g.lineWidth = w; g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.stroke(); };
+    for (const ex of [-0.08, 0.08]) {
+      const sg = Math.sign(ex);
+      if (ninja) {                               // glowing visor slits
+        g.fillStyle = g.strokeStyle = pal.ball;
+        if (mode === 'normal') { g.beginPath(); g.moveTo(ex + sg * 0.06, ey - 0.045); g.lineTo(ex - sg * 0.055, ey - 0.01); g.lineTo(ex - sg * 0.05, ey + 0.025); g.lineTo(ex + sg * 0.06, ey + 0.01); g.closePath(); g.fill(); }
+        else if (mode === 'worried') { g.beginPath(); g.ellipse(ex, ey, 0.04, 0.045, 0, 0, Math.PI * 2); g.fill(); }
+        else if (mode === 'happy') { g.lineWidth = 0.03; g.beginPath(); g.arc(ex, ey + 0.025, 0.045, Math.PI * 1.1, Math.PI * 1.9); g.stroke(); }
+        else if (mode === 'blink') line([[ex - 0.045, ey], [ex + 0.045, ey]], 0.03);
+        else { line([[ex - 0.035, ey - 0.035], [ex + 0.035, ey + 0.035]], 0.03); line([[ex + 0.035, ey - 0.035], [ex - 0.035, ey + 0.035]], 0.03); }
+        continue;
+      }
+      g.fillStyle = g.strokeStyle = OUT;
+      if (mode === 'normal' || mode === 'worried') {
+        const ry = mode === 'worried' ? 0.07 : 0.088, rx = mode === 'worried' ? 0.05 : 0.042;
+        g.fillStyle = '#120f22'; g.beginPath(); g.ellipse(ex, ey, rx, ry, 0, 0, Math.PI * 2); g.fill();
+        g.fillStyle = 'rgba(255,255,255,0.9)'; g.beginPath(); g.ellipse(ex - 0.012, ey - ry * 0.45, 0.012, 0.022, 0, 0, Math.PI * 2); g.fill();
+        g.fillStyle = OUT; g.beginPath();        // thick tapered brow
+        if (mode === 'normal') { g.moveTo(ex + sg * 0.075, ey - 0.16); g.lineTo(ex - sg * 0.055, ey - 0.11); g.lineTo(ex - sg * 0.05, ey - 0.088); g.lineTo(ex + sg * 0.07, ey - 0.135); }
+        else { g.moveTo(ex + sg * 0.07, ey - 0.105); g.lineTo(ex - sg * 0.05, ey - 0.15); g.lineTo(ex - sg * 0.05, ey - 0.128); g.lineTo(ex + sg * 0.07, ey - 0.085); }
+        g.closePath(); g.fill();
+      } else if (mode === 'happy') { g.lineWidth = 0.032; g.beginPath(); g.arc(ex, ey + 0.025, 0.045, Math.PI * 1.1, Math.PI * 1.9); g.stroke(); }
+      else if (mode === 'blink') line([[ex - 0.04, ey], [ex + 0.04, ey]], 0.028);
+      else { line([[ex - 0.035, ey - 0.035], [ex + 0.035, ey + 0.035]], 0.028); line([[ex + 0.035, ey - 0.035], [ex - 0.035, ey + 0.035]], 0.028); }
+    }
+    if (ninja) { g.fillStyle = 'rgba(255,255,255,0.18)'; g.beginPath(); g.moveTo(-0.17, -0.1); g.lineTo(-0.08, -0.1); g.lineTo(-0.15, 0.13); g.lineTo(-0.19, 0.08); g.fill(); }
+  }
   // models/bomber-animado.glb: the owner's Bomber (models/bomber.blend) with the rig and clips added by
   // tools/rig_bomber.py — idle, caminar, correr, poner_bomba, victoria, dano, morir — played with an AnimationMixer.
   const HEAD_UP = -0.45;   // radians; negative lifts the face toward the camera
@@ -197,7 +229,9 @@ export function makeChars(scene, env) {
     if (onReady) onReady();
   };
   // .glb normally; hosts that won't serve .glb get the same model as embedded glTF JSON. Failing both, the procedural rig stays.
-  loader.load(heroUrl('bomber-animado.glb'), onHero, undefined, () => loader.load(heroUrl('bomber-animado.json'), onHero, undefined, () => {}));
+  // Off for now: the bombers are the 2D sprite's design built in 3D (makeBomber). Set true to use the Blender model.
+  const HERO_GLB = false;
+  if (HERO_GLB) loader.load(heroUrl('bomber-animado.glb'), onHero, undefined, () => loader.load(heroUrl('bomber-animado.json'), onHero, undefined, () => {}));
   const partOf = m => { for (let n = m; n; n = n.parent) { const k = /^(pierna|brazo|antena|cabeza|torso|cadera|bomba)/.exec(n.name); if (k) return k[1]; } return ''; };
   // Rivals: the Bomber's materials recoloured from their palette (pink → boots / gloves / antenna, blue → jacket…).
   function recolor(mat, pal, part) {
@@ -332,8 +366,13 @@ export function makeChars(scene, env) {
     o.head.rotation.y = !p.moving && !dance && p.alive ? Math.sin(t * 0.8 + o.bob) * 0.15 : 0;
     o.head.position.y = (o.headY ?? 0.91) + (p.moving ? cw * (o.headBob ?? 0.008) : 0);
     // eyes: blink, squint when dancing or dead
-    const blink = Math.sin(t * 1.3 + o.bob * 3) > 0.985, ey = !p.alive ? 0.25 : dance ? 0.4 : blink ? 0.12 : 1;
-    for (const e of o.eyes) e.pupil.scale.y = e.base * ey;
+    const blink = Math.sin(t * 1.3 + o.bob * 3) > 0.985;
+    if (o.faceG) {   // the sprite's expressions: dead ×, happy arcs, worried when standing in a blast's path, blink
+      let danger = false;
+      if (p.alive && st.danger && !p.calm) { const j = Math.round(p.y) * st.cols + Math.round(p.x); danger = j >= 0 && j < st.danger.length && st.danger[j] < 1.2; }
+      const mode = !p.alive ? 'dead' : dance ? 'happy' : danger ? 'worried' : blink ? 'blink' : 'normal';
+      if (mode !== o.faceMode) { o.faceMode = mode; paintFace(o.faceG, mode, o.pal || {}, o.style); o.faceTex.needsUpdate = true; }
+    }
     // death: spin up and shrink away; invincibility blink; shield bubble
     let vis = true, sc = SCALE;
     if (!p.alive) { const k = p.deadT; if (k > 1.4) vis = false; o.yawNow += dt * 14; o.yaw.rotation.y = o.yawNow; sc = SCALE * Math.max(0, 1 - Math.max(0, k - 0.45) / 0.95); o.body.position.y += k * 0.5; }
@@ -484,7 +523,7 @@ export function makeChars(scene, env) {
     o.root.visible = vis; o.root.scale.setScalar(Math.max(0.0001, sc));
     o.shadow.scale.setScalar(0.6 / Math.max(1, 1 + o.float));
   }
-  function dispose(o) { scene.remove(o.root); for (const m of o.mats || []) m.dispose(); }
+  function dispose(o) { scene.remove(o.root); for (const m of o.mats || []) m.dispose(); for (const x of o.tex || []) x.dispose(); }
 
   // ---------- frame ----------
   const bombers = new Map(), enemies = new Map();
