@@ -27,10 +27,15 @@ else:
     bpy.ops.wm.read_factory_settings(use_empty=True)
     sc = bpy.context.scene
     bpy.ops.import_scene.gltf(filepath=IN)
-    # The game camera looks down at ~45°: brows standing 0.07 proud of the face show their black top face and read
-    # as thick bars. Sink them almost flush with the face plate (shape unchanged) for the game export only.
+    # The game camera looks down at ~45°: brows standing proud of the face show their black top face and read as
+    # bars. For the game export only, project them onto the face plate (front view, a hair above the skin): the
+    # silhouette stays exactly as designed, only the slab depth goes.
+    face = next((o for o in bpy.context.scene.objects if o.name.lower().startswith("placa rostro")), None)
     for o in bpy.context.scene.objects:
-        if o.name.lower().startswith("ceja"): o.matrix_world.translation.y += float(os.environ.get("BROW_SINK", "0.05"))
+        if face and o.name.lower().startswith("ceja"):
+            m = o.modifiers.new("Ceja sobre la cara", "SHRINKWRAP")
+            m.target = face; m.wrap_method = "PROJECT"; m.use_project_y = True
+            m.use_negative_direction = True; m.use_positive_direction = True; m.wrap_mode = "ON_SURFACE"; m.offset = 0.012
 sc.render.fps = FPS
 
 EXCLUDE = ("suelo", "softbox", "relleno", "contraluz", "cámara")
