@@ -106,14 +106,14 @@ export function makeChars(scene, env) {
     fantasma: { up: 0.42, w: 2.1, h: 1.61, eyes: 'hollow', sep: 0.36, ey: -0.24, rx: 0.2, ry: 0.13, pupil: '#9fe8ff', glow: true, mouth: 'maw', my: 0.34, mw: 0.42, mh: 0.36, teeth: 4 },
     diablo: { up: 0.52, w: 2.1, h: 1.47, eyes: 'angry', sep: 0.36, ey: -0.26, rx: 0.21, ry: 0.23, pupil: '#ffd23f', glow: true, mouth: 'grin', my: 0.34, mw: 0.8, mh: 0.24, teeth: 6, fangs: true },
     calavera: { up: 0.38, w: 2.22, h: 1.68, eyes: 'sockets', sep: 0.36, ey: -0.2, rx: 0.25, ry: 0.22, pupil: '#ff2a1a', glow: true, mouth: 'nose', my: 0.22 },
-    jefe: { up: 0.5, w: 2.1, h: 1.47, eyes: 'angry', sep: 0.36, ey: -0.26, rx: 0.21, ry: 0.24, pupil: '#ff3b3b', glow: true, mouth: 'grin', my: 0.34, mw: 0.86, mh: 0.26, teeth: 7, fangs: true },
+    jefe: { brow: '#ff3b3b', up: 0.3, w: 2.1, h: 1.47, eyes: 'angry', sep: 0.36, ey: -0.26, rx: 0.21, ry: 0.24, pupil: '#ff3b3b', glow: true, mouth: 'grin', my: 0.34, mw: 0.86, mh: 0.26, teeth: 7, fangs: true },
   };
   const ENEMY_MODES = ['idle', 'hunt', 'hurt', 'dead'];
   function drawEnemyFace(g, P, sp, mode, def) {
     const pick = (c, h, s, e) => P === 'col' ? c : P === 'h' ? h : P === 's' ? s : e;
     const ell = (x, y, rx, ry, rot = 0) => { g.beginPath(); g.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2); };
     const dead = mode === 'dead', hunt = mode === 'hunt', hurt = mode === 'hurt', INKC = '#14101c', GUM = '#2a0508';
-    const browC = '#' + new THREE.Color(def.col).multiplyScalar(0.32).getHexString();
+    const browC = sp.brow || '#' + new THREE.Color(def.col).multiplyScalar(0.32).getHexString();
     // eyes
     for (const s of [-1, 1]) {
       const cx = s * sp.sep, cy = sp.ey, rx = sp.rx, ry = sp.ry;
@@ -625,13 +625,29 @@ export function makeChars(scene, env) {
       o.eyes = [];
       o.anim = (t, e) => { o.body.position.y = o.float + Math.sin(t * 3 + e.bob) * 0.05; jaw.position.y = -0.14 - Math.abs(Math.sin(t * 6)) * 0.035; };
     },
-    jefe(o, c) {   // the boss: a crowned brute with a furious glare and a mouthful of fangs
-      const m = o.mat(glossy(c.col, { clearcoat: 1 })), R = new THREE.Vector3(0.3, 0.3, 0.28), g = new THREE.Group(); g.position.y = 0.32; o.body.add(g);
-      o.float = 0.05; mesh(sph, m, g, 0, 0, 0, R.x, R.y, R.z);
-      for (let i = 0; i < 5; i++) { const a = (i - 2) * 0.35; const s = mesh(cone, GOLD, g, Math.sin(a) * 0.2, 0.28, Math.cos(a) * 0.05 - 0.02, 0.04, 0.14, 0.04); s.rotation.z = -a * 0.6; }
+    jefe(o, c) {   // the Bomb King: a giant black bomb with a lit fuse, a gold band, a tilted crown and a furious face
+      const m = o.mat(glossy('#1b1f38', { clearcoat: 1, clearcoatRoughness: 0.05, roughness: 0.28, metalness: 0.2, sheen: 0.35, sheenColor: c.col, envMapIntensity: 1.5 }));
+      const R = new THREE.Vector3(0.33, 0.33, 0.33), g = new THREE.Group(); g.position.y = 0.36; o.body.add(g);
+      o.float = 0.02; mesh(sph, m, g, 0, 0, 0, R.x, R.y, R.z);
+      const band = mesh(ring, GOLD, g, 0, 0, 0, 0.332, 0.332, 0.5); band.rotation.x = Math.PI / 2; band.position.y = -0.1; band.scale.set(0.317, 0.317, 0.3);
+      for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2; mesh(sphLo, GOLD, band, Math.cos(a), Math.sin(a), 0, 0.07); }   // rivets
+      mesh(cyl, GOLD, g, 0, 0.33, 0, 0.1, 0.1, 0.1);   // the fuse cap
+      const fc = new THREE.QuadraticBezierCurve3(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.03, 0.16, 0), new THREE.Vector3(0.15, 0.2, -0.04));
+      const fuse = new THREE.Group(); fuse.position.set(0, 0.38, 0); g.add(fuse);
+      fuse.add(new THREE.Mesh(new THREE.TubeGeometry(fc, 12, 0.025, 7, false), o.mat(matte('#f0cf96', { roughness: 0.85 }))));
+      const spark = mesh(sphLo, o.mat(new THREE.MeshBasicMaterial({ color: '#fff3b0', toneMapped: false })), fuse, fc.getPoint(1).x, fc.getPoint(1).y, fc.getPoint(1).z, 0.05);
+      const flare = mesh(sphLo, o.mat(new THREE.MeshBasicMaterial({ color: '#ff8a1e', transparent: true, opacity: 0.6, depthWrite: false, toneMapped: false })), spark, 0, 0, 0, 1.9);
+      const crown = new THREE.Group(); crown.position.set(-0.14, 0.29, 0.02); crown.rotation.z = 0.38; crown.scale.setScalar(1.45); g.add(crown);   // worn at a jaunty angle beside the fuse
+      mesh(new THREE.CylinderGeometry(1, 1, 1, 20, 1, true), o.mat(new THREE.MeshStandardMaterial({ color: '#ffcf3a', roughness: 0.22, metalness: 1, envMap: env, envMapIntensity: 1.3, side: THREE.DoubleSide })), crown, 0, 0, 0, 0.1, 0.06, 0.1);
+      for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; mesh(cone, GOLD, crown, Math.sin(a) * 0.095, 0.06, Math.cos(a) * 0.095, 0.03, 0.07, 0.03); mesh(sphLo, GOLD, crown, Math.sin(a) * 0.095, 0.1, Math.cos(a) * 0.095, 0.014); }
+      mesh(sphLo, o.mat(glossy('#ff2a55', { emissive: '#ff2a55', emissiveIntensity: 0.4 })), crown, 0, 0.005, 0.1, 0.025);
       enemyFace(o, g, R, c);
-      for (const s of [-1, 1]) mesh(sph, m, o.body, s * 0.3, 0.25, 0.05, 0.08);
-      o.anim = (t, e) => { o.body.position.y = o.float + Math.abs(Math.sin(t * 4 + e.bob)) * 0.05; o.body.rotation.z = Math.sin(t * 2) * 0.06; };
+      for (const s of [-1, 1]) mesh(sph, m, o.body, s * 0.14, 0.04, 0.04, 0.09, 0.06, 0.12);   // stubby feet
+      o.anim = (t, e) => {
+        o.body.position.y = o.float + Math.abs(Math.sin(t * 4 + e.bob)) * 0.05; o.body.rotation.z = Math.sin(t * 2) * 0.06;
+        const f = 0.8 + 0.35 * Math.sin(t * 31) * Math.sin(t * 17 + 1); spark.scale.setScalar(0.05 * f); flare.material.opacity = 0.35 + 0.3 * f;
+        fuse.rotation.z = Math.sin(t * 3) * 0.12;
+      };
     },
   };
   function makeEnemy(e) {
