@@ -17,6 +17,7 @@ MODE = os.environ.get("MODE", "blend")
 IN, OUT = os.environ["IN"], os.environ["OUT"]
 SCENE = "Bomber • estudio"
 FPS = 24
+BROW_THICK = float(os.environ.get("BROW_THICK", "2.6"))   # game export: upper half of each brow ×this
 
 # ---------------------------------------------------------------- scene
 if MODE == "blend":
@@ -38,6 +39,14 @@ else:
         for o in bpy.context.scene.objects:
             if not o.name.lower().startswith("ceja"): continue
             inv = o.matrix_world.inverted()
+            # At game size the brow is ~2 px tall and reads as a thin line, like a generic squint. Thicken it upward
+            # from its centre line (the lower edge stays put so it never covers the eye): the wedge stays a wedge.
+            ws = [o.matrix_world @ v.co for v in o.data.vertices]
+            n = len(ws); mx = sum(w.x for w in ws) / n; mz = sum(w.z for w in ws) / n
+            k = sum((w.x - mx) * (w.z - mz) for w in ws) / max(1e-9, sum((w.x - mx) ** 2 for w in ws))
+            for v, w in zip(o.data.vertices, ws):
+                d = w.z - (mz + k * (w.x - mx))
+                if d > 0: v.co = inv @ Vector((w.x, w.y, w.z + d * (BROW_THICK - 1)))
             for v in o.data.vertices:
                 w = o.matrix_world @ v.co
                 hit = tree.ray_cast(Vector((w.x, -5.0, w.z)), Vector((0, 1, 0)))[0]   # first hit from the front = outer skin

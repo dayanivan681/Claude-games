@@ -175,11 +175,11 @@ export function makeChars(scene, env) {
   // ---------- the hero model (glTF, rigged and animated) ----------
   // models/bomber-animado.glb: the owner's Bomber (models/bomber.blend) with the rig and clips added by
   // tools/rig_bomber.py — idle, caminar, correr, poner_bomba, victoria, dano, morir — played with an AnimationMixer.
-  const HEAD_UP = -0.4;   // radians; negative lifts the face toward the camera
+  const HEAD_UP = -0.45;   // radians; negative lifts the face toward the camera
   const hq1 = new THREE.Quaternion(), hq2 = new THREE.Quaternion(), hq3 = new THREE.Quaternion(), hax = new THREE.Vector3();
   const GLB_SCALE = 0.31;   // model units (Blender metres, 5.5 tall) → tiles (about 1.7 tall, head ~0.65 wide)
   let heroTpl = null, heroClips = [], onReady = null;
-  const MODEL_REV = 5;   // bump when the model changes, so no browser keeps a stale copy
+  const MODEL_REV = 6;   // bump when the model changes, so no browser keeps a stale copy
   const loader = new GLTFLoader(), heroUrl = f => new URL('../models/' + f + '?v=' + MODEL_REV, import.meta.url).href;
   const onHero = g => {
     heroTpl = g.scene; heroClips = g.animations;
@@ -264,7 +264,7 @@ export function makeChars(scene, env) {
     halo.position.y = 0.015; root.add(halo);
     const shadow = new THREE.Mesh(shadowGeo, shadowMat); shadow.position.y = 0.012; shadow.scale.setScalar(0.6); root.add(shadow);
     scene.add(root);
-    return { root, yaw, body, mixer, acts, head, cur: null, placeEnd: 0, lastPlace: 0, shield, ring: halo, shadow, style, glb: true, yawNow: 0 };
+    return { root, yaw, body, mixer, acts, head, cur: null, placeEnd: 0, lastPlace: 0, shield, ring: halo, shadow, style, glb: true, yawNow: 0, headRest: head ? head.quaternion.clone() : null };
   }
   // Which clip the game state calls for, cross-faded; walking and running play at the bomber's speed.
   function animateHero(o, p, st, dt) {
@@ -285,6 +285,7 @@ export function makeChars(scene, env) {
       o.cur = want;
     }
     if (next) next.setEffectiveTimeScale(want === 'caminar' ? (p.speed || 3.3) / 2.3 : want === 'correr' ? (p.speed || 5) / 3.6 : want === 'poner_bomba' ? 2.3 : 1);
+    if (o.head) o.head.quaternion.copy(o.headRest);   // clips may not key the head, so the tilt below must not accumulate
     o.mixer.update(dt);
     // The game camera looks down steeply, which squashes the face until the brows sit on the eyes. Tip the head
     // back toward the camera, on top of whatever clip plays, so the face reads as it does in the front render.
