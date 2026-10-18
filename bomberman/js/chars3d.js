@@ -6,7 +6,7 @@
 //
 // Look: the hero's own design, not a cute chibi — a slim figure with a big helmet, a flat skin face plate with
 // tall black eyes under thick determined brows, an open short-sleeved jacket, gold-buckled belt, striped
-// knees and chunky cuffed gloves and boots. Enemies scowl: slanted brows, small pupils, teeth and fangs.
+// knees and chunky cuffed gloves and boots. Enemies wear painted scowling faces (slanted brows, glowing pupils, teeth and fangs) that change as they hunt, get hit and die.
 //
 // The hero is the owner's Bomber (models/bomber.blend → models/bomber-animado.glb, rigged and animated by
 // tools/rig_bomber.py); rivals wear the same model recoloured from their palette plus their accessories. Until it loads (or if it can't) a procedural rig stands in.
@@ -29,9 +29,6 @@ export function makeChars(scene, env) {
   })();
   const shadowGeo = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), shadowMat = new THREE.MeshBasicMaterial({ map: blob, transparent: true, depthWrite: false });
   const TILT = 0.28, SCALE = 1.12;   // lean back toward the camera a little and stand taller, so faces read from above
-  // Thick tapered brow (wide at the inner end), and a fang/tooth.
-  const browGeo = (() => { const s = new THREE.Shape(); s.moveTo(-0.5, -0.18); s.lineTo(0.5, -0.5); s.lineTo(0.5, 0.5); s.lineTo(-0.5, 0.22); s.closePath(); const g = new THREE.ExtrudeGeometry(s, { depth: 0.3, bevelEnabled: false }); g.translate(0, 0, -0.15); return g; })();
-  const toothGeo = new THREE.ConeGeometry(1, 1, 4); toothGeo.rotateX(Math.PI);
 
   // ---------- materials ----------
   const mats = {};
@@ -97,27 +94,116 @@ export function makeChars(scene, env) {
     const curve = new THREE.CatmullRomCurve3(pts.map(([x, y]) => onHelmet(faceDir(x, y), 0.002)), true);
     return new THREE.TubeGeometry(curve, 200, 0.02, 10, true);
   })();
-  // Menacing eyes for enemies: squinting white, small pupil (optionally glowing), slanted brow over each.
-  function scowl(parent, R, { sep = 0.32, up = 0.3, size = 0.06, pupil = INK, brow = INK, browTilt = 0.55, white = true } = {}) {
-    const eyes = [];
+  // ---------- enemy faces ----------
+  // Painted like the bombers' faces (colour + relief + gloss, plus an emissive pass for glowing pupils) on a patch
+  // of the body's surface, so they read at game size. Face coordinates: x ±1 across the face, y ±(h/w) top → bottom.
+  // Expressions: idle, hunt (closing in: angrier eyes, open mouth), hurt (boss hit), dead.
+  const ENEMY_FACES = {
+    globo: { up: 0.55, w: 2.1, h: 1.47, eyes: 'angry', sep: 0.36, ey: -0.26, rx: 0.2, ry: 0.24, pupil: '#120f22', mouth: 'grin', my: 0.34, mw: 0.78, mh: 0.22, teeth: 6, fangs: true },
+    gota: { up: 0.47, w: 2.1, h: 1.47, eyes: 'angry', sep: 0.36, ey: -0.24, rx: 0.19, ry: 0.22, pupil: '#120f22', mouth: 'frown', my: 0.34, mw: 0.52, mh: 0.2, teeth: 5 },
+    murci: { up: 0.45, w: 2.51, h: 1.68, eyes: 'angry', sep: 0.38, ey: -0.2, rx: 0.2, ry: 0.2, pupil: '#ff2a1a', glow: true, mouth: 'grin', my: 0.32, mw: 0.48, mh: 0.17, teeth: 4, fangs: true },
+    chispa: { up: 0.48, w: 2.32, h: 1.61, eyes: 'angry', sep: 0.36, ey: -0.22, rx: 0.2, ry: 0.19, pupil: '#120f22', mouth: 'grit', my: 0.32, mw: 0.56, mh: 0.2 },
+    fantasma: { up: 0.42, w: 2.1, h: 1.61, eyes: 'hollow', sep: 0.36, ey: -0.24, rx: 0.2, ry: 0.13, pupil: '#9fe8ff', glow: true, mouth: 'maw', my: 0.34, mw: 0.42, mh: 0.36, teeth: 4 },
+    diablo: { up: 0.52, w: 2.1, h: 1.47, eyes: 'angry', sep: 0.36, ey: -0.26, rx: 0.21, ry: 0.23, pupil: '#ffd23f', glow: true, mouth: 'grin', my: 0.34, mw: 0.8, mh: 0.24, teeth: 6, fangs: true },
+    calavera: { up: 0.38, w: 2.22, h: 1.68, eyes: 'sockets', sep: 0.36, ey: -0.2, rx: 0.25, ry: 0.22, pupil: '#ff2a1a', glow: true, mouth: 'nose', my: 0.22 },
+    jefe: { up: 0.5, w: 2.1, h: 1.47, eyes: 'angry', sep: 0.36, ey: -0.26, rx: 0.21, ry: 0.24, pupil: '#ff3b3b', glow: true, mouth: 'grin', my: 0.34, mw: 0.86, mh: 0.26, teeth: 7, fangs: true },
+  };
+  const ENEMY_MODES = ['idle', 'hunt', 'hurt', 'dead'];
+  function drawEnemyFace(g, P, sp, mode, def) {
+    const pick = (c, h, s, e) => P === 'col' ? c : P === 'h' ? h : P === 's' ? s : e;
+    const ell = (x, y, rx, ry, rot = 0) => { g.beginPath(); g.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2); };
+    const dead = mode === 'dead', hunt = mode === 'hunt', hurt = mode === 'hurt', INKC = '#14101c', GUM = '#2a0508';
+    const browC = '#' + new THREE.Color(def.col).multiplyScalar(0.32).getHexString();
+    // eyes
     for (const s of [-1, 1]) {
-      const g = decal(parent, R, s * sep, up);
-      if (white) mesh(sphLo, M('eyeWhite', () => glossy('#fbf6ea')), g, 0, 0, 0, size * 1.25, size * 0.95, size * 0.45);
-      const pu = mesh(sphLo, pupil, g, s * -size * 0.25, -size * 0.1, size * 0.3, size * 0.42, size * 0.55, size * 0.3);
-      if (pupil === INK) mesh(sphLo, SHINE, pu, -0.3, 0.35, 0.9, 0.28, 0.28, 0.2);
-      const b = mesh(browGeo, brow, g, s * size * 0.1, size * 1.05, size * 0.2, size * 2.7, size * 1.0, size * 0.5);
-      b.rotation.z = s * browTilt; if (s > 0) b.rotation.y = Math.PI;
-      eyes.push({ g, pupil: pu, base: pu.scale.y });
+      const cx = s * sp.sep, cy = sp.ey, rx = sp.rx, ry = sp.ry;
+      if (dead || hurt) {   // X eyes, or squeezed > <
+        g.strokeStyle = pick(INKC, '#c0c0c0', '#ffffff', '#000'); g.lineWidth = 0.07; g.beginPath();
+        if (dead) { g.moveTo(cx - rx * 0.7, cy - ry * 0.6); g.lineTo(cx + rx * 0.7, cy + ry * 0.6); g.moveTo(cx + rx * 0.7, cy - ry * 0.6); g.lineTo(cx - rx * 0.7, cy + ry * 0.6); }
+        else { g.moveTo(cx + s * rx * 0.8, cy - ry * 0.55); g.lineTo(cx - s * rx * 0.55, cy); g.lineTo(cx + s * rx * 0.8, cy + ry * 0.55); }
+        g.stroke(); continue;
+      }
+      if (sp.eyes !== 'angry') {   // hollow wraith eyes / skull sockets with a glowing point
+        g.fillStyle = pick('#07060c', '#1a1a1a', '#ffffff', '#000'); ell(cx, cy, rx, ry, s * (sp.eyes === 'hollow' ? 0.45 : 0.25)); g.fill();
+        const pr = hunt ? 0.075 : 0.055, px = cx - s * rx * 0.15, py = cy + ry * 0.1;
+        g.fillStyle = pick(sp.pupil, '#909090', '#ffffff', sp.pupil); ell(px, py, pr, pr); g.fill();
+        if (P === 'e') { g.globalAlpha = 0.45; ell(px, py, pr * 2.2, pr * 2.2); g.fill(); g.globalAlpha = 1; }
+        continue;
+      }
+      // angry eye: drawn under a slanted brow line whose inner end dips (lower still when hunting)
+      const kin = hunt ? -0.2 : 0.15, ox = cx + s * rx * 1.4, ix = cx - s * rx * 1.4, oy = cy - ry * 0.95, iy = cy - ry * kin;
+      g.save(); g.beginPath(); g.moveTo(ox, oy); g.lineTo(ix, iy); g.lineTo(ix, cy + ry * 2); g.lineTo(ox, cy + ry * 2); g.closePath(); g.clip();
+      let wf = '#fbf6ea';
+      if (P === 'h') { wf = g.createRadialGradient(cx - rx * 0.2, cy - ry * 0.3, 0, cx, cy, ry * 1.2); wf.addColorStop(0, '#e8e8e8'); wf.addColorStop(1, '#787878'); }
+      g.fillStyle = pick(wf, wf, '#ffffff', '#000'); ell(cx, cy, rx, ry); g.fill();
+      if (P === 'col') { g.strokeStyle = INKC; g.lineWidth = 0.03; g.stroke(); }
+      const pr = (hunt ? 0.5 : 0.64) * Math.min(rx, ry), px = cx - s * rx * 0.25, py = cy + ry * 0.18;
+      g.fillStyle = pick(sp.pupil, '#ffffff', '#ffffff', sp.glow ? sp.pupil : '#000'); ell(px, py, pr * 0.85, pr); g.fill();
+      if (sp.glow && P === 'col') { g.fillStyle = INKC; ell(px, py, pr * 0.2, pr * 0.75); g.fill(); }   // slit
+      if (P === 'col' || P === 's') { g.fillStyle = 'rgba(255,255,255,0.9)'; ell(px - pr * 0.3, py - pr * 0.4, pr * 0.22, pr * 0.28); g.fill(); }
+      g.restore();
+      const bt = 0.085;   // the brow along that line, thicker toward the middle
+      g.fillStyle = pick(browC, '#ffffff', '#c8c8c8', '#000'); g.beginPath();
+      g.moveTo(ox + s * 0.03, oy - bt * 0.6); g.lineTo(ix - s * 0.03, iy - bt * 1.3); g.lineTo(ix - s * 0.03, iy + 0.015); g.lineTo(ox + s * 0.03, oy + 0.015); g.closePath(); g.fill();
     }
-    return eyes;
+    // mouth
+    const my = sp.my, mw = sp.mw || 0.5, mh = (sp.mh || 0.2) * (hunt ? 1.5 : 1), dark = pick(GUM, '#2a2a2a', '#888888', '#000'), tooth = pick('#fffbea', '#e0e0e0', '#ffffff', '#000');
+    const teethRow = (y0, dir, n, len, fangs) => { for (let i = 0; i < n; i++) { const x = -mw * 0.42 + i * (mw * 0.84 / Math.max(1, n - 1)), f = fangs && (i === 0 || i === n - 1), l = len * (f ? 1.8 : 1), hw = mw / n * 0.42; g.beginPath(); g.moveTo(x - hw, y0); g.lineTo(x + hw, y0); g.lineTo(x, y0 + dir * l); g.closePath(); g.fill(); } };
+    if (dead && sp.mouth !== 'nose') { g.fillStyle = dark; ell(0, my, mw * 0.22, mh * 0.9); g.fill(); return; }
+    if (sp.mouth === 'grin') {
+      const top = my - mh * 0.35;
+      g.beginPath(); g.moveTo(-mw / 2, top); g.quadraticCurveTo(0, my - mh * 0.05, mw / 2, top); g.quadraticCurveTo(0, my + mh * 1.3, -mw / 2, top); g.closePath();
+      g.fillStyle = dark; g.fill(); g.save(); g.clip(); g.fillStyle = tooth;
+      teethRow(my - mh * 0.25, 1, sp.teeth || 5, mh * 0.45, sp.fangs); if (hunt) teethRow(my + mh * 0.75, -1, (sp.teeth || 5) - 1, mh * 0.3, false);
+      g.restore();
+    } else if (sp.mouth === 'frown') {
+      g.beginPath(); g.moveTo(-mw / 2, my + mh * 0.5); g.quadraticCurveTo(0, my - mh * 1.1, mw / 2, my + mh * 0.5); g.quadraticCurveTo(0, my - mh * 0.1, -mw / 2, my + mh * 0.5); g.closePath();
+      g.fillStyle = dark; g.fill(); g.save(); g.clip(); g.fillStyle = tooth; teethRow(my - mh * 0.45, 1, sp.teeth || 5, mh * 0.4, false); g.restore();
+    } else if (sp.mouth === 'grit') {   // gritted teeth
+      g.fillStyle = tooth; g.beginPath(); g.roundRect(-mw / 2, my - mh / 2, mw, mh, mh * 0.35); g.fill();
+      g.strokeStyle = dark; g.lineWidth = 0.025; g.stroke(); g.beginPath(); g.moveTo(-mw / 2, my); g.lineTo(mw / 2, my);
+      for (let i = 1; i < 6; i++) { const x = -mw / 2 + i * mw / 6; g.moveTo(x, my - mh / 2); g.lineTo(x, my + mh / 2); } g.stroke();
+    } else if (sp.mouth === 'maw') {   // a gaping jagged hole
+      ell(0, my, mw / 2, mh / 2); g.fillStyle = dark; g.fill(); g.save(); g.clip(); g.fillStyle = tooth;
+      teethRow(my - mh / 2, 1, sp.teeth || 4, mh * 0.28, false); teethRow(my + mh / 2, -1, (sp.teeth || 4) - 1, mh * 0.24, false); g.restore();
+    } else if (sp.mouth === 'nose') {   // skull: a dark nose hole and a few cracks
+      g.fillStyle = dark; g.beginPath(); g.moveTo(-0.07, my - 0.06); g.lineTo(0.07, my - 0.06); g.lineTo(0, my + 0.08); g.closePath(); g.fill();
+      g.strokeStyle = pick('#6a5a44', '#303030', '#666666', '#000'); g.lineWidth = 0.018; g.beginPath(); g.moveTo(0.12, -0.6); g.lineTo(0.18, -0.45); g.lineTo(0.14, -0.38); g.lineTo(0.2, -0.3); g.moveTo(-0.5, -0.5); g.lineTo(-0.42, -0.42); g.stroke();
+    }
   }
-  // A dark grimacing mouth with a row of teeth (and optional fangs) on a surface point.
-  function teeth(parent, R, { up = 0.0, width = 0.16, n = 5, fangs = false, gums = '#2a0b0b' } = {}) {
-    const g = decal(parent, R, 0, up);
-    mesh(sphLo, M('mouth' + gums, () => matte(gums, { roughness: 0.5 })), g, 0, 0, -0.005, width / 2, width * 0.22, 0.02);
-    const tooth = M('tooth', () => glossy('#fffbea', { clearcoat: 0.5 }));
-    for (let i = 0; i < n; i++) { const x = (i / (n - 1) - 0.5) * width * 0.82, f = fangs && (i === 0 || i === n - 1); mesh(toothGeo, tooth, g, x, width * 0.06, 0.012, width * (f ? 0.07 : 0.05), width * (f ? 0.3 : 0.16), 0.012); }
-    return g;
+  const enemyFaceCache = {}, enemyPatchCache = {};
+  function enemyFaceTex(type, mode, def) {
+    const key = type + '|' + mode;
+    if (!enemyFaceCache[key]) {
+      const sp = ENEMY_FACES[type], ar = sp.h / sp.w, W = 256, H = Math.round(256 * ar);
+      const ctx = [0, 1, 2, 3].map(() => { const c = document.createElement('canvas'); c.width = W; c.height = H; return c.getContext('2d'); });
+      ['col', 'h', 's', 'e'].forEach((P, i) => {
+        const g = ctx[i]; if (i) { g.fillStyle = '#000'; g.fillRect(0, 0, W, H); }
+        g.setTransform(W / 2, 0, 0, W / 2, W / 2, H / 2); g.lineJoin = g.lineCap = 'round';
+        drawEnemyFace(g, P, sp, mode, def);
+      });
+      enemyFaceCache[key] = ctx.map((g, i) => { const t = new THREE.CanvasTexture(g.canvas); if (i === 0 || i === 3) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; });
+    }
+    return enemyFaceCache[key];
+  }
+  // The face patch: a grid over yaw ±w/2 and pitch up ± h/2, laid on the body's ellipsoid (radii R) a hair above it.
+  function enemyPatch(type, R) {
+    if (enemyPatchCache[type]) return enemyPatchCache[type];
+    const sp = ENEMY_FACES[type], g = new THREE.PlaneGeometry(1, 1, 24, 18), p = g.attributes.position, v = new THREE.Vector3();
+    for (let i = 0; i < p.count; i++) {
+      const a = p.getX(i) * sp.w, b = sp.up + p.getY(i) * sp.h;
+      v.set(Math.sin(a) * Math.cos(b), Math.sin(b), Math.cos(a) * Math.cos(b));
+      v.multiplyScalar(1 / Math.hypot(v.x / R.x, v.y / R.y, v.z / R.z) + 0.004); p.setXYZ(i, v.x, v.y, v.z);
+    }
+    g.computeVertexNormals(); return (enemyPatchCache[type] = g);
+  }
+  function enemyFace(o, parent, R, def) {
+    if (!ENEMY_FACES[def.id]) return;
+    const t = enemyFaceTex(def.id, 'idle', def);
+    const m = o.mat(new THREE.MeshPhysicalMaterial({ map: t[0], bumpMap: t[1], bumpScale: 1.4, clearcoat: 1, clearcoatMap: t[2], clearcoatRoughness: 0.08, roughness: 0.5, metalness: 0,
+      emissive: '#ffffff', emissiveMap: t[3], emissiveIntensity: 1.1, transparent: true, depthWrite: false, envMap: env, envMapIntensity: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
+    const fm = new THREE.Mesh(enemyPatch(def.id, R), m); fm.renderOrder = 2; parent.add(fm);   // after the (sometimes see-through) body
+    o.face = { m, mode: 'idle' };
   }
 
   // ---------- bombers ----------
@@ -456,7 +542,7 @@ export function makeChars(scene, env) {
   }
 
   // ---------- enemies ----------
-  // Each enemy: { root, yaw, body, mats (cloned, for the burn tint), eyes, anim(t, e) }. They scowl and bare teeth.
+  // Each enemy: { root, yaw, body, mats (cloned, for the burn tint), face, anim(t, e) }. They scowl and bare teeth.
   const dark = (c, k) => new THREE.Color(c).multiplyScalar(k);
   const EN = {
     globo(o, c) {   // a sinister balloon: scowling eyes and a jagged grin
@@ -464,8 +550,7 @@ export function makeChars(scene, env) {
       o.float = 0.42; mesh(sph, m, g, 0, 0, 0, R.x, R.y, R.z);
       mesh(cone, m, o.body, 0, -0.01, 0, 0.05, 0.07, 0.05).rotation.x = Math.PI;
       o.body.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(0, -0.04, 0), new THREE.Vector3(0.04, -0.14, 0), new THREE.Vector3(-0.03, -0.26, 0.02), new THREE.Vector3(0.02, -0.36, 0)]), 12, 0.008, 5), o.mat(matte('#e9dcc6'))));
-      o.eyes = scowl(g, R, { up: 0.72, size: 0.07, brow: o.mat(glossy(dark(c.col, 0.45))) });
-      teeth(g, R, { up: 0.36, width: 0.2, n: 6, fangs: true });
+      enemyFace(o, g, R, c);
       o.anim = (t, e) => { o.body.rotation.z = Math.sin(t * 2 + e.bob) * 0.12; o.body.position.y = o.float + Math.sin(t * 3 + e.bob) * 0.05; };
     },
     gota(o, c) {   // a sullen drop with a heavy brow and a frown full of teeth
@@ -475,8 +560,7 @@ export function makeChars(scene, env) {
       for (let i = 1; i <= 10; i++) { const u = i / 10; pts.push(new THREE.Vector2(Math.max(0.001, 0.27 * Math.pow(1 - u, 1.3)), 0.3 + u * 0.36)); }
       mesh(new THREE.LatheGeometry(pts, 28), m, o.body);
       const R = new THREE.Vector3(0.265, 0.27, 0.265), g = new THREE.Group(); g.position.y = 0.3; o.body.add(g);
-      o.eyes = scowl(g, R, { up: 0.67, size: 0.062, brow: o.mat(glossy(dark(c.col, 0.4))) });
-      teeth(g, R, { up: 0.27, width: 0.14, n: 5 });
+      enemyFace(o, g, R, c);
       o.anim = (t, e) => { const s = Math.sin(t * 6 + e.bob); o.body.scale.set(1 + s * 0.06, 1 - s * 0.07, 1 + s * 0.06); };
     },
     murci(o, c) {   // a bat with blazing red eyes and long fangs
@@ -486,8 +570,7 @@ export function makeChars(scene, env) {
       const sh = new THREE.Shape(); sh.moveTo(0, 0.05); sh.quadraticCurveTo(0.2, 0.18, 0.44, 0.14); sh.lineTo(0.38, 0.0); sh.quadraticCurveTo(0.32, 0.04, 0.27, -0.05); sh.quadraticCurveTo(0.21, 0.0, 0.16, -0.07); sh.quadraticCurveTo(0.08, -0.02, 0, -0.05); sh.closePath();
       const wg = new THREE.ShapeGeometry(sh, 6);
       o.wings = [-1, 1].map(s => { const piv = new THREE.Group(); piv.position.set(s * 0.14, 0.02, -0.02); o.body.add(piv); const w = mesh(wg, wing, piv); w.scale.x = s; return piv; });
-      o.eyes = scowl(o.body, R, { up: 0.74, sep: 0.4, size: 0.05, pupil: o.mat(new THREE.MeshBasicMaterial({ color: '#ff2a1a', toneMapped: false })), brow: o.mat(glossy(dark(c.col, 0.35))) });
-      teeth(o.body, R, { up: 0.27, width: 0.12, n: 4, fangs: true });
+      enemyFace(o, o.body, R, c);
       o.anim = (t, e) => { const f = Math.sin(t * 18 + e.bob); o.wings.forEach((w, i) => { w.rotation.y = (i ? -1 : 1) * f * 0.7; w.rotation.x = 1.2; }); o.body.position.y = o.float + f * 0.03; };
     },
     chispa(o, c) {   // a crackling spark: spinning spikes, furious glare
@@ -495,8 +578,7 @@ export function makeChars(scene, env) {
       o.float = 0.4; mesh(sph, m, o.body, 0, 0, 0, 0.21);
       o.spikes = new THREE.Group(); o.body.add(o.spikes);
       for (let i = 0; i < 12; i++) { const n = new THREE.Vector3().setFromSphericalCoords(1, Math.acos(1 - 2 * (i + 0.5) / 12), i * 2.4); const s = mesh(cone, m, o.spikes, n.x * 0.24, n.y * 0.24, n.z * 0.24, 0.045, 0.18, 0.045); s.quaternion.setFromUnitVectors(Y, n); }
-      o.eyes = scowl(o.body, R, { up: 0.72, size: 0.06, browTilt: 0.7 });
-      teeth(o.body, R, { up: 0.30, width: 0.13, n: 5 });
+      enemyFace(o, o.body, R, c);
       o.anim = (t, e) => { o.spikes.rotation.y = t * 3; o.spikes.rotation.x = t * 1.7; o.body.position.y = o.float + Math.sin(t * 9 + e.bob) * 0.03; };
     },
     fantasma(o, c) {   // a wraith: hollow slanted eyes and a gaping jagged maw
@@ -506,11 +588,8 @@ export function makeChars(scene, env) {
       const geo = new THREE.LatheGeometry(pts, 28), p = geo.attributes.position;
       for (let i = 0; i < p.count; i++) if (p.getY(i) < 0.05) { const a = Math.atan2(p.getZ(i), p.getX(i)); p.setY(i, 0.02 + Math.sin(a * 7) * 0.05); }
       geo.computeVertexNormals(); o.float = 0.12; o.ghost = mesh(geo, m, o.body); o.body.scale.setScalar(0.9);
-      const R = new THREE.Vector3(0.26, 0.26, 0.26), g = new THREE.Group(); g.position.y = 0.52; o.body.add(g);
-      const hollow = o.mat(new THREE.MeshBasicMaterial({ color: '#0a0b1c' }));
-      o.eyes = [-1, 1].map(s => { const d = decal(g, R, s * 0.3, 0.62); const e = mesh(sphLo, hollow, d, 0, 0, 0, 0.06, 0.04, 0.02); e.rotation.z = s * 0.5; mesh(sphLo, o.mat(new THREE.MeshBasicMaterial({ color: '#9fe8ff', toneMapped: false })), e, -s * 0.2, -0.1, 0.6, 0.25, 0.35, 0.3); return { g: d, pupil: e, base: 0.04 }; });
-      const maw = decal(g, R, 0, 0.27); mesh(sphLo, hollow, maw, 0, 0, 0, 0.09, 0.06, 0.02);
-      for (let i = 0; i < 4; i++) mesh(toothGeo, o.mat(glossy('#ffffff')), maw, (i - 1.5) * 0.04, 0.045, 0.01, 0.012, 0.035, 0.01);
+      const R = new THREE.Vector3(0.258, 0.258, 0.258), g = new THREE.Group(); g.position.y = 0.55; o.body.add(g);   // the dome's own centre and radius
+      enemyFace(o, g, R, c);
       for (const s of [-1, 1]) mesh(sph, m, o.body, s * 0.27, 0.36, 0.05, 0.06, 0.05, 0.05);
       o.anim = (t, e) => { o.body.position.y = o.float + Math.sin(t * 2.5 + e.bob) * 0.06; o.ghost.rotation.y = Math.sin(t * 3) * 0.15; };
     },
@@ -533,19 +612,16 @@ export function makeChars(scene, env) {
       for (const s of [-1, 1]) { const h = mesh(cone, horn, g, s * 0.13, 0.25, 0, 0.055, 0.2, 0.055); h.rotation.z = -s * 0.45; }
       const tail = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0.2, -0.22), new THREE.Vector3(0, 0.12, -0.36), new THREE.Vector3(0.08, 0.24, -0.44), new THREE.Vector3(0.05, 0.36, -0.4)]), 16, 0.02, 6), m); o.body.add(tail);
       const tip = mesh(cone, m, o.body, 0.05, 0.4, -0.39, 0.05, 0.09, 0.02);
-      o.eyes = scowl(g, R, { up: 0.70, size: 0.065, pupil: o.mat(new THREE.MeshBasicMaterial({ color: '#ffd23f', toneMapped: false })), browTilt: 0.65 });
-      teeth(g, R, { up: 0.34, width: 0.2, n: 6, fangs: true });
+      enemyFace(o, g, R, c);
       for (const s of [-1, 1]) mesh(sph, o.mat(glossy(dark(c.col, 0.7))), o.body, s * 0.13, 0.03, 0.03, 0.07, 0.05, 0.09);
       o.anim = (t, e) => { o.body.position.y = o.float + Math.abs(Math.sin(t * 7 + e.bob)) * 0.06; tail.rotation.y = Math.sin(t * 4) * 0.3; tip.rotation.y = tail.rotation.y; };
     },
     calavera(o, c) {   // a floating skull: dark sockets with burning red points, clattering jaw
-      const bone = o.mat(glossy('#ece2cc', { roughness: 0.5, clearcoat: 0.3 })), red = o.mat(new THREE.MeshBasicMaterial({ color: '#ff2a1a', toneMapped: false })), R = new THREE.Vector3(0.24, 0.22, 0.24);
+      const bone = o.mat(glossy('#ece2cc', { roughness: 0.5, clearcoat: 0.3 })), R = new THREE.Vector3(0.24, 0.22, 0.24);
       o.float = 0.38; const skull = new THREE.Group(); skull.position.y = 0.05; o.body.add(skull); mesh(sph, bone, skull, 0, 0, 0, R.x, R.y, R.z);
       const jaw = new THREE.Group(); jaw.position.set(0, -0.14, 0.04); o.body.add(jaw); mesh(box, bone, jaw, 0, 0, 0, 0.2, 0.07, 0.18);
       for (let i = 0; i < 5; i++) mesh(box, o.mat(glossy('#fffbea')), jaw, (i - 2) * 0.034, 0.045, 0.085, 0.026, 0.03, 0.02);
-      const sockets = o.mat(new THREE.MeshBasicMaterial({ color: '#050307' }));
-      for (const s of [-1, 1]) { const d = decal(skull, R, s * 0.35, 0.62); const so = mesh(sphLo, sockets, d, 0, 0, 0, 0.075, 0.065, 0.03); so.rotation.z = s * 0.4; mesh(sphLo, red, d, 0, -0.005, 0.02, 0.022); }
-      mesh(cone, sockets, decal(skull, R, 0, 0.34), 0, 0, 0, 0.022, 0.045, 0.01).rotation.x = Math.PI;
+      enemyFace(o, skull, R, c);
       o.eyes = [];
       o.anim = (t, e) => { o.body.position.y = o.float + Math.sin(t * 3 + e.bob) * 0.05; jaw.position.y = -0.14 - Math.abs(Math.sin(t * 6)) * 0.035; };
     },
@@ -553,8 +629,7 @@ export function makeChars(scene, env) {
       const m = o.mat(glossy(c.col, { clearcoat: 1 })), R = new THREE.Vector3(0.3, 0.3, 0.28), g = new THREE.Group(); g.position.y = 0.32; o.body.add(g);
       o.float = 0.05; mesh(sph, m, g, 0, 0, 0, R.x, R.y, R.z);
       for (let i = 0; i < 5; i++) { const a = (i - 2) * 0.35; const s = mesh(cone, GOLD, g, Math.sin(a) * 0.2, 0.28, Math.cos(a) * 0.05 - 0.02, 0.04, 0.14, 0.04); s.rotation.z = -a * 0.6; }
-      o.eyes = scowl(g, R, { up: 0.68, size: 0.075, pupil: o.mat(new THREE.MeshBasicMaterial({ color: '#ff3b3b', toneMapped: false })), browTilt: 0.6 });
-      teeth(g, R, { up: 0.34, width: 0.24, n: 7, fangs: true });
+      enemyFace(o, g, R, c);
       for (const s of [-1, 1]) mesh(sph, m, o.body, s * 0.3, 0.25, 0.05, 0.08);
       o.anim = (t, e) => { o.body.position.y = o.float + Math.abs(Math.sin(t * 4 + e.bob)) * 0.05; o.body.rotation.z = Math.sin(t * 2) * 0.06; };
     },
@@ -573,8 +648,19 @@ export function makeChars(scene, env) {
   function poseEnemy(o, e, st, dt) {
     const t = st.t;
     o.root.position.set(e.x + 0.5, 0, e.y + 0.5);
-    turn(o, FACE_YAW[e.di || 0], dt);
+    // hunting: a player close by → turn on them, lean in and lunge (snapping when very close)
+    let near = null, nd = 9;
+    if (e.alive) for (const p of st.players) if (p.alive) { const d = Math.hypot(p.x - e.x, p.y - e.y); if (d < nd) { nd = d; near = p; } }
+    o.hunt = (o.hunt || 0) + ((nd < 2.6 ? 1 : 0) - (o.hunt || 0)) * Math.min(1, dt * 6);
+    turn(o, o.hunt > 0.5 && near ? Math.atan2(near.x - e.x, near.y - e.y) : FACE_YAW[e.di || 0], dt);
     if (o.anim) o.anim(t, e);
+    const snap = nd < 1.4 ? Math.max(0, Math.sin(t * 11 + e.bob)) : 0;
+    o.body.rotation.x = o.hunt * 0.26 + snap * 0.2 - (e.hitT > 0 ? Math.min(1, e.hitT / 0.5) * 0.45 : 0);   // a hit knocks the boss back
+    o.body.position.z = o.hunt * 0.04 + snap * 0.08;
+    if (o.face) {
+      const mode = !e.alive ? 'dead' : e.hitT > 0 ? 'hurt' : o.hunt > 0.5 ? 'hunt' : 'idle';
+      if (mode !== o.face.mode) { o.face.mode = mode; const tx = enemyFaceTex(e.def.id, mode, e.def), m = o.face.m; m.map = tx[0]; m.bumpMap = tx[1]; m.clearcoatMap = tx[2]; m.emissiveMap = tx[3]; }
+    }
     let vis = true, sc = o.big;
     if (e.spawnT > 0) { sc *= Math.max(0.05, 1 - e.spawnT / 0.9); vis = Math.sin(t * 30) > -0.3; }
     if (e.hitT > 0 && Math.floor(t * 20) % 2) vis = false;
@@ -588,6 +674,7 @@ export function makeChars(scene, env) {
         if (crumble > 0.3) { m.transparent = true; m.opacity = (m.userData.op ?? 1) * Math.max(0, 1 - (crumble - 0.3) / 0.7); }
       }
       o.body.position.x = k > 0.08 && k < 0.6 ? Math.sin(k * 70) * 0.025 : 0;
+      o.yaw.position.y = k < 0.3 ? Math.sin(k / 0.3 * Math.PI) * 0.18 : 0;   // jolts up as the blast hits
       o.body.scale.set(1 + crumble * 0.3, (1 - Math.min(0.1, k * 0.2)) * (1 - crumble * 0.85), 1 + crumble * 0.3);
       if (k > 1.15) vis = false;
     }
@@ -616,9 +703,9 @@ export function makeChars(scene, env) {
   function samples(pals, defs) {
     const out = [];
     for (const pal of pals) out.push(heroTpl ? makeHeroGLB(pal) : makeBomber(pal));
-    for (const def of defs) out.push(makeEnemy({ def, bob: 0 }));
+    for (const def of defs) { out.push(makeEnemy({ def, bob: 0 })); if (ENEMY_FACES[def.id]) for (const mode of ENEMY_MODES) enemyFaceTex(def.id, mode, def); }
     for (const pal of pals) for (const mode of FACE_MODES) faceTex(pal, pal.style || 'classic', mode);   // paint every expression up front
     return { remove: () => out.forEach(o => scene.remove(o.root)), dispose: () => out.forEach(dispose) };
   }
-  return { update, samples, textures: () => Object.values(faceCache).flat(), set onReady(f) { onReady = f; }, get ready() { return !!heroTpl; } };
+  return { update, samples, textures: () => [...Object.values(faceCache), ...Object.values(enemyFaceCache)].flat(), set onReady(f) { onReady = f; }, get ready() { return !!heroTpl; } };
 }
