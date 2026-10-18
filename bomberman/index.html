@@ -387,7 +387,7 @@ const G = {
   mode: 'demo', phase: 'play', phaseT: 0, paused: false, fast: false, t: 0,
   grid: new Uint8Array(N), items: new Array(N).fill(null), fire: new Float32Array(N), fireChain: new Int32Array(N), fireOwner: new Array(N).fill(null),
   bombGrid: new Array(N).fill(null), danger: new Float32Array(N),
-  bombs: [], explosions: [], burning: [], players: [], enemies: [], particles: [], texts: [], falling: [],
+  bombs: [], explosions: [], burning: [], players: [], enemies: [], particles: [], texts: [], falling: [], landed: [],
   exit: null, world: WORLDS.forest, plan: null, stage: 1, score: 0, lives: 3, nextLife: 10000, timeLeft: 200, hurry: false, timeUp: false,
   chainSeq: 0, chainKills: {}, kills: [], shake: 0, flash: 0, hero: null, round: 0, target: 3, difficulty: 1,
   sudden: false, suddenIdx: 0, suddenT: 0, spiral: null, fieldT: 0, musicKey: 'title', snapshot: null,
@@ -720,6 +720,7 @@ function fxState() {
   fxBurns.length = 0; for (const e of G.enemies) if (!e.alive && e.burnBig) fxBurns.push(e);
   return { t: G.t, bombs: G.bombs, bombTime: BOMB_TIME, armed: fxArmed, explosions: G.explosions, items: G.items, grid: G.grid, EMPTY, cols: COLS, icon: itemIcon, itemDefs: ITEMS, burning: G.burning, burns: fxBurns,
     players: G.players, enemies: G.enemies, phase: G.phase, mode: G.mode, pals: PALS, enemyDefs: ENEMIES, danger: G.danger,
+    falling: G.falling, landed: G.landed,
     exit: G.exit && G.grid[idx(G.exit.x, G.exit.y)] === EMPTY ? { x: G.exit.x, y: G.exit.y, open: aliveEnemies() === 0, accent: G.world.accent } : null, portalTex };
 }
 // The portal's floor disc (swirl = false) or its spinning arms (swirl = true), painted for the 3D layer.
@@ -785,7 +786,7 @@ function makeEnemy(type, x, y) {
 function resetWorld() {
   G.grid.fill(EMPTY); G.items.fill(null); G.fire.fill(0); G.fireChain.fill(0); G.bombGrid.fill(null); G.danger.fill(Infinity);
   G.bombs.length = 0; G.explosions.length = 0; G.burning.length = 0; G.enemies.length = 0;
-  G.particles.length = 0; G.texts.length = 0; G.falling.length = 0;
+  G.particles.length = 0; G.texts.length = 0; G.falling.length = 0; G.landed.length = 0;
   G.exit = null; G.chainKills = {}; G.kills.length = 0; G.shake = 0; G.flash = 0; G.fast = false; G.fieldT = 0;
   G.sudden = false; G.suddenIdx = 0; G.suddenT = 0; G.hurry = false; G.timeUp = false;
 }
@@ -830,7 +831,8 @@ function startStage() {
   const items = [SPECIAL[(s - 1) % SPECIAL.length], rpick(['bomb', 'fire', 'bomb', 'fire', 'speed'])];
   if (s % 4 === 0) items.push(rpick(['bomb', 'fire', 'speed']));
   items.forEach((it, i) => { if (rest[i] !== undefined) G.items[rest[i]] = it; });
-  const empties = LevelGen.cellsOf(plan, EMPTY, rng).filter(j => manhattan(j, 1, 1) >= 7);
+  const reach = LevelGen.openFrom(G.grid, COLS, EMPTY, idx(1, 1));   // never where an enemy could walk to the hero without a block in between
+  const empties = LevelGen.cellsOf(plan, EMPTY, rng).filter(j => manhattan(j, 1, 1) >= 7 && !reach.has(j));
   if (boss) {
     const bj = empties.slice().sort((a, b) => manhattan(b, 1, 1) - manhattan(a, 1, 1))[0];
     G.enemies.push(makeEnemy(BOSS, bj % COLS, (bj / COLS) | 0));
@@ -1361,7 +1363,7 @@ function updateSudden(dt) {
 }
 function land(j) {
   const x = j % COLS, y = (j / COLS) | 0;
-  G.grid[j] = HARD; G.items[j] = null;
+  G.grid[j] = HARD; G.items[j] = null; G.landed.push(j);
   const b = G.bombGrid[j];
   if (b) { b.dead = true; G.bombs.splice(G.bombs.indexOf(b), 1); G.bombGrid[j] = null; b.owner.active = Math.max(0, b.owner.active - 1); }
   for (let i = G.burning.length - 1; i >= 0; i--) if (G.burning[i].x === x && G.burning[i].y === y) G.burning.splice(i, 1);

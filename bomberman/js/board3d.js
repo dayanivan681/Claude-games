@@ -818,29 +818,33 @@ const Board3D = (() => {
 
   // ---------- grid sync & animation ----------
   // Breaking blocks vanish from the diorama at once (fx3d.js animates the crumble), so an explosion costs the
-  // board a single re-render and no shadow re-bake; only a new hard block (sudden death) re-bakes shadows.
+  // board a single re-render and no shadow re-bake; sudden-death pillars are drawn by fx3d, so they cost the board nothing.
   function sync(st) {
     const { grid, cols, rows, SOFT, HARD } = st, n = cols * rows, h = world.scene3d.heights.brick, sd = sunDrop();
-    let changed = false, hard = false, anim = false;
+    let changed = false, anim = false;
     for (let j = 0; j < n; j++) {
       const c = grid[j], was = prevGrid[j]; if (c === was) continue;
       const x = j % cols, y = (j / cols) | 0, vis = c === SOFT;
+      if (fxLayer && c === HARD && was !== 255 && was !== HARD) { prevGrid[j] = c; continue; }   // sudden death: fx3d draws the pillar over this cell
       if (was === 255 || vis !== (was === SOFT)) {
         if (vis) { put1(soft, j, x + 0.5, h / 2, y + 0.5, 1); put1(softAo, j, x + 0.5 + sd[0], 0.014, y + 0.5 + sd[1], 1.55); }
         else { put1(soft, j, 0, -50, 0, 0.0001); put1(softAo, j, 0, -50, 0, 0.0001); }
         changed = true;
       }
-      if (c === HARD && was !== 255 && was !== HARD) { addPillar(x, y, null); put(hardAo, x + 0.5, 0.014, y + 0.5, 1.45, 1, 1.45); hardAo.instanceMatrix.needsUpdate = true; hard = true; }
+      // a sudden-death pillar lands (without the fx3d layer): one re-render, no shadow re-bake; its AO decal grounds it
+      if (c === HARD && was !== 255 && was !== HARD) { addPillar(x, y, null); put(hardAo, x + 0.5, 0.014, y + 0.5, 1.45, 1, 1.45); hardAo.instanceMatrix.needsUpdate = true; changed = true; }
       prevGrid[j] = c;
     }
-    dropping.count = 0;
-    for (const f of st.falling) {   // sudden death: a pillar drops from the sky
-      const x = f.j % cols, y = (f.j / cols) | 0, k = Math.min(1, f.t / 0.35), ph = world.scene3d.heights.pillar;
-      put(dropping, x + 0.5, ph / 2 + (1 - k * k) * 5, y + 0.5, 1, 1, 1, 0); anim = true;
+    if (!fxLayer) {   // without the 3D effects layer the board animates the falling pillars itself
+      dropping.count = 0;
+      for (const f of st.falling) {
+        const x = f.j % cols, y = (f.j / cols) | 0, k = Math.min(1, f.t / 0.35), ph = world.scene3d.heights.pillar;
+        put(dropping, x + 0.5, ph / 2 + (1 - k * k) * 5, y + 0.5, 1, 1, 1, 0); anim = true;
+      }
+      dropping.instanceMatrix.needsUpdate = true;
     }
-    dropping.instanceMatrix.needsUpdate = true;
     if (changed) { soft.instanceMatrix.needsUpdate = true; softAo.instanceMatrix.needsUpdate = true; }
-    return hard ? 2 : changed || anim ? 1 : 0;
+    return changed || anim ? 1 : 0;
   }
   // Where a block's soft shadow decal sits: nudged away from the sun.
   function sunDrop() { const f = world.scene3d.sun.from, l = Math.hypot(f[0], f[2]) || 1; return [-f[0] / l * 0.13, -f[2] / l * 0.13]; }
@@ -1015,7 +1019,8 @@ const Board3D = (() => {
     }
   }
   // Board camera and lens pan, for layers drawn through the same view (fx3d.js).
-  const view = () => (renderer && soft ? { camera, panX, panY, world, brick: { geo: kit.geo.brick, mat: kit.mats.brick, h: world.scene3d.heights.brick } } : null);
+  let fxLayer = false;   // set once fx3d asks for the view: it then draws the falling pillars
+  const view = () => (renderer && soft ? (fxLayer = true, { camera, panX, panY, world, brick: { geo: kit.geo.brick, mat: kit.mats.brick, h: world.scene3d.heights.brick }, pillar: { geo: kit.geo.pillar, mat: kit.mats.pillar, h: world.scene3d.heights.pillar } }) : null);
   return { init, setWorld, resize, build, frame, project, ambient, view, debug: () => ({ scene, camera, renderer, invalidate: () => { dirty = true; } }) };
 })();
 

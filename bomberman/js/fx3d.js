@@ -419,7 +419,7 @@ const Fx3D = (() => {
   function brickMesh(view) {
     if (!view.brick) return null;
     if (!bricks || bricks.geometry !== view.brick.geo) {
-      if (bricks) { scene.remove(bricks, ...K.chunkMeshes); }
+      if (bricks) { scene.remove(bricks, ...K.chunkMeshes); warm = false; }   // a new world: compile its block shaders too
       bricks = K.inst(view.brick.geo, view.brick.mat, 48);
       K.chunkMeshes = K.chunks.map(g => K.inst(g, view.brick.mat, 160));
     }
@@ -505,31 +505,55 @@ const Fx3D = (() => {
     const css = shx || shy ? `translate3d(${shx.toFixed(2)}px,${shy.toFixed(2)}px,0)` : '';
     if (css !== shakeCss) { canvas.style.transform = css; shakeCss = css; }
     const dt = Math.min(0.05, Math.max(0, st.t - lastT)); lastT = st.t;
-    if (!warm) { updateBlocks(st, view); prewarm(st); }
+    if (!warm) { updateBlocks(st, view); prewarm(st, view); }
     let busy = !!st.exit || st.players.length > 0 || st.enemies.length > 0 || st.bombs.length > 0 || st.explosions.length > 0 || st.burning.length > 0 || st.burns.length > 0 || parts.length > 0;
     if (!busy) for (let j = 0; j < st.items.length; j++) if (st.items[j] && st.grid[j] === st.EMPTY) { busy = true; break; }
     if (!busy) {
       if (bombs.size || cards.size || parts.length) { chars.update(st, dt); updateBombs(st); updateCards(st, 0); updateFlames(st); drawParts(); if (bricks) bricks.count = 0; }
-      updatePortal(st);
+      updatePortal(st); if (pillars) pillars.count = 0;
       if (drawn) { renderer.clear(); drawn = false; }
       return;
     }
     // cards lean back toward the camera, a little less than facing it so their bevel catches the light
     const el = Math.atan2(bc.position.y, Math.hypot(bc.position.z - 6.5, bc.position.x - 7.5));
-    chars.update(st, dt); updateBombs(st); updateCards(st, el - 0.22); updateBlocks(st, view); updateFlames(st); updatePortal(st);
+    chars.update(st, dt); updateBombs(st); updateCards(st, el - 0.22); updateBlocks(st, view); updateFlames(st); updatePortal(st); updateFalling(st, view);
     stepParts(dt); drawParts();
     renderer.render(scene, camera); drawn = true;
   }
-  // Compile every shader variant once (a bomb, a card, flames, fragments, smoke) so the first bomb, blast or
-  // crumble of a game never stalls a frame on a shader compile.
-  function prewarm(st) {
+  // Compile every shader variant once (a bomb, a card, flames, fragments, smoke, the world's blocks) so the first
+  // bomb, blast or crumble never stalls a frame on a shader compile. The samples are taken out of the scene but
+  // their materials are kept alive: three.js frees a compiled program as soon as the last material using it is
+  // disposed, so without them the next bomb after the last one exploded (or the next enemy, card…) would
+  // recompile its shader mid-game — a visible hitch on phones.
+  let warmKeep = null;
+  function prewarm(st, view) {
     warm = true;
-    const b = makeBomb(), c = makeCard('bomb', st), cs = chars.samples(st.pals, st.enemyDefs);
-    const all = [K.puffOut, K.puffIn, K.armOut, K.armIn, K.embers, K.smoke, K.ash, ...(K.chunkMeshes || []), bricks].filter(Boolean), keep = all.map(m => m.count);
+    const b = makeBomb(), c = makeCard('bomb', st), cs = chars.samples(st.pals, st.enemyDefs), pm = pillarMesh(view);
+    const all = [K.puffOut, K.puffIn, K.armOut, K.armIn, K.embers, K.smoke, K.ash, ...(K.chunkMeshes || []), bricks, pm].filter(Boolean), keep = all.map(m => m.count);
     all.forEach(m => { m.count = Math.max(1, m.count); });
-    try { renderer.compile(scene, camera); } catch (e) { /* compile is only an optimisation */ }
+    // compile, upload every face, then really draw it all once: drivers (Safari's included) finish compiling a
+    // shader only at its first draw. This frame's normal render paints over it before it is ever shown.
+    try { renderer.compile(scene, camera); for (const t of chars.textures()) renderer.initTexture(t); const culled = []; scene.traverse(o => { if (o.frustumCulled) { culled.push(o); o.frustumCulled = false; } }); renderer.render(scene, camera); for (const o of culled) o.frustumCulled = true; } catch (e) { /* only an optimisation */ }
     all.forEach((m, i) => { m.count = keep[i]; });
-    scene.remove(b.g); b.mat.dispose(); b.led.material.dispose(); dropCard(-1, c); cs.remove();
+    scene.remove(b.g, c.g, c.shadow, c.halo); cs.remove();
+    if (warmKeep) warmKeep();   // the previous samples' programs are now held by the new ones
+    warmKeep = () => { b.mat.dispose(); b.led.material.dispose(); c.halo.material.dispose(); cs.dispose(); };
+  }
+  // Sudden death: pillars dropping from the sky, and the ones already landed, are drawn here (this layer redraws
+  // every frame anyway), so the heavy board never re-renders while the arena closes in.
+  let pillars = null;
+  function pillarMesh(view) {
+    if (!view || !view.pillar) return null;
+    if (!pillars || pillars.geometry !== view.pillar.geo) { if (pillars) scene.remove(pillars); pillars = K.inst(view.pillar.geo, view.pillar.mat, 200); }
+    return pillars;
+  }
+  function updateFalling(st, view) {
+    const pm = pillarMesh(view); if (!pm) return;
+    pm.count = 0;
+    const at = (j, drop) => { if (pm.count >= 200) return; M4.compose(V.set(j % st.cols + 0.5, view.pillar.h / 2 + drop, ((j / st.cols) | 0) + 0.5), Q.identity(), S.set(1, 1, 1)); pm.setMatrixAt(pm.count, M4); pm.setColorAt(pm.count++, C.setRGB(0.95, 0.95, 0.95)); };
+    for (const j of st.landed || []) at(j, 0);
+    for (const f of st.falling || []) { const k = Math.min(1, f.t / 0.35); at(f.j, (1 - k * k) * 5); }
+    pm.instanceMatrix.needsUpdate = true; pm.instanceColor.needsUpdate = true;
   }
   // Screen points of lit fuses (kind 1) and blinking detonator lights (kind 2) from the last frame.
   const SP = new THREE.Vector3();
