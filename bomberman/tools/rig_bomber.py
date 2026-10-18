@@ -30,12 +30,19 @@ else:
     # The game camera looks down at ~45°: brows standing proud of the face show their black top face and read as
     # bars. For the game export only, project them onto the face plate (front view, a hair above the skin): the
     # silhouette stays exactly as designed, only the slab depth goes.
+    from mathutils.bvhtree import BVHTree
     face = next((o for o in bpy.context.scene.objects if o.name.lower().startswith("placa rostro")), None)
-    for o in bpy.context.scene.objects:
-        if face and o.name.lower().startswith("ceja"):
-            m = o.modifiers.new("Ceja sobre la cara", "SHRINKWRAP")
-            m.target = face; m.wrap_method = "PROJECT"; m.use_project_y = True
-            m.use_negative_direction = True; m.use_positive_direction = True; m.wrap_mode = "ON_SURFACE"; m.offset = 0.012
+    if face:
+        fm = face.evaluated_get(bpy.context.evaluated_depsgraph_get()).to_mesh()
+        tree = BVHTree.FromPolygons([face.matrix_world @ v.co for v in fm.vertices], [p.vertices[:] for p in fm.polygons])
+        for o in bpy.context.scene.objects:
+            if not o.name.lower().startswith("ceja"): continue
+            inv = o.matrix_world.inverted()
+            for v in o.data.vertices:
+                w = o.matrix_world @ v.co
+                hit = tree.ray_cast(Vector((w.x, -5.0, w.z)), Vector((0, 1, 0)))[0]   # first hit from the front = outer skin
+                if hit is not None: v.co = inv @ Vector((w.x, hit.y - 0.012, w.z))
+            o.data.update()
 sc.render.fps = FPS
 
 EXCLUDE = ("suelo", "softbox", "relleno", "contraluz", "cámara")

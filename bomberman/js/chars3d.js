@@ -177,7 +177,8 @@ export function makeChars(scene, env) {
   // tools/rig_bomber.py — idle, caminar, correr, poner_bomba, victoria, dano, morir — played with an AnimationMixer.
   const GLB_SCALE = 0.31;   // model units (Blender metres, 5.5 tall) → tiles (about 1.7 tall, head ~0.65 wide)
   let heroTpl = null, heroClips = [], onReady = null;
-  const loader = new GLTFLoader(), heroUrl = f => new URL('../models/' + f, import.meta.url).href;
+  const MODEL_REV = 4;   // bump when the model changes, so no browser keeps a stale copy
+  const loader = new GLTFLoader(), heroUrl = f => new URL('../models/' + f + '?v=' + MODEL_REV, import.meta.url).href;
   const onHero = g => {
     heroTpl = g.scene; heroClips = g.animations;
     heroTpl.traverse(m => {
