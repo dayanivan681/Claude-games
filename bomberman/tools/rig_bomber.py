@@ -27,6 +27,10 @@ else:
     bpy.ops.wm.read_factory_settings(use_empty=True)
     sc = bpy.context.scene
     bpy.ops.import_scene.gltf(filepath=IN)
+    # The game camera looks down at ~45°: brows standing 0.07 proud of the face show their black top face and read
+    # as thick bars. Sink them almost flush with the face plate (shape unchanged) for the game export only.
+    for o in bpy.context.scene.objects:
+        if o.name.lower().startswith("ceja"): o.matrix_world.translation.y += float(os.environ.get("BROW_SINK", "0.05"))
 sc.render.fps = FPS
 
 EXCLUDE = ("suelo", "softbox", "relleno", "contraluz", "cámara")
