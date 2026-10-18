@@ -796,6 +796,7 @@ const Board3D = (() => {
     soft = new THREE.InstancedMesh(k.geo.brick, k.mats.brick, n); soft.frustumCulled = false; soft.castShadow = false; soft.receiveShadow = true;
     softAo = new THREE.InstancedMesh(k.geo.ao, k.mats.ao, n); softAo.frustumCulled = false; softAo.renderOrder = 1; levelGroup.add(softAo);
     for (let j = 0; j < n; j++) soft.setColorAt(j, C.setRGB(1, 1, 1));
+    soft.visible = softAo.visible = !fxLayer;
     levelGroup.add(soft);
     dropping = inst(k.geo.pillar, k.mats.pillar, 8);
     levelGroup.add(dropping);
@@ -817,15 +818,15 @@ const Board3D = (() => {
   }
 
   // ---------- grid sync & animation ----------
-  // Breaking blocks vanish from the diorama at once (fx3d.js animates the crumble), so an explosion costs the
-  // board a single re-render and no shadow re-bake; sudden-death pillars are drawn by fx3d, so they cost the board nothing.
+  // With the fx3d layer on, blocks and sudden-death pillars live there and the board ignores grid changes.
+  // Without it, a breaking block vanishes here at once: one re-render, no shadow re-bake.
   function sync(st) {
     const { grid, cols, rows, SOFT, HARD } = st, n = cols * rows, h = world.scene3d.heights.brick, sd = sunDrop();
     let changed = false, anim = false;
     for (let j = 0; j < n; j++) {
       const c = grid[j], was = prevGrid[j]; if (c === was) continue;
+      if (fxLayer) { prevGrid[j] = c; continue; }   // fx3d draws the blocks (and sudden-death pillars): the board never re-renders in play
       const x = j % cols, y = (j / cols) | 0, vis = c === SOFT;
-      if (fxLayer && c === HARD && was !== 255 && was !== HARD) { prevGrid[j] = c; continue; }   // sudden death: fx3d draws the pillar over this cell
       if (was === 255 || vis !== (was === SOFT)) {
         if (vis) { put1(soft, j, x + 0.5, h / 2, y + 0.5, 1); put1(softAo, j, x + 0.5 + sd[0], 0.014, y + 0.5 + sd[1], 1.55); }
         else { put1(soft, j, 0, -50, 0, 0.0001); put1(softAo, j, 0, -50, 0, 0.0001); }
@@ -1019,8 +1020,15 @@ const Board3D = (() => {
     }
   }
   // Board camera and lens pan, for layers drawn through the same view (fx3d.js).
-  let fxLayer = false;   // set once fx3d asks for the view: it then draws the falling pillars
-  const view = () => (renderer && soft ? (fxLayer = true, { camera, panX, panY, world, brick: { geo: kit.geo.brick, mat: kit.mats.brick, h: world.scene3d.heights.brick }, pillar: { geo: kit.geo.pillar, mat: kit.mats.pillar, h: world.scene3d.heights.pillar } }) : null);
+  // Set once fx3d asks for the view: from then on it draws the breakable blocks, their shadow decals and the
+  // sudden-death pillars every frame, so breaking a block never costs a full re-render of the board.
+  let fxLayer = false;
+  function view() {
+    if (!renderer || !soft) return null;
+    if (!fxLayer) { fxLayer = true; soft.visible = softAo.visible = false; dirty = true; }
+    return { camera, panX, panY, world, brick: { geo: kit.geo.brick, mat: kit.mats.brick, h: world.scene3d.heights.brick },
+      ao: { geo: kit.geo.ao, mat: kit.mats.ao, off: sunDrop() }, wall: { h: world.scene3d.heights.wall }, pillar: { geo: kit.geo.pillar, mat: kit.mats.pillar, h: world.scene3d.heights.pillar } };
+  }
   return { init, setWorld, resize, build, frame, project, ambient, view, debug: () => ({ scene, camera, renderer, invalidate: () => { dirty = true; } }) };
 })();
 
