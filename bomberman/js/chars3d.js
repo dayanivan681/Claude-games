@@ -8,8 +8,13 @@
 // tall black eyes under thick determined brows, an open short-sleeved jacket, gold-buckled belt, striped
 // knees and chunky cuffed gloves and boots. Enemies scowl: slanted brows, small pupils, teeth and fangs.
 //
+// The hero is the owner's own model (models/heroe.glb, exported by tools/heroe_juego.py from their Blender
+// recreation, in a neutral pose with pivots for hips, legs, arms, head and antenna); rivals wear the same model
+// recoloured from their palette plus their accessories. Until it loads (or if it can't) a procedural rig stands in.
+//
 // Local model space: one unit per tile, feet on y = 0, the model faces +z (toward the camera) before yaw.
 import * as THREE from '../vendor/three.module.min.js';
+import { GLTFLoader } from '../vendor/loaders/GLTFLoader.js';
 
 export function makeChars(scene, env) {
   const C = new THREE.Color(), C2 = new THREE.Color(), V = new THREE.Vector3(), Z = new THREE.Vector3(0, 0, 1), Y = new THREE.Vector3(0, 1, 0);
@@ -168,6 +173,78 @@ export function makeChars(scene, env) {
     scene.add(root);
     return { root, yaw, body, legs, arms, head, eyes, antenna, shield, ring: halo, shadow, style, yawNow: 0, lx: null, ly: 0, av: 0, ao: 0, mv: 0, bob: Math.random() * 6 };
   }
+  // ---------- the hero model (glTF) ----------
+  const GLB_SCALE = 0.24;   // model units (Blender metres, ~6.8 tall) → tiles
+  let heroTpl = null, onReady = null;
+  new GLTFLoader().load(new URL('../models/heroe.glb', import.meta.url).href, g => {
+    heroTpl = g.scene;
+    heroTpl.traverse(m => {
+      if (!m.isMesh || !m.material) return;
+      const mt = m.material, dark = mt.color.r + mt.color.g + mt.color.b < 0.1;
+      mt.envMap = env; mt.envMapIntensity = dark ? 0.12 : 0.75;   // inky eyes and brows stay black instead of mirroring the sky
+    });
+    if (onReady) onReady();
+  }, undefined, () => { /* keep the procedural stand-in */ });
+  const PARTS = ['PiernaI', 'PiernaD', 'BrazoI', 'BrazoD', 'Antena', 'Cabeza', 'Cuerpo'];
+  const partOf = m => { for (let n = m; n; n = n.parent) if (PARTS.includes(n.name)) return n.name.replace(/[ID]$/, ''); return ''; };
+  // Rivals: the hero's materials recoloured from their palette (pink → boots / gloves / crest colour, blue → suit…).
+  function recolor(mat, pal, part) {
+    const key = pal.name + '|' + mat.name + '|' + part;
+    if (mats[key]) return mats[key];
+    let m = mat.clone();
+    const set = c => m.color.copy(vivid(c));
+    switch (mat.name) {
+      case 'Rosa brillante': set(part === 'Pierna' ? pal.boot : part === 'Brazo' ? pal.glove : pal.ball); break;
+      case 'Costuras rosas': set(part === 'Pierna' ? pal.boot2 : pal.glove2); break;
+      case 'Chaqueta azul': set(pal.suit); break;
+      case 'Costuras azules': set(pal.suit2); break;
+      case 'Lavanda': set(pal.shirt); m.color.lerp(C2.copy(vivid(pal.suit)), 0.25); break;
+      case 'Rostro melocotón': if (pal.style === 'ninja') { m = glossy('#141f33', { roughness: 0.18, clearcoat: 1 }); } break;
+      case 'Ojos negros': if (pal.style === 'ninja') m = new THREE.MeshBasicMaterial({ color: pal.ball, toneMapped: false }); break;
+    }
+    return (mats[key] = m);
+  }
+  function makeHeroGLB(pal) {
+    const style = pal.style || 'classic', root = new THREE.Group(), tilt = new THREE.Group(), yaw = new THREE.Group(), body = new THREE.Group();
+    root.add(tilt); tilt.add(yaw); yaw.add(body); tilt.rotation.x = -TILT;
+    const model = heroTpl.clone(true); model.scale.setScalar(GLB_SCALE); body.add(model);
+    const node = n => model.getObjectByName(n), head = node('Cabeza'), torso = node('Cuerpo');
+    let antenna = node('Antena');
+    if (style !== 'classic') {
+      model.traverse(m => { if (m.isMesh) { m.material = recolor(m.material, pal, partOf(m)); if (style === 'ninja' && m.material.name === 'Cejas negras') m.visible = false; } });
+      antenna.visible = false; antenna = new THREE.Group(); head.add(antenna);
+      if (style === 'punk') {   // spiky crest along the helmet, scarf, cheek bandage
+        antenna.position.set(0, 1.0, 0);
+        const crest = M('crest' + pal.ball, () => glossy(pal.ball));
+        [[0.6, 0.8, 0.6], [0.2, 1.05, 0.2], [-0.22, 1.0, -0.22], [-0.62, 0.8, -0.65]].forEach(([z, len, a]) => { const c = mesh(cone, crest, antenna, 0, len * 0.4, z, 0.2, len, 0.3); c.rotation.x = a; });
+        mesh(new THREE.TorusGeometry(1, 0.32, 10, 28), M('scarf' + pal.ball, () => satin(pal.ball)), torso, 0, 1.3, 0.02, 0.38, 0.38, 0.34).rotation.x = Math.PI / 2;
+        const band = mesh(box, M('bandage', () => matte('#fff4e0')), head, 0.42, -0.36, 0.93, 0.28, 0.09, 0.03); band.rotation.set(0, 0.35, -0.5);
+      } else if (style === 'ninja') {   // headband with a steel plate; ties trail behind
+        const bandMat = M('band' + pal.band, () => matte(pal.band)), g = new THREE.Group(); g.position.y = 0.62; g.scale.set(1.08, 1, 0.97); head.add(g);
+        mesh(new THREE.TorusGeometry(1, 0.08, 8, 40), bandMat, g).rotation.x = Math.PI / 2;
+        mesh(box, M('plate', () => new THREE.MeshStandardMaterial({ color: '#dfe6f0', roughness: 0.2, metalness: 1, envMap: env })), head, 0, 0.62, 0.95, 0.42, 0.2, 0.05);
+        antenna.position.set(0, 0.62, -0.92);
+        for (const s of [-1, 1]) { const t = mesh(box, bandMat, antenna, s * 0.12, -0.12, -0.32, 0.12, 0.05, 0.65); t.rotation.set(0.5, s * 0.3, 0); }
+      } else if (style === 'king') {   // gem-set crown, curled moustache, royal cape
+        antenna.position.set(0, 1.02, 0);
+        mesh(new THREE.CylinderGeometry(0.56, 0.52, 0.28, 28, 1, true), GOLD, antenna, 0, 0.1, 0);
+        const gem = M('gem', () => glossy('#e0204a', { emissive: '#ff2050', emissiveIntensity: 0.3 }));
+        for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; mesh(cone, GOLD, antenna, Math.sin(a) * 0.53, 0.38, Math.cos(a) * 0.53, 0.11, 0.3, 0.11); mesh(sphLo, gem, antenna, Math.sin(a) * 0.56, 0.1, Math.cos(a) * 0.56, 0.07); }
+        const mus = M('moustache', () => matte('#5e360c'));
+        for (const s of [-1, 1]) { const m = mesh(sphLo, mus, head, s * 0.2, -0.42, 0.96, 0.22, 0.08, 0.07); m.rotation.z = s * 0.3; }
+        const cape = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.85, 1.3, 20, 4, true, Math.PI * 0.62, Math.PI * 0.76), M('cape' + pal.ball, () => satin(pal.ball, { side: THREE.DoubleSide, roughness: 0.6 })));
+        cape.position.set(0, 0.62, -0.05); torso.add(cape); antenna.userData.cape = cape;
+      }
+    }
+    const shield = new THREE.Mesh(sph, M('shield', () => new THREE.MeshPhysicalMaterial({ color: '#3df5ff', transparent: true, opacity: 0.22, roughness: 0.05, clearcoat: 1, envMap: env, emissive: '#3df5ff', emissiveIntensity: 0.25, depthWrite: false })));
+    shield.position.y = 0.8; shield.scale.setScalar(0.85); shield.visible = false; body.add(shield);
+    const halo = new THREE.Mesh(new THREE.RingGeometry(0.33, 0.37, 40).rotateX(-Math.PI / 2), M('ring' + pal.trim, () => new THREE.MeshBasicMaterial({ color: pal.trim, transparent: true, opacity: 0.6, toneMapped: false, depthWrite: false })));
+    halo.position.y = 0.015; root.add(halo);
+    const shadow = new THREE.Mesh(shadowGeo, shadowMat); shadow.position.y = 0.012; shadow.scale.setScalar(0.62); root.add(shadow);
+    scene.add(root);
+    return { root, yaw, body, legs: [node('PiernaI'), node('PiernaD')], arms: [{ sh: node('BrazoI') }, { sh: node('BrazoD') }], head, headY: head.position.y, headBob: 0.035, armZ: 0, eyes: [], antenna, shield, ring: halo, shadow, style, glb: true, yawNow: 0, lx: null, ly: 0, av: 0, ao: 0, mv: 0, bob: Math.random() * 6 };
+  }
+
   const FACE_YAW = [0, -Math.PI / 2, Math.PI / 2, Math.PI];   // DIRS order: down (+z), left, right, up
   const turn = (o, target, dt) => { let d = target - o.yawNow; d = Math.atan2(Math.sin(d), Math.cos(d)); o.yawNow += d * Math.min(1, dt * 14); o.yaw.rotation.y = o.yawNow; };
   function poseBomber(o, p, st, dt) {
@@ -193,10 +270,10 @@ export function makeChars(scene, env) {
     o.arms.forEach((a, i) => {
       const s = i ? 1 : -1;
       a.sh.rotation.x = armUp ? -2.6 + Math.sin(t * 8 + s) * 0.3 : (p.moving ? -s * sw * 0.85 : Math.sin(t * 2.6 + o.bob) * 0.04) - crouch * 0.6;
-      a.sh.rotation.z = s * (armUp ? 0.4 : 0.14);
+      a.sh.rotation.z = s * (armUp ? 0.4 : o.armZ ?? 0.14);
     });
     o.head.rotation.y = !p.moving && !dance && p.alive ? Math.sin(t * 0.8 + o.bob) * 0.15 : 0;
-    o.head.position.y = 0.91 + (p.moving ? cw * 0.008 : 0);
+    o.head.position.y = (o.headY ?? 0.91) + (p.moving ? cw * (o.headBob ?? 0.008) : 0);
     // eyes: blink, squint when dancing or dead
     const blink = Math.sin(t * 1.3 + o.bob * 3) > 0.985, ey = !p.alive ? 0.25 : dance ? 0.4 : blink ? 0.12 : 1;
     for (const e of o.eyes) e.pupil.scale.y = e.base * ey;
@@ -206,7 +283,7 @@ export function makeChars(scene, env) {
     else if (p.inv > 0 && Math.floor(t * 20) % 2) vis = false;
     o.root.visible = vis; o.root.scale.setScalar(Math.max(0.0001, sc));
     o.shield.visible = p.alive && p.shieldT > 0 && (p.shieldT > 3 || Math.floor(t * 10) % 2 === 0);
-    if (o.shield.visible) o.shield.scale.setScalar(0.66 + Math.sin(t * 8) * 0.02);
+    if (o.shield.visible) o.shield.scale.setScalar((o.glb ? 0.85 : 0.66) + Math.sin(t * 8) * 0.02);
     o.ring.visible = p.alive && p.human && st.mode !== 'demo'; o.ring.material.opacity = 0.45 + 0.2 * Math.sin(t * 4);
     o.shadow.scale.setScalar(0.6 * (1 - Math.min(0.5, bob)));
   }
@@ -357,7 +434,7 @@ export function makeChars(scene, env) {
   function update(st, dt) {
     const seenP = new Set(), seenE = new Set();
     for (const p of st.players) {
-      let o = bombers.get(p); if (!o || o.pal !== p.pal) { if (o) dispose(o); o = makeBomber(p.pal); o.pal = p.pal; bombers.set(p, o); }
+      let o = bombers.get(p); if (!o || o.pal !== p.pal || (heroTpl && !o.glb)) { if (o) dispose(o); o = heroTpl ? makeHeroGLB(p.pal) : makeBomber(p.pal); o.pal = p.pal; bombers.set(p, o); }
       seenP.add(p); poseBomber(o, p, st, dt);
     }
     for (const e of st.enemies) {
@@ -371,9 +448,9 @@ export function makeChars(scene, env) {
   // One of each model, for shader warm-up (fx3d compiles them at stage start).
   function samples(pals, defs) {
     const out = [];
-    for (const pal of pals) out.push(makeBomber(pal));
+    for (const pal of pals) out.push(heroTpl ? makeHeroGLB(pal) : makeBomber(pal));
     for (const def of defs) out.push(makeEnemy({ def, bob: 0 }));
     return { remove: () => out.forEach(dispose) };
   }
-  return { update, samples };
+  return { update, samples, set onReady(f) { onReady = f; }, get ready() { return !!heroTpl; } };
 }

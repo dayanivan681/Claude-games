@@ -451,6 +451,7 @@ const Fx3D = (() => {
     scene.add(hemi, sun, sun.target, fill, fill.target, key, key.target);
     for (let i = 0; i < 3; i++) { const L = new THREE.PointLight('#ff9a3a', 0, 4, 1.6); lights.push(L); scene.add(L); }
     K = makeKit(); chars = makeChars(scene, K.env);
+    chars.onReady = () => { warm = false; };   // the hero model arrived: compile its shaders too
     cv.addEventListener('webglcontextlost', e => { e.preventDefault(); renderer = null; if (onLost) onLost(); }, false);
     return true;
   }
