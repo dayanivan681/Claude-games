@@ -8,9 +8,8 @@
 // tall black eyes under thick determined brows, an open short-sleeved jacket, gold-buckled belt, striped
 // knees and chunky cuffed gloves and boots. Enemies scowl: slanted brows, small pupils, teeth and fangs.
 //
-// The hero is the owner's own model (models/heroe.glb, exported by tools/heroe_juego.py from their Blender
-// recreation, in a neutral pose with pivots for hips, legs, arms, head and antenna); rivals wear the same model
-// recoloured from their palette plus their accessories. Until it loads (or if it can't) a procedural rig stands in.
+// The hero is the owner's Bomber (models/bomber.blend → models/bomber-animado.glb, rigged and animated by
+// tools/rig_bomber.py); rivals wear the same model recoloured from their palette plus their accessories. Until it loads (or if it can't) a procedural rig stands in.
 //
 // Local model space: one unit per tile, feet on y = 0, the model faces +z (toward the camera) before yaw.
 import * as THREE from '../vendor/three.module.min.js';
@@ -173,80 +172,118 @@ export function makeChars(scene, env) {
     scene.add(root);
     return { root, yaw, body, legs, arms, head, eyes, antenna, shield, ring: halo, shadow, style, yawNow: 0, lx: null, ly: 0, av: 0, ao: 0, mv: 0, bob: Math.random() * 6 };
   }
-  // ---------- the hero model (glTF) ----------
-  const GLB_SCALE = 0.24;   // model units (Blender metres, ~6.8 tall) → tiles
-  let heroTpl = null, onReady = null;
+  // ---------- the hero model (glTF, rigged and animated) ----------
+  // models/bomber-animado.glb: the owner's Bomber (models/bomber.blend) with the rig and clips added by
+  // tools/rig_bomber.py — idle, caminar, correr, poner_bomba, victoria, dano, morir — played with an AnimationMixer.
+  const GLB_SCALE = 0.31;   // model units (Blender metres, 5.5 tall) → tiles (about 1.7 tall, head ~0.65 wide)
+  let heroTpl = null, heroClips = [], onReady = null;
   const loader = new GLTFLoader(), heroUrl = f => new URL('../models/' + f, import.meta.url).href;
   const onHero = g => {
-    heroTpl = g.scene;
+    heroTpl = g.scene; heroClips = g.animations;
     heroTpl.traverse(m => {
       if (!m.isMesh || !m.material) return;
       const mt = m.material, dark = mt.color.r + mt.color.g + mt.color.b < 0.1;
-      mt.envMap = env; mt.envMapIntensity = dark ? 0.12 : 0.75;   // inky eyes and brows stay black instead of mirroring the sky
-      if (dark) { mt.roughness = 0.85; mt.envMapIntensity = 0.05; if ('clearcoat' in mt) mt.clearcoat = 0; }   // and no broad sheen across their flat faces
+      mt.envMap = env; mt.envMapIntensity = 0.75;
+      if (dark) { mt.roughness = 0.85; mt.envMapIntensity = 0.05; if ('clearcoat' in mt) mt.clearcoat = 0; }   // inky eyes stay black, no sheen across them
     });
     if (onReady) onReady();
   };
   // .glb normally; hosts that won't serve .glb get the same model as embedded glTF JSON. Failing both, the procedural rig stays.
-  loader.load(heroUrl('heroe.glb'), onHero, undefined, () => loader.load(heroUrl('heroe.json'), onHero, undefined, () => {}));
-  const PARTS = ['PiernaI', 'PiernaD', 'BrazoI', 'BrazoD', 'Antena', 'Cabeza', 'Cuerpo'];
-  const partOf = m => { for (let n = m; n; n = n.parent) if (PARTS.includes(n.name)) return n.name.replace(/[ID]$/, ''); return ''; };
-  // Rivals: the hero's materials recoloured from their palette (pink → boots / gloves / crest colour, blue → suit…).
+  loader.load(heroUrl('bomber-animado.glb'), onHero, undefined, () => loader.load(heroUrl('bomber-animado.json'), onHero, undefined, () => {}));
+  const partOf = m => { for (let n = m; n; n = n.parent) { const k = /^(pierna|brazo|antena|cabeza|torso|cadera|bomba)/.exec(n.name); if (k) return k[1]; } return ''; };
+  // Rivals: the Bomber's materials recoloured from their palette (pink → boots / gloves / antenna, blue → jacket…).
   function recolor(mat, pal, part) {
     const key = pal.name + '|' + mat.name + '|' + part;
     if (mats[key]) return mats[key];
-    let m = mat.clone();
-    const set = c => m.color.copy(vivid(c));
+    const m = mat.clone(), set = c => m.color.copy(vivid(c));
     switch (mat.name) {
-      case 'Rosa brillante': set(part === 'Pierna' ? pal.boot : part === 'Brazo' ? pal.glove : pal.ball); break;
-      case 'Costuras rosas': set(part === 'Pierna' ? pal.boot2 : pal.glove2); break;
+      case 'Rosa caramelo': set(part === 'pierna' ? pal.boot : part === 'brazo' ? pal.glove : pal.ball); break;
       case 'Chaqueta azul': set(pal.suit); break;
-      case 'Costuras azules': set(pal.suit2); break;
-      case 'Lavanda': set(pal.shirt); m.color.lerp(C2.copy(vivid(pal.suit)), 0.25); break;
-      case 'Rostro melocotón': if (pal.style === 'ninja') { m = glossy('#141f33', { roughness: 0.18, clearcoat: 1 }); } break;
-      case 'Ojos negros': if (pal.style === 'ninja') m = new THREE.MeshBasicMaterial({ color: pal.ball, toneMapped: false }); break;
+      case 'Traje lavanda': set(pal.shirt); m.color.lerp(C2.copy(vivid(pal.suit)), 0.25); break;
     }
     return (mats[key] = m);
   }
+  // Accessories are placed in model space (glTF metres, Y up, face toward +Z) and then handed to the bone they ride on.
+  function accessory(model, bone, obj) { model.add(obj); model.updateMatrixWorld(true); bone.attach(obj); return obj; }
   function makeHeroGLB(pal) {
     const style = pal.style || 'classic', root = new THREE.Group(), tilt = new THREE.Group(), yaw = new THREE.Group(), body = new THREE.Group();
     root.add(tilt); tilt.add(yaw); yaw.add(body); tilt.rotation.x = -TILT;
-    const model = heroTpl.clone(true); model.scale.setScalar(GLB_SCALE); body.add(model);
-    const node = n => model.getObjectByName(n), head = node('Cabeza'), torso = node('Cuerpo');
-    let antenna = node('Antena');
+    const model = heroTpl.clone(true);
+    const bone = n => { let b = null; model.traverse(o => { if (!b && o.name.startsWith(n)) b = o; }); return b; };
+    const head = bone('cabeza'), torso = bone('torso'), antenna = bone('antena');
+    let extra = null;
     if (style !== 'classic') {
-      model.traverse(m => { if (m.isMesh) { m.material = recolor(m.material, pal, partOf(m)); if (style === 'ninja' && m.material.name === 'Cejas negras') m.visible = false; } });
-      antenna.visible = false; antenna = new THREE.Group(); head.add(antenna);
-      if (style === 'punk') {   // spiky crest along the helmet, scarf, cheek bandage
-        antenna.position.set(0, 1.0, 0);
+      model.traverse(m => {
+        if (!m.isMesh) return;
+        m.material = recolor(m.material, pal, partOf(m));
+        if (style === 'ninja') {   // dark glass visor, glowing eye slits, no brows or eye glints
+          if (m.name.startsWith('Placa_rostro') || m.name.startsWith('Placa rostro')) m.material = M('ninjaVisor', () => glossy('#141f33', { roughness: 0.18, clearcoat: 1 }));
+          else if (/^Ojo.negro/.test(m.name)) m.material = M('ninjaEye' + pal.ball, () => new THREE.MeshBasicMaterial({ color: pal.ball, toneMapped: false }));
+          else if (/^(Ceja|Reflejo.ojo)/.test(m.name)) m.visible = false;
+        }
+      });
+      antenna.visible = false;
+      extra = new THREE.Group();
+      if (style === 'punk') {   // spiky crest along the helmet, scarf
         const crest = M('crest' + pal.ball, () => glossy(pal.ball));
-        [[0.6, 0.8, 0.6], [0.2, 1.05, 0.2], [-0.22, 1.0, -0.22], [-0.62, 0.8, -0.65]].forEach(([z, len, a]) => { const c = mesh(cone, crest, antenna, 0, len * 0.4, z, 0.2, len, 0.3); c.rotation.x = a; });
-        mesh(new THREE.TorusGeometry(1, 0.32, 10, 28), M('scarf' + pal.ball, () => satin(pal.ball)), torso, 0, 1.3, 0.02, 0.38, 0.38, 0.34).rotation.x = Math.PI / 2;
-        const band = mesh(box, M('bandage', () => matte('#fff4e0')), head, 0.42, -0.36, 0.93, 0.28, 0.09, 0.03); band.rotation.set(0, 0.35, -0.5);
-      } else if (style === 'ninja') {   // headband with a steel plate; ties trail behind
-        const bandMat = M('band' + pal.band, () => matte(pal.band)), g = new THREE.Group(); g.position.y = 0.62; g.scale.set(1.08, 1, 0.97); head.add(g);
-        mesh(new THREE.TorusGeometry(1, 0.08, 8, 40), bandMat, g).rotation.x = Math.PI / 2;
-        mesh(box, M('plate', () => new THREE.MeshStandardMaterial({ color: '#dfe6f0', roughness: 0.2, metalness: 1, envMap: env })), head, 0, 0.62, 0.95, 0.42, 0.2, 0.05);
-        antenna.position.set(0, 0.62, -0.92);
-        for (const s of [-1, 1]) { const t = mesh(box, bandMat, antenna, s * 0.12, -0.12, -0.32, 0.12, 0.05, 0.65); t.rotation.set(0.5, s * 0.3, 0); }
-      } else if (style === 'king') {   // gem-set crown, curled moustache, royal cape
-        antenna.position.set(0, 1.02, 0);
-        mesh(new THREE.CylinderGeometry(0.56, 0.52, 0.28, 28, 1, true), GOLD, antenna, 0, 0.1, 0);
+        [[0.5, 0.75, 0.55], [0.15, 0.95, 0.18], [-0.2, 0.9, -0.2], [-0.52, 0.72, -0.6]].forEach(([z, len, a]) => { const c = mesh(cone, crest, extra, -0.1, 4.55 + len * 0.3, z, 0.18, len, 0.26); c.rotation.x = a; });
+        accessory(model, head, extra);
+        accessory(model, torso, mesh(new THREE.TorusGeometry(1, 0.3, 10, 28), M('scarf' + pal.ball, () => satin(pal.ball)), new THREE.Group(), 0, 2.86, 0.02, 0.46, 0.46, 0.38)).rotation.x = Math.PI / 2;
+      } else if (style === 'ninja') {   // headband with a steel plate
+        const bandMat = M('band' + pal.band, () => matte(pal.band)), g = new THREE.Group(); g.position.set(-0.08, 4.12, 0); g.scale.set(1.04, 1, 0.74); extra.add(g);
+        mesh(new THREE.TorusGeometry(1, 0.07, 8, 40), bandMat, g).rotation.x = Math.PI / 2;
+        mesh(box, M('plate', () => new THREE.MeshStandardMaterial({ color: '#dfe6f0', roughness: 0.2, metalness: 1, envMap: env })), extra, -0.07, 4.12, 0.74, 0.4, 0.18, 0.05);
+        for (const s2 of [-1, 1]) { const t2 = mesh(box, bandMat, extra, -0.08 + s2 * 0.1, 4.0, -0.95, 0.1, 0.05, 0.55); t2.rotation.set(0.5, s2 * 0.3, 0); }
+        accessory(model, head, extra);
+      } else if (style === 'king') {   // gem-set crown, moustache, royal cape
+        mesh(new THREE.CylinderGeometry(0.52, 0.48, 0.26, 28, 1, true), GOLD, extra, -0.12, 4.62, 0);
         const gem = M('gem', () => glossy('#e0204a', { emissive: '#ff2050', emissiveIntensity: 0.3 }));
-        for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; mesh(cone, GOLD, antenna, Math.sin(a) * 0.53, 0.38, Math.cos(a) * 0.53, 0.11, 0.3, 0.11); mesh(sphLo, gem, antenna, Math.sin(a) * 0.56, 0.1, Math.cos(a) * 0.56, 0.07); }
+        for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; mesh(cone, GOLD, extra, -0.12 + Math.sin(a) * 0.5, 4.88, Math.cos(a) * 0.5, 0.1, 0.28, 0.1); mesh(sphLo, gem, extra, -0.12 + Math.sin(a) * 0.53, 4.62, Math.cos(a) * 0.53, 0.065); }
         const mus = M('moustache', () => matte('#5e360c'));
-        for (const s of [-1, 1]) { const m = mesh(sphLo, mus, head, s * 0.2, -0.42, 0.96, 0.22, 0.08, 0.07); m.rotation.z = s * 0.3; }
-        const cape = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.85, 1.3, 20, 4, true, Math.PI * 0.62, Math.PI * 0.76), M('cape' + pal.ball, () => satin(pal.ball, { side: THREE.DoubleSide, roughness: 0.6 })));
-        cape.position.set(0, 0.62, -0.05); torso.add(cape); antenna.userData.cape = cape;
+        for (const s2 of [-1, 1]) { const m = mesh(sphLo, mus, extra, -0.06 + s2 * 0.2, 3.2, 0.74, 0.21, 0.075, 0.07); m.rotation.z = s2 * 0.3; }
+        accessory(model, head, extra);
+        const cape = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.78, 1.25, 20, 4, true, Math.PI * 0.62, Math.PI * 0.76), M('cape' + pal.ball, () => satin(pal.ball, { side: THREE.DoubleSide, roughness: 0.6 })));
+        cape.position.set(0, 2.25, -0.05); accessory(model, torso, cape);
       }
     }
+    model.scale.setScalar(GLB_SCALE); body.add(model);
+    const mixer = new THREE.AnimationMixer(model), acts = {};
+    for (const c of heroClips) acts[c.name] = mixer.clipAction(c);
+    for (const n of ['poner_bomba', 'dano', 'morir']) if (acts[n]) { acts[n].setLoop(THREE.LoopOnce); acts[n].clampWhenFinished = true; }
     const shield = new THREE.Mesh(sph, M('shield', () => new THREE.MeshPhysicalMaterial({ color: '#3df5ff', transparent: true, opacity: 0.22, roughness: 0.05, clearcoat: 1, envMap: env, emissive: '#3df5ff', emissiveIntensity: 0.25, depthWrite: false })));
-    shield.position.y = 0.8; shield.scale.setScalar(0.85); shield.visible = false; body.add(shield);
+    shield.position.y = 0.75; shield.scale.setScalar(0.85); shield.visible = false; body.add(shield);
     const halo = new THREE.Mesh(new THREE.RingGeometry(0.33, 0.37, 40).rotateX(-Math.PI / 2), M('ring' + pal.trim, () => new THREE.MeshBasicMaterial({ color: pal.trim, transparent: true, opacity: 0.6, toneMapped: false, depthWrite: false })));
     halo.position.y = 0.015; root.add(halo);
-    const shadow = new THREE.Mesh(shadowGeo, shadowMat); shadow.position.y = 0.012; shadow.scale.setScalar(0.62); root.add(shadow);
+    const shadow = new THREE.Mesh(shadowGeo, shadowMat); shadow.position.y = 0.012; shadow.scale.setScalar(0.6); root.add(shadow);
     scene.add(root);
-    return { root, yaw, body, legs: [node('PiernaI'), node('PiernaD')], arms: [{ sh: node('BrazoI') }, { sh: node('BrazoD') }], head, headY: head.position.y, headBob: 0.035, armZ: 0, eyes: [], antenna, shield, ring: halo, shadow, style, glb: true, yawNow: 0, lx: null, ly: 0, av: 0, ao: 0, mv: 0, bob: Math.random() * 6 };
+    return { root, yaw, body, mixer, acts, cur: null, placeEnd: 0, lastPlace: 0, shield, ring: halo, shadow, style, glb: true, yawNow: 0 };
+  }
+  // Which clip the game state calls for, cross-faded; walking and running play at the bomber's speed.
+  function animateHero(o, p, st, dt) {
+    const t = st.t;
+    o.root.position.set(p.x + 0.5, 0, p.y + 0.5);
+    if ((p.placeT || 0) > (o.lastPlace || 0)) o.placeEnd = t + 0.45;   // just set a bomb down
+    o.lastPlace = p.placeT || 0;
+    if (p.placeT > 0) p.placeT -= dt;   // cosmetic crouch timer (the 2D painter used to wind it down)
+    const dance = p.winner || (st.phase === 'clear' && p.human);
+    turn(o, dance ? 0 : FACE_YAW[p.face || 0], dt);
+    const run = (p.speed || 3.3) > 4.3;
+    const want = !p.alive ? 'morir' : dance ? 'victoria' : t < o.placeEnd ? 'poner_bomba' : p.moving ? (run ? 'correr' : 'caminar') : 'idle';
+    const next = o.acts[want];
+    if (next && want !== o.cur) {
+      const prev = o.cur && o.acts[o.cur];
+      next.reset().setEffectiveWeight(1).play();
+      if (prev) next.crossFadeFrom(prev, want === 'poner_bomba' ? 0.08 : 0.16, false);
+      o.cur = want;
+    }
+    if (next) next.setEffectiveTimeScale(want === 'caminar' ? (p.speed || 3.3) / 2.3 : want === 'correr' ? (p.speed || 5) / 3.6 : want === 'poner_bomba' ? 2.3 : 1);
+    o.mixer.update(dt);
+    let vis = !(p.alive && p.inv > 0 && Math.floor(t * 20) % 2);
+    if (!p.alive && p.deadT > 1.7) vis = false;
+    o.root.visible = vis;
+    o.shield.visible = p.alive && p.shieldT > 0 && (p.shieldT > 3 || Math.floor(t * 10) % 2 === 0);
+    if (o.shield.visible) o.shield.scale.setScalar(0.85 + Math.sin(t * 8) * 0.02);
+    o.ring.visible = p.alive && p.human && st.mode !== 'demo'; o.ring.material.opacity = 0.45 + 0.2 * Math.sin(t * 4);
   }
 
   const FACE_YAW = [0, -Math.PI / 2, Math.PI / 2, Math.PI];   // DIRS order: down (+z), left, right, up
@@ -439,7 +476,7 @@ export function makeChars(scene, env) {
     const seenP = new Set(), seenE = new Set();
     for (const p of st.players) {
       let o = bombers.get(p); if (!o || o.pal !== p.pal || (heroTpl && !o.glb)) { if (o) dispose(o); o = heroTpl ? makeHeroGLB(p.pal) : makeBomber(p.pal); o.pal = p.pal; bombers.set(p, o); }
-      seenP.add(p); poseBomber(o, p, st, dt);
+      seenP.add(p); if (o.glb) animateHero(o, p, st, dt); else poseBomber(o, p, st, dt);
     }
     for (const e of st.enemies) {
       let o = enemies.get(e); if (!o) { o = makeEnemy(e); enemies.set(e, o); }
