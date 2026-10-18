@@ -56,6 +56,47 @@ export function makeChars(scene, env) {
     const x = new THREE.Vector3().crossVectors(Y, n).normalize(), y = new THREE.Vector3().crossVectors(n, x);
     g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, n)); parent.add(g); return g;
   }
+
+  // ---------- the bomber's helmet ----------
+  // A rounded superellipsoid (fuller than a sphere) a little wider than tall, broadening toward the cheeks and
+  // flattened underneath. helmetR(d): distance from the head centre to the surface along the unit direction d.
+  const HEAD_R = new THREE.Vector3(0.29, 0.272, 0.27);
+  const sstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  function helmetR(d) {
+    const low = sstep(0, -0.7, d.y), a = HEAD_R.x * (1 + 0.05 * low), b = HEAD_R.y * (1 - 0.1 * low), c = HEAD_R.z, P = 2.5;
+    return 1 / Math.pow(Math.abs(d.x / a) ** P + Math.abs(d.y / b) ** P + Math.abs(d.z / c) ** P, 1 / P);
+  }
+  const helmetGeo = (() => {
+    const g = new THREE.SphereGeometry(1, 48, 32), p = g.attributes.position, v = new THREE.Vector3();
+    for (let i = 0; i < p.count; i++) { v.fromBufferAttribute(p, i).normalize(); v.multiplyScalar(helmetR(v)); p.setXYZ(i, v.x, v.y, v.z); }
+    g.computeVertexNormals(); return g;
+  })();
+  // The face opening, in the 2D sprite's units (x right, y down, head centre at 0): a big rounded screen, set a
+  // little high on the helmet because the game camera looks down on it. Mapped onto the helmet surface by angle.
+  const FX = 0.225, FY0 = -0.155, FY1 = 0.175, FRR = 0.12, FACE_UP = 0.2;
+  const FW = 0.26, FT = -0.19, FB = 0.21, FPX = 256 / (2 * FW);   // the painted canvas covers x ±FW, y FT..FB
+  const faceDir = (xs, ys, out = new THREE.Vector3()) => { const a = xs / HEAD_R.x, b = FACE_UP - ys / HEAD_R.y; return out.set(Math.sin(a) * Math.cos(b), Math.sin(b), Math.cos(a) * Math.cos(b)); };
+  const onHelmet = (d, lift) => d.multiplyScalar(helmetR(d) + lift);
+  function stick(parent, d, lift) {   // a group on the helmet along direction d, local +z out of the surface
+    const g = new THREE.Group(), n = d.clone(); g.position.copy(onHelmet(d.clone(), lift));
+    const x = new THREE.Vector3().crossVectors(Y, n).normalize(), y = new THREE.Vector3().crossVectors(n, x);
+    g.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, n)); parent.add(g); return g;
+  }
+  const faceDecal = (parent, xs, ys, lift = 0.01) => stick(parent, faceDir(xs, ys), lift);
+  const helmetDecal = (parent, a, b, lift = 0.004) => stick(parent, new THREE.Vector3(Math.sin(a) * Math.cos(b), Math.sin(b), Math.cos(a) * Math.cos(b)), lift);
+  const faceGeo = (() => {
+    const g = new THREE.PlaneGeometry(1, 1, 40, 32), p = g.attributes.position, v = new THREE.Vector3();
+    for (let i = 0; i < p.count; i++) { faceDir(-FW + (p.getX(i) + 0.5) * 2 * FW, FT + (0.5 - p.getY(i)) * (FB - FT), v); onHelmet(v, 0.003); p.setXYZ(i, v.x, v.y, v.z); }
+    g.computeVertexNormals(); return g;
+  })();
+  const rimGeo = (() => {   // the raised lip framing the face opening
+    const pts = [], seg = (x0, y0, x1, y1) => { for (let i = 0; i < 12; i++) pts.push([x0 + (x1 - x0) * i / 12, y0 + (y1 - y0) * i / 12]); };
+    const arc = (cx, cy, a0) => { for (let i = 0; i < 10; i++) { const a = a0 + i / 10 * Math.PI / 2; pts.push([cx + Math.cos(a) * FRR, cy + Math.sin(a) * FRR]); } };
+    const x0 = -FX + FRR, x1 = FX - FRR, y0 = FY0 + FRR, y1 = FY1 - FRR;
+    seg(x0, FY0, x1, FY0); arc(x1, y0, -Math.PI / 2); seg(FX, y0, FX, y1); arc(x1, y1, 0); seg(x1, FY1, x0, FY1); arc(x0, y1, Math.PI / 2); seg(-FX, y1, -FX, y0); arc(x0, y0, Math.PI);
+    const curve = new THREE.CatmullRomCurve3(pts.map(([x, y]) => onHelmet(faceDir(x, y), 0.002)), true);
+    return new THREE.TubeGeometry(curve, 200, 0.02, 10, true);
+  })();
   // Menacing eyes for enemies: squinting white, small pupil (optionally glowing), slanted brow over each.
   function scowl(parent, R, { sep = 0.32, up = 0.3, size = 0.06, pupil = INK, brow = INK, browTilt = 0.55, white = true } = {}) {
     const eyes = [];
@@ -100,17 +141,20 @@ export function makeChars(scene, env) {
     });
     // torso: shirt, open short-sleeved jacket, belt with a big gold buckle
     const torso = new THREE.Group(); torso.position.y = 0.52; body.add(torso);
-    mesh(cap, shirt, torso, 0, 0.0, 0, 0.21, 0.12, 0.17);
-    mesh(new THREE.CylinderGeometry(1, 1.06, 1, 24, 1, true, 0.62, Math.PI * 2 - 1.24), suit, torso, 0, 0.02, 0, 0.122, 0.2, 0.1);
-    for (const s of [-1, 1]) { const lap = mesh(box, suit, torso, s * 0.05, 0.09, 0.093, 0.045, 0.06, 0.012); lap.rotation.set(-0.25, 0, s * 0.5); }   // collar flaps
-    mesh(cyl, INK, torso, 0, -0.1, 0, 0.112, 0.04, 0.092);
-    mesh(box, GOLD, torso, 0, -0.1, 0.094, 0.07, 0.05, 0.014); mesh(box, INK, torso, 0, -0.1, 0.101, 0.038, 0.024, 0.006);
+    const classic = style === 'classic', bw = classic ? 0.142 : 0.112, bd = classic ? 0.122 : 0.092;
+    if (classic) mesh(sph, suit, torso, 0, -0.005, 0, 0.165, 0.165, 0.142);   // the hero: a round, all-blue suit
+    else {
+      mesh(cap, shirt, torso, 0, 0.0, 0, 0.21, 0.12, 0.17);
+      mesh(new THREE.CylinderGeometry(1, 1.06, 1, 24, 1, true, 0.62, Math.PI * 2 - 1.24), suit, torso, 0, 0.02, 0, 0.122, 0.2, 0.1);
+      for (const s of [-1, 1]) { const lap = mesh(box, suit, torso, s * 0.05, 0.09, 0.093, 0.045, 0.06, 0.012); lap.rotation.set(-0.25, 0, s * 0.5); }   // collar flaps
+    }
+    mesh(cyl, INK, torso, 0, -0.1, 0, bw, 0.042, bd);
+    mesh(box, GOLD, torso, 0, -0.1, bd + 0.002, 0.07, 0.05, 0.014); mesh(box, INK, torso, 0, -0.1, bd + 0.009, 0.038, 0.024, 0.006);
     mesh(sph, white, torso, 0, -0.15, 0, 0.1, 0.06, 0.085);
     // arms: short sleeve, slim white arm with a stripe, big cuffed boxing-glove mitten
     const arms = [-1, 1].map(s => {
       const sh = new THREE.Group(); sh.position.set(s * 0.14, 0.61, 0); body.add(sh);
-      mesh(new THREE.CylinderGeometry(1, 1.15, 1, 16, 1, true), suit, sh, 0, -0.03, 0, 0.05, 0.08, 0.05);
-      mesh(sph, suit, sh, 0, 0.0, 0, 0.05);
+      if (!classic) { mesh(new THREE.CylinderGeometry(1, 1.15, 1, 16, 1, true), suit, sh, 0, -0.03, 0, 0.05, 0.08, 0.05); mesh(sph, suit, sh, 0, 0.0, 0, 0.05); }
       capsule(sh, white, 0.032, 0.2, 0, -0.1, 0);
       mesh(ring, stripe, sh, 0, -0.12, 0, 0.033, 0.033, 0.05).rotation.x = Math.PI / 2;
       const hand = new THREE.Group(); hand.position.y = -0.22; sh.add(hand);
@@ -120,19 +164,15 @@ export function makeChars(scene, env) {
       sh.rotation.z = s * 0.14;
       return { sh, hand };
     });
-    // head: helmet with a flat skin face plate, tall black eyes, thick determined brows
-    const HR = new THREE.Vector3(0.27, 0.285, 0.262), head = new THREE.Group(); head.position.y = 0.91; body.add(head);
-    mesh(sph, M('helmet', () => glossy('#ffffff', { roughness: 0.35, clearcoat: 0.8, envMapIntensity: 0.9 })), head, 0, 0, 0, HR.x, HR.y, HR.z);
-    // the face: a sphere patch a hair above the helmet, centred on the front, wearing the painted sprite face
-    const fc = document.createElement('canvas'); fc.width = 256; fc.height = Math.round(256 * (FB - FT) / (2 * FW));
-    const faceG = fc.getContext('2d'), faceTex = new THREE.CanvasTexture(fc); faceTex.colorSpace = THREE.SRGBColorSpace; faceTex.anisotropy = 4;
-    const faceMat = new THREE.MeshStandardMaterial({ map: faceTex, transparent: true, alphaTest: 0.02, roughness: 0.55, metalness: 0, envMap: env, envMapIntensity: 0.45, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
-    // sprite units → angles on the helmet: the patch spans the canvas (x ±FW, y FT..FB) measured around the head
-    // (a bit larger than the sprite and raised toward the top, since the game camera looks down on the head)
-    const fPhi = 2 * FW / HR.x * 1.02, fTh = (FB - FT) / HR.y * 1.08, fTh0 = Math.PI / 2 + FT / HR.y * 1.08 - 0.3;
-    const face = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 20, Math.PI / 2 - fPhi / 2, fPhi, fTh0, fTh), faceMat); face.scale.copy(HR).multiplyScalar(1.01); head.add(face);
-    const faceR = HR.clone().multiplyScalar(1.02);
-    paintFace(faceG, 'normal', pal, style); const eyes = [];
+    // head: the helmet with its framed face opening; the sprite's face is painted inside, with relief (bump) and
+    // gloss (clearcoat) maps so the eyes and brows catch the light like moulded, lacquered shapes
+    const HR = HEAD_R, head = new THREE.Group(); head.position.y = 0.91; body.add(head);
+    const helmetMat = M('helmet', () => glossy('#ffffff', { roughness: 0.3, clearcoat: 0.9, envMapIntensity: 0.9 }));
+    mesh(helmetGeo, helmetMat, head); mesh(rimGeo, helmetMat, head);
+    const face = makeFace();
+    const faceMat = new THREE.MeshPhysicalMaterial({ map: face.tex[0], bumpMap: face.tex[1], bumpScale: 1.6, clearcoat: 1, clearcoatMap: face.tex[2], clearcoatRoughness: 0.08, roughness: 0.6, metalness: 0, alphaTest: 0.5, envMap: env, envMapIntensity: 0.5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+    head.add(new THREE.Mesh(faceGeo, faceMat));
+    paintFace(face, 'normal', pal, style); const eyes = [];
     let antenna = null;
     if (style === 'classic') {
       antenna = new THREE.Group(); antenna.position.y = HR.y - 0.03; head.add(antenna);
@@ -142,20 +182,21 @@ export function makeChars(scene, env) {
       antenna = new THREE.Group(); antenna.position.y = HR.y - 0.08; head.add(antenna);
       const crest = M('crest' + pal.ball, () => glossy(pal.ball));
       for (const [z, len, a] of [[0.12, 0.2, 0.5], [0.02, 0.27, 0.15], [-0.09, 0.26, -0.2], [-0.19, 0.2, -0.55]]) { const c = mesh(cone, crest, antenna, 0, 0.08, z, 0.045, len, 0.06); c.rotation.x = a; }
-      const band = mesh(box, M('bandage', () => matte('#fff4e0')), decal(head, faceR, 0.4, -0.22), 0, 0, 0.005, 0.08, 0.026, 0.008); band.rotation.z = -0.5;
+      const band = mesh(box, M('bandage', () => matte('#fff4e0')), faceDecal(head, 0.14, 0.1), 0, 0, 0, 0.08, 0.026, 0.008); band.rotation.z = -0.5;
       mesh(new THREE.TorusGeometry(1, 0.35, 10, 24), M('scarf' + pal.ball, () => satin(pal.ball)), body, 0, 0.66, 0, 0.11, 0.11, 0.1).rotation.x = Math.PI / 2;
     } else if (style === 'ninja') {
       const bandMat = M('band' + pal.band, () => matte(pal.band));
-      mesh(new THREE.TorusGeometry(1, 0.07, 8, 36), bandMat, head, 0, 0.06, 0, 0.264, 0.264, 0.26).rotation.x = Math.PI / 2;
-      const plate = mesh(box, M('plate', () => new THREE.MeshStandardMaterial({ color: '#dfe6f0', roughness: 0.2, metalness: 1, envMap: env })), decal(head, faceR, 0, 0.36), 0, 0, 0.004, 0.12, 0.06, 0.012);
-      antenna = new THREE.Group(); antenna.position.set(0, 0.1, -0.26); head.add(antenna);
+      const BB = 0.8, bd = new THREE.Vector3(0, Math.sin(BB), Math.cos(BB)), bp = onHelmet(bd.clone(), 0), br = bp.z * 1.01;   // band along the top of the visor
+      mesh(new THREE.TorusGeometry(1, 0.07, 8, 36), bandMat, head, 0, bp.y, 0, br, br, br * HR.z / HR.x).rotation.x = Math.PI / 2;
+      const plate = mesh(box, M('plate', () => new THREE.MeshStandardMaterial({ color: '#dfe6f0', roughness: 0.2, metalness: 1, envMap: env })), helmetDecal(head, 0, BB, 0.012), 0, 0, 0, 0.12, 0.06, 0.012);
+      antenna = new THREE.Group(); antenna.position.set(0, bp.y, -br); head.add(antenna);
       for (const s of [-1, 1]) { const t = mesh(box, bandMat, antenna, s * 0.035, -0.04, -0.1, 0.035, 0.015, 0.2); t.rotation.set(0.5, s * 0.3, 0); }
     } else if (style === 'king') {
       antenna = new THREE.Group(); antenna.position.y = HR.y - 0.06; head.add(antenna);
       mesh(new THREE.CylinderGeometry(0.15, 0.14, 0.08, 24, 1, true), GOLD, antenna, 0, 0.03, 0);
       for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2; mesh(cone, GOLD, antenna, Math.sin(a) * 0.14, 0.11, Math.cos(a) * 0.14, 0.032, 0.09, 0.032); mesh(sphLo, M('gem', () => glossy('#e0204a', { emissive: '#ff2050', emissiveIntensity: 0.3 })), antenna, Math.sin(a) * 0.148, 0.035, Math.cos(a) * 0.148, 0.022); }
       const mus = M('moustache', () => matte('#5e360c'));
-      for (const s of [-1, 1]) { const m = mesh(sphLo, mus, decal(head, faceR, s * 0.12, -0.38), 0, 0, 0, 0.065, 0.024, 0.02); m.rotation.z = s * 0.3; }
+      for (const s of [-1, 1]) { const m = mesh(sphLo, mus, faceDecal(head, s * 0.06, 0.13), 0, 0, 0, 0.065, 0.026, 0.02); m.rotation.z = s * 0.3; }
       const cape = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.24, 0.42, 20, 4, true, Math.PI * 0.62, Math.PI * 0.76), M('cape' + pal.ball, () => satin(pal.ball, { side: THREE.DoubleSide, roughness: 0.6 })));
       cape.position.set(0, 0.42, -0.02); body.add(cape); antenna.userData.cape = cape;
     }
@@ -165,45 +206,67 @@ export function makeChars(scene, env) {
     halo.position.y = 0.015; root.add(halo);
     const shadow = new THREE.Mesh(shadowGeo, shadowMat); shadow.position.y = 0.012; shadow.scale.setScalar(0.6); root.add(shadow);
     scene.add(root);
-    return { root, yaw, body, legs, arms, head, eyes, antenna, shield, ring: halo, shadow, style, mats: [faceMat], tex: [faceTex], faceG, faceTex, faceMode: 'normal', yawNow: 0, lx: null, ly: 0, av: 0, ao: 0, mv: 0, bob: Math.random() * 6 };
+    return { root, yaw, body, legs, arms, head, eyes, antenna, shield, ring: halo, shadow, style, mats: [faceMat], tex: face.tex, face, faceMode: 'normal', yawNow: 0, lx: null, ly: 0, av: 0, ao: 0, mv: 0, bob: Math.random() * 6 };
   }
   // ---------- the hero model (glTF, rigged and animated) ----------
-  // The bomber's face, painted with the same shapes as the 2D sprite (index.html drawBomber) into a canvas that is
-  // wrapped over the 3D face plate: skin plate, tall eyes with a glint, thick tapered brows, and the expressions.
-  // Units are the sprite's (head radius ~0.3); the canvas covers x ±FW, y FT..FB around the head centre.
-  const FW = 0.24, FT = -0.16, FB = 0.18, FPX = 256 / (2 * FW);
-  function paintFace(g, mode, pal, style) {
-    const c = g.canvas; g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height);
-    g.setTransform(FPX, 0, 0, FPX, FW * FPX, -FT * FPX); g.lineJoin = g.lineCap = 'round';
-    const OUT = '#1a1530', ninja = style === 'ninja', fg = g.createLinearGradient(0, -0.13, 0, 0.16);
-    if (ninja) { fg.addColorStop(0, '#2a3a52'); fg.addColorStop(1, '#070b14'); } else { fg.addColorStop(0, '#ffe7d2'); fg.addColorStop(1, '#efb48b'); }
-    g.fillStyle = fg; g.beginPath(); g.roundRect(-0.205, -0.12, 0.41, 0.28, 0.12); g.fill(); g.lineWidth = 0.022; g.strokeStyle = OUT; g.stroke();
-    const ey = 0.035, line = (pts, w) => { g.lineWidth = w; g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.stroke(); };
-    for (const ex of [-0.08, 0.08]) {
+  // The bomber's face, painted with the 2D sprite's shapes (index.html drawBomber) into three canvases wrapped over
+  // the face opening: colour, height (bump: eyes domed, brows raised) and gloss (clearcoat on eyes and brows).
+  function makeFace() {
+    const ctx = [0, 1, 2].map(() => { const c = document.createElement('canvas'); c.width = 256; c.height = Math.round(256 * (FB - FT) / (2 * FW)); return c.getContext('2d'); });
+    const tex = ctx.map((g, i) => { const t = new THREE.CanvasTexture(g.canvas); if (!i) t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; });
+    return { col: ctx[0], h: ctx[1], s: ctx[2], tex };
+  }
+  function paintFace(f, mode, pal, style) {
+    for (const pass of ['col', 'h', 's']) {
+      const g = f[pass], c = g.canvas; g.setTransform(1, 0, 0, 1, 0, 0);
+      if (pass === 'col') g.clearRect(0, 0, c.width, c.height); else { g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height); }
+      g.setTransform(FPX, 0, 0, FPX, FW * FPX, -FT * FPX); g.lineJoin = g.lineCap = 'round';
+      drawFace(g, pass, mode, pal, style);
+    }
+    for (const t of f.tex) t.needsUpdate = true;
+  }
+  function drawFace(g, P, mode, pal, style) {
+    const OUT = '#1a1530', ninja = style === 'ninja', col = P === 'col';
+    const pick = (c, h, s) => P === 'col' ? c : P === 'h' ? h : s;
+    const ell = (x, y, rx, ry) => { g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); };
+    const line = (pts, w) => { g.lineWidth = w; g.beginPath(); pts.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y)); g.stroke(); };
+    // skin (or the ninja's visor), darkening into the rim like a recessed plate
+    g.beginPath(); g.roundRect(-FX, FY0, FX * 2, FY1 - FY0, FRR);
+    let fill = '#606060';
+    if (col) { fill = g.createLinearGradient(0, FY0, 0, FY1); if (ninja) { fill.addColorStop(0, '#2a3a52'); fill.addColorStop(1, '#070b14'); } else { fill.addColorStop(0, '#ffe2d6'); fill.addColorStop(1, '#f2b19c'); } }
+    g.fillStyle = P === 's' ? (ninja ? '#fff' : '#000') : fill; g.fill();
+    if (col) { g.save(); g.clip(); g.strokeStyle = ninja ? 'rgba(0,0,0,0.5)' : 'rgba(120,50,50,0.28)'; g.lineWidth = 0.07; g.stroke(); g.restore(); }
+    const ey = 0.045;
+    for (const ex of [-0.085, 0.085]) {
       const sg = Math.sign(ex);
       if (ninja) {                               // glowing visor slits
-        g.fillStyle = g.strokeStyle = pal.ball;
+        g.fillStyle = g.strokeStyle = pick(pal.ball, '#909090', '#fff');
         if (mode === 'normal') { g.beginPath(); g.moveTo(ex + sg * 0.06, ey - 0.045); g.lineTo(ex - sg * 0.055, ey - 0.01); g.lineTo(ex - sg * 0.05, ey + 0.025); g.lineTo(ex + sg * 0.06, ey + 0.01); g.closePath(); g.fill(); }
-        else if (mode === 'worried') { g.beginPath(); g.ellipse(ex, ey, 0.04, 0.045, 0, 0, Math.PI * 2); g.fill(); }
+        else if (mode === 'worried') { ell(ex, ey, 0.04, 0.045); g.fill(); }
         else if (mode === 'happy') { g.lineWidth = 0.03; g.beginPath(); g.arc(ex, ey + 0.025, 0.045, Math.PI * 1.1, Math.PI * 1.9); g.stroke(); }
         else if (mode === 'blink') line([[ex - 0.045, ey], [ex + 0.045, ey]], 0.03);
         else { line([[ex - 0.035, ey - 0.035], [ex + 0.035, ey + 0.035]], 0.03); line([[ex + 0.035, ey - 0.035], [ex - 0.035, ey + 0.035]], 0.03); }
         continue;
       }
-      g.fillStyle = g.strokeStyle = OUT;
+      g.fillStyle = g.strokeStyle = pick(OUT, '#c8c8c8', '#fff');
       if (mode === 'normal' || mode === 'worried') {
-        const ry = mode === 'worried' ? 0.07 : 0.088, rx = mode === 'worried' ? 0.05 : 0.042;
-        g.fillStyle = '#120f22'; g.beginPath(); g.ellipse(ex, ey, rx, ry, 0, 0, Math.PI * 2); g.fill();
-        g.fillStyle = 'rgba(255,255,255,0.9)'; g.beginPath(); g.ellipse(ex - 0.012, ey - ry * 0.45, 0.012, 0.022, 0, 0, Math.PI * 2); g.fill();
-        g.fillStyle = OUT; g.beginPath();        // thick tapered brow
-        if (mode === 'normal') { g.moveTo(ex + sg * 0.075, ey - 0.16); g.lineTo(ex - sg * 0.055, ey - 0.11); g.lineTo(ex - sg * 0.05, ey - 0.088); g.lineTo(ex + sg * 0.07, ey - 0.135); }
-        else { g.moveTo(ex + sg * 0.07, ey - 0.105); g.lineTo(ex - sg * 0.05, ey - 0.15); g.lineTo(ex - sg * 0.05, ey - 0.128); g.lineTo(ex + sg * 0.07, ey - 0.085); }
-        g.closePath(); g.fill();
+        const ry = mode === 'worried' ? 0.072 : 0.09, rx = mode === 'worried' ? 0.05 : 0.043;
+        if (col) { g.fillStyle = 'rgba(110,40,40,0.25)'; ell(ex + 0.006, ey + 0.012, rx * 1.08, ry * 1.04); g.fill(); }   // soft contact shadow
+        let eye = '#fff';
+        if (P === 'h') { eye = g.createRadialGradient(ex - 0.01, ey - 0.02, 0, ex, ey, ry * 1.1); eye.addColorStop(0, '#ffffff'); eye.addColorStop(1, '#8a8a8a'); }
+        g.fillStyle = col ? '#120f22' : eye; ell(ex, ey, rx, ry); g.fill();
+        if (P !== 'h') { g.fillStyle = col ? 'rgba(255,255,255,0.9)' : '#fff'; ell(ex - 0.012, ey - ry * 0.45, 0.012, 0.022); g.fill(); }
+        const brow = dy => { g.beginPath();        // thick tapered brow
+          if (mode === 'normal') { g.moveTo(ex + sg * 0.075, ey - 0.16 + dy); g.lineTo(ex - sg * 0.055, ey - 0.11 + dy); g.lineTo(ex - sg * 0.05, ey - 0.088 + dy); g.lineTo(ex + sg * 0.07, ey - 0.135 + dy); }
+          else { g.moveTo(ex + sg * 0.07, ey - 0.105 + dy); g.lineTo(ex - sg * 0.05, ey - 0.15 + dy); g.lineTo(ex - sg * 0.05, ey - 0.128 + dy); g.lineTo(ex + sg * 0.07, ey - 0.085 + dy); }
+          g.closePath(); g.fill(); };
+        if (col) { g.fillStyle = 'rgba(110,40,40,0.25)'; brow(0.012); }
+        g.fillStyle = pick(OUT, '#d8d8d8', '#ccc'); brow(0);
       } else if (mode === 'happy') { g.lineWidth = 0.032; g.beginPath(); g.arc(ex, ey + 0.025, 0.045, Math.PI * 1.1, Math.PI * 1.9); g.stroke(); }
       else if (mode === 'blink') line([[ex - 0.04, ey], [ex + 0.04, ey]], 0.028);
       else { line([[ex - 0.035, ey - 0.035], [ex + 0.035, ey + 0.035]], 0.028); line([[ex + 0.035, ey - 0.035], [ex - 0.035, ey + 0.035]], 0.028); }
     }
-    if (ninja) { g.fillStyle = 'rgba(255,255,255,0.18)'; g.beginPath(); g.moveTo(-0.17, -0.1); g.lineTo(-0.08, -0.1); g.lineTo(-0.15, 0.13); g.lineTo(-0.19, 0.08); g.fill(); }
+    if (ninja && col) { g.fillStyle = 'rgba(255,255,255,0.18)'; g.beginPath(); g.moveTo(-0.17, -0.12); g.lineTo(-0.08, -0.12); g.lineTo(-0.15, 0.15); g.lineTo(-0.19, 0.1); g.fill(); }
   }
   // models/bomber-animado.glb: the owner's Bomber (models/bomber.blend) with the rig and clips added by
   // tools/rig_bomber.py — idle, caminar, correr, poner_bomba, victoria, dano, morir — played with an AnimationMixer.
@@ -367,11 +430,11 @@ export function makeChars(scene, env) {
     o.head.position.y = (o.headY ?? 0.91) + (p.moving ? cw * (o.headBob ?? 0.008) : 0);
     // eyes: blink, squint when dancing or dead
     const blink = Math.sin(t * 1.3 + o.bob * 3) > 0.985;
-    if (o.faceG) {   // the sprite's expressions: dead ×, happy arcs, worried when standing in a blast's path, blink
+    if (o.face) {   // the sprite's expressions: dead ×, happy arcs, worried when standing in a blast's path, blink
       let danger = false;
       if (p.alive && st.danger && !p.calm) { const j = Math.round(p.y) * st.cols + Math.round(p.x); danger = j >= 0 && j < st.danger.length && st.danger[j] < 1.2; }
       const mode = !p.alive ? 'dead' : dance ? 'happy' : danger ? 'worried' : blink ? 'blink' : 'normal';
-      if (mode !== o.faceMode) { o.faceMode = mode; paintFace(o.faceG, mode, o.pal || {}, o.style); o.faceTex.needsUpdate = true; }
+      if (mode !== o.faceMode) { o.faceMode = mode; paintFace(o.face, mode, o.pal || {}, o.style); }
     }
     // death: spin up and shrink away; invincibility blink; shield bubble
     let vis = true, sc = SCALE;

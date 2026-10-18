@@ -341,7 +341,7 @@ const settings = { music: store.get('music', true), sfx: store.get('sfx', true),
 // Worlds (materials, lighting, scenery and level rules) live in js/worlds.js; levels are built by js/levels.js
 // and painted by js/board.js. This file keeps the rules of the game.
 const PALS = [
-  { name: 'TÚ', style: 'classic', suit: '#2361c9', suit2: '#103479', shirt: '#e7e2fb', ball: '#ff6fb8', ball2: '#b8287a', glove: '#ff7dbd', glove2: '#c92a7f', boot: '#ff7dbd', boot2: '#c92a7f', trim: '#5ff6ff', visor: '#ffdcc0' },
+  { name: 'TÚ', style: 'classic', suit: '#2457d6', suit2: '#0f2f86', shirt: '#2457d6', ball: '#ff3aa6', ball2: '#a3105f', glove: '#ff3aa6', glove2: '#a3105f', boot: '#ff3aa6', boot2: '#a3105f', trim: '#5ff6ff', visor: '#ffdcc0' },
   { name: 'PUNK', style: 'punk', suit: '#e8283a', suit2: '#7d0d1c', shirt: '#fff0e6', ball: '#ffd23f', ball2: '#c27a00', glove: '#ffe066', glove2: '#c28f00', boot: '#3a2a66', boot2: '#170d33', trim: '#ffd23f', visor: '#ffdcc0' },
   { name: 'NINJA', style: 'ninja', suit: '#18b65f', suit2: '#0a5a2e', shirt: '#eafff3', ball: '#7af0ff', ball2: '#1d8fb0', band: '#2b2f45', glove: '#ffffff', glove2: '#a3b2c4', boot: '#ff8a2a', boot2: '#b04a0a', trim: '#b8ff6a', visor: '#ffdcc0' },
   { name: 'REY', style: 'king', suit: '#ffb81f', suit2: '#945800', shirt: '#fff8e6', ball: '#b36bff', ball2: '#55209c', glove: '#ffffff', glove2: '#b3abcc', boot: '#2f6bff', boot2: '#13348f', trim: '#fff2a8', visor: '#ffdcc0' },
@@ -911,6 +911,7 @@ function update(dt) {
   G.shake = Math.max(0, G.shake - dt * 2.4); G.flash = Math.max(0, G.flash - dt * 2);
   switch (G.phase) {
     case 'intro':
+      input.bomb = input.det = false;   // a tap during the intro (or the one that started the game) must not drop a bomb at "¡YA!"
       if (G.phaseT > 1.5) { G.phase = 'play'; G.phaseT = 0; banner('¡YA!', '', 0.6, 'white'); Sound.play.go(); }
       break;
     case 'play': case 'dying': case 'clear': case 'roundEnd': case 'demoWait':
