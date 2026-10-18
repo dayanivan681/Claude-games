@@ -805,13 +805,24 @@ function cells(type) { const out = []; for (let j = 0; j < N; j++) if (G.grid[j]
 
 // ---- adventure ----
 function newAdventure(stage) {
-  G.mode = 'adventure'; G.stage = stage; G.score = 0; G.lives = 3; G.nextLife = 10000;
+  G.mode = 'adventure'; G.stage = stage; G.score = 0; G.lives = 3; G.nextLife = 10000; G.bestBefore = store.get('best', 0);
   const p = makePlayer(0, PALS[0], true);
   const bonus = Math.min(3, Math.floor((stage - 1) / 4));
   p.bombs += bonus; p.power += bonus; p.speed += Math.min(3, Math.floor((stage - 1) / 5)) * 0.45;
   G.hero = p;
   enterGame();
   startStage();
+}
+// Resume the saved run: the stage it reached, with the score, lives and power-ups it had when that stage began.
+function continueAdventure() {
+  const sv = store.get('save', null), st = store.get('lastStage', 1);
+  if (!sv || sv.stage !== st) { newAdventure(st); return; }
+  newAdventure(st);
+  const p = G.hero;
+  Object.assign(p, { bombs: sv.bombs, power: sv.power, speed: sv.speed, kick: sv.kick, remote: sv.remote, bpass: sv.bpass, wpass: sv.wpass });
+  G.score = sv.score; G.lives = Math.max(1, sv.lives); G.nextLife = sv.nextLife || G.nextLife;
+  G.snapshot = Object.assign({}, G.snapshot, { score: G.score, lives: G.lives, bombs: p.bombs, power: p.power, speed: p.speed, kick: p.kick, remote: p.remote, bpass: p.bpass, wpass: p.wpass });
+  buildHud();
 }
 function startStage() {
   cineReset();
@@ -852,6 +863,8 @@ function startStage() {
   else if (s > 1 && worldForStage(s - 1) !== G.world) banner(`MUNDO ${G.world.name}`, `Nivel ${s} · ¡un mundo nuevo!`, 2, 'warn');
   else banner(`NIVEL ${s}`, s === 1 ? 'Rompe bloques, vence a todos y entra al portal' : `Mundo ${G.world.name}`, 1.6);
   store.set('lastStage', s); if (s > store.get('maxStage', 1)) store.set('maxStage', s);
+  store.set('save', Object.assign({ stage: s, nextLife: G.nextLife }, G.snapshot));
+  if (G.score > store.get('best', 0)) store.set('best', G.score);   // a run's best counts even if it is never finished   // CONTINUAR resumes here, score and power-ups included
   setMusic(boss ? 'battle' : 'adventure');
   buildHud();
 }
@@ -878,7 +891,7 @@ function stageClear() {
 }
 function gameOver() {
   G.phase = 'over';
-  const best = store.get('best', 0), nb = G.score > best;
+  const best = Math.max(store.get('best', 0), G.bestBefore || 0), nb = G.score > (G.bestBefore ?? best);
   if (nb) store.set('best', G.score);
   $('oScore').textContent = G.score.toLocaleString('es-ES');
   $('oBest').textContent = Math.max(best, G.score).toLocaleString('es-ES');
@@ -2396,7 +2409,8 @@ function updateTitle() {
   $('tCups').textContent = store.get('cups', 0);
   const last = store.get('lastStage', 1);
   $('btnContinue').hidden = last <= 1;
-  $('contSub').textContent = `NIVEL ${last}`;
+  const sv = store.get('save', null);
+  $('contSub').textContent = sv && sv.stage === last && sv.score ? `NIVEL ${last} · ${sv.score.toLocaleString('es-ES')} PTS` : `NIVEL ${last}`;
   const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   let framed = false; try { framed = window.self !== window.top; } catch (e) { framed = true; }
   $('installHint').hidden = !(ios && !navigator.standalone && !framed);
@@ -2442,7 +2456,7 @@ function resume() { G.paused = false; show(null); setMusic(G.musicKey); }
 function act(a, el) {
   switch (a) {
     case 'adventure': newAdventure(1); break;
-    case 'continue': newAdventure(store.get('lastStage', 1)); break;
+    case 'continue': continueAdventure(); break;
     case 'battleMenu': $('lineup').innerHTML = AVATARS.map((s, i) => `<img src="${s}" alt="${PALS[i].name}">`).join(''); syncToggles(); show('sBattle'); break;
     case 'battleStart': newBattle(store.get('diff', 1), store.get('rounds', 3), false); break;
     case 'diff': store.set('diff', +el.dataset.v); syncToggles(); break;
@@ -2453,7 +2467,7 @@ function act(a, el) {
     case 'pause': pause(); break;
     case 'resume': resume(); break;
     case 'restart': G.paused = false; show(null); if (G.mode === 'adventure') restartStage(); else newBattle(G.difficulty, G.target, false); break;
-    case 'retry': newAdventure(G.stage); break;
+    case 'retry': continueAdventure(); break;   // retry the level with the score it started with
     case 'nextRound': startRound(); break;
     case 'rematch': newBattle(G.difficulty, G.target, false); break;
     case 'tog': {
