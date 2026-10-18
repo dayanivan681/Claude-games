@@ -831,7 +831,8 @@ function startStage() {
   const items = [SPECIAL[(s - 1) % SPECIAL.length], rpick(['bomb', 'fire', 'bomb', 'fire', 'speed'])];
   if (s % 4 === 0) items.push(rpick(['bomb', 'fire', 'speed']));
   items.forEach((it, i) => { if (rest[i] !== undefined) G.items[rest[i]] = it; });
-  const empties = LevelGen.cellsOf(plan, EMPTY, rng).filter(j => manhattan(j, 1, 1) >= 7);
+  const reach = LevelGen.openFrom(G.grid, COLS, EMPTY, idx(1, 1));   // never where an enemy could walk to the hero without a block in between
+  const empties = LevelGen.cellsOf(plan, EMPTY, rng).filter(j => manhattan(j, 1, 1) >= 7 && !reach.has(j));
   if (boss) {
     const bj = empties.slice().sort((a, b) => manhattan(b, 1, 1) - manhattan(a, 1, 1))[0];
     G.enemies.push(makeEnemy(BOSS, bj % COLS, (bj / COLS) | 0));

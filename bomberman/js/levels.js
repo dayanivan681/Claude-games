@@ -88,7 +88,23 @@ const LevelGen = (() => {
       if (inPlaza(x, y)) { p *= 0.35; if (rules.plazaPool && Math.hypot(x - mx, y - my) < (2 * L.plaza + 1) * 0.36 - 0.2) continue; }
       if (rng() < Math.max(0.04, Math.min(0.92, p))) grid[j] = SOFT;
     }
+    // 4. like the classic games, every spawn starts in a small pocket sealed by breakable blocks: nothing can walk
+    //    up to a player before the first bomb opens the way
+    for (const [x, y] of protect) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const k = at(x + dx, y + dy);
+      if (grid[k] === EMPTY && !prot.has(k)) grid[k] = SOFT;
+    }
     return { layout: name, grid, skins, decals };
+  }
+
+  // Cells reachable on foot (through EMPTY only) from `start`.
+  function openFrom(grid, cols, EMPTY, start) {
+    const seen = new Set([start]), q = [start];
+    while (q.length) {
+      const j = q.pop(), x = j % cols;
+      for (const k of [j - cols, j + cols, x > 0 ? j - 1 : -1, x < cols - 1 ? j + 1 : -1]) if (k >= 0 && k < grid.length && !seen.has(k) && grid[k] === EMPTY) { seen.add(k); q.push(k); }
+    }
+    return seen;
   }
 
   // Cells of one type in random (seeded) order.
@@ -101,5 +117,5 @@ const LevelGen = (() => {
     return out;
   }
 
-  return { create, cellsOf, roster, shuffle, weighted, LAYOUTS };
+  return { create, cellsOf, openFrom, roster, shuffle, weighted, LAYOUTS };
 })();
