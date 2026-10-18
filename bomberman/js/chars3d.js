@@ -176,15 +176,19 @@ export function makeChars(scene, env) {
   // ---------- the hero model (glTF) ----------
   const GLB_SCALE = 0.24;   // model units (Blender metres, ~6.8 tall) → tiles
   let heroTpl = null, onReady = null;
-  new GLTFLoader().load(new URL('../models/heroe.glb', import.meta.url).href, g => {
+  const loader = new GLTFLoader(), heroUrl = f => new URL('../models/' + f, import.meta.url).href;
+  const onHero = g => {
     heroTpl = g.scene;
     heroTpl.traverse(m => {
       if (!m.isMesh || !m.material) return;
       const mt = m.material, dark = mt.color.r + mt.color.g + mt.color.b < 0.1;
       mt.envMap = env; mt.envMapIntensity = dark ? 0.12 : 0.75;   // inky eyes and brows stay black instead of mirroring the sky
+      if (dark) { mt.roughness = 0.85; mt.envMapIntensity = 0.05; if ('clearcoat' in mt) mt.clearcoat = 0; }   // and no broad sheen across their flat faces
     });
     if (onReady) onReady();
-  }, undefined, () => { /* keep the procedural stand-in */ });
+  };
+  // .glb normally; hosts that won't serve .glb get the same model as embedded glTF JSON. Failing both, the procedural rig stays.
+  loader.load(heroUrl('heroe.glb'), onHero, undefined, () => loader.load(heroUrl('heroe.json'), onHero, undefined, () => {}));
   const PARTS = ['PiernaI', 'PiernaD', 'BrazoI', 'BrazoD', 'Antena', 'Cabeza', 'Cuerpo'];
   const partOf = m => { for (let n = m; n; n = n.parent) if (PARTS.includes(n.name)) return n.name.replace(/[ID]$/, ''); return ''; };
   // Rivals: the hero's materials recoloured from their palette (pink → boots / gloves / crest colour, blue → suit…).
