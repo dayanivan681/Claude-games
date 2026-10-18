@@ -719,7 +719,25 @@ const fxBurns = [];
 function fxState() {
   fxBurns.length = 0; for (const e of G.enemies) if (!e.alive && e.burnBig) fxBurns.push(e);
   return { t: G.t, bombs: G.bombs, bombTime: BOMB_TIME, armed: fxArmed, explosions: G.explosions, items: G.items, grid: G.grid, EMPTY, cols: COLS, icon: itemIcon, itemDefs: ITEMS, burning: G.burning, burns: fxBurns,
-    players: G.players, enemies: G.enemies, phase: G.phase, mode: G.mode, pals: PALS, enemyDefs: ENEMIES, danger: G.danger };
+    players: G.players, enemies: G.enemies, phase: G.phase, mode: G.mode, pals: PALS, enemyDefs: ENEMIES, danger: G.danger,
+    exit: G.exit && G.grid[idx(G.exit.x, G.exit.y)] === EMPTY ? { x: G.exit.x, y: G.exit.y, open: aliveEnemies() === 0, accent: G.world.accent } : null, portalTex };
+}
+// The portal's floor disc (swirl = false) or its spinning arms (swirl = true), painted for the 3D layer.
+function portalTex(open, swirl, accent, px) {
+  const c = document.createElement('canvas'); c.width = c.height = px; const g = c.getContext('2d');
+  g.translate(px / 2, px / 2); g.scale(px, px); g.lineCap = 'round';
+  if (!swirl) {
+    const rg = g.createRadialGradient(0, 0, 0.02, 0, 0, 0.46);
+    rg.addColorStop(0, open ? '#ffffff' : '#3a3f5c'); rg.addColorStop(0.35, open ? accent : '#20243a'); rg.addColorStop(1, '#0b0c18');
+    g.fillStyle = rg; g.beginPath(); g.arc(0, 0, 0.46, 0, Math.PI * 2); g.fill();
+    g.lineWidth = 0.05; g.strokeStyle = open ? accent : '#5d6485'; g.beginPath(); g.arc(0, 0, 0.44, 0, Math.PI * 2); g.stroke();
+  } else for (let i = 0; i < 3; i++) {
+    g.rotate(Math.PI * 2 / 3);
+    g.strokeStyle = open ? (i % 2 ? '#ffffff' : accent) : '#6a7196'; g.lineWidth = 0.06;
+    g.beginPath(); g.arc(0, 0, 0.3, 0, Math.PI * 0.75); g.stroke();
+    g.beginPath(); g.arc(0, 0, 0.17, Math.PI, Math.PI * 1.6); g.stroke();
+  }
+  return c;
 }
 // A power-up's face (tile colour, glyph, gloss) painted into a canvas for the 3D card.
 function itemIcon(type, px) {
@@ -1623,6 +1641,7 @@ function drawExit() {
   const e = G.exit; if (!e || G.grid[idx(e.x, e.y)] !== EMPTY) return;
   onBoard(e.x, e.y, true);
   const open = aliveEnemies() === 0, cx = SX(e.x), cy = SY(e.y), acc = G.world.accent;
+  if (F3) { if (open) { glow(cx, cy, T * (1.1 + 0.15 * Math.sin(G.t * 6)), glowOf(acc), 0.6); if (Math.random() < 0.15) fxStars(e.x, e.y + 0.2, acc, 1); } return; }   // the disc lies on the 3D floor, under the characters
   ctx.save(); ctx.translate(cx, cy); ctx.scale(T, T);
   ctx.fillStyle = 'rgba(0,0,0,0.3)'; ell(0, 0.08, 0.44, 0.34); ctx.fill();
   const rg = ctx.createRadialGradient(0, 0, 0.02, 0, 0, 0.42);
