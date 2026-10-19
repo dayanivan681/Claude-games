@@ -391,7 +391,7 @@ const G = {
   grid: new Uint8Array(N), items: new Array(N).fill(null), fire: new Float32Array(N), fireChain: new Int32Array(N), fireOwner: new Array(N).fill(null),
   bombGrid: new Array(N).fill(null), danger: new Float32Array(N),
   bombs: [], explosions: [], burning: [], players: [], enemies: [], particles: [], texts: [], falling: [], landed: [],
-  exit: null, world: WORLDS.forest, plan: null, stage: 1, score: 0, lives: 3, nextLife: 10000, timeLeft: 200, hurry: false, timeUp: false,
+  exit: null, world: WORLDS.forest, plan: null, stage: 1, score: 0, lives: 3, nextLife: 10000, timeLeft: 300, timeTotal: 300, hurry: false, timeUp: false,
   chainSeq: 0, chainKills: {}, kills: [], shake: 0, flash: 0, hero: null, round: 0, target: 3, difficulty: 1,
   sudden: false, suddenIdx: 0, suddenT: 0, spiral: null, fieldT: 0, musicKey: 'title', snapshot: null,
 };
@@ -575,8 +575,10 @@ const Sound = (() => {
     if (on) { if (ok()) start(); }        // otherwise it starts by itself once audio is unlocked
     else if (mOn) { mOn = false; clearInterval(mTimer); mTimer = null; }
   }
+  // Retime the playing song without restarting it (the round clock speeds it up as time runs out).
+  function tempo(bpm) { if (Math.abs(bpm - mBpm) < 0.5) return; mBpm = bpm; if (delay) delay.delayTime.value = 60 / mBpm / 4 * 3; }
   function suspend() { if (ac && ac.state === 'running') ac.suspend(); }
-  return { init, apply, play, music, suspend, ok };
+  return { init, apply, play, music, tempo, suspend, ok };
 })();
 
 let hapticEl = null;
@@ -859,7 +861,7 @@ function startStage() {
   let walkers = 0;
   (boss ? [Math.min(4, Math.floor(s / 4)), Math.min(4, Math.floor(s / 4))] : LevelGen.roster(s, rules, rng).map(t => { if (!ENEMIES[t].wall || ++walkers <= 2) return t; let k = t - 2; while (k > 0 && ENEMIES[k].wall) k--; return k; }))
     .forEach((type, i) => { const j = empties[i]; if (j !== undefined) G.enemies.push(makeEnemy(type, j % COLS, (j / COLS) | 0)); });
-  G.timeLeft = 200; G.phase = 'intro'; G.phaseT = 0;
+  G.timeLeft = G.timeTotal = 300; G.phase = 'intro'; G.phaseT = 0;
   buildSprites(); buildBg();
   if (boss) banner(`NIVEL ${s} · ¡JEFE!`, 'Derrota al Rey Bomba', 1.8, 'warn');
   else if (s > 1 && worldForStage(s - 1) !== G.world) banner(`MUNDO ${G.world.name}`, `Nivel ${s} · ¡un mundo nuevo!`, 2, 'warn');
@@ -926,7 +928,7 @@ function startRound() {
   for (const [x, y] of CORNERS) prot.push([x, y], [x + (x === 1 ? 1 : -1), y], [x, y + (y === 1 ? 1 : -1)]);
   buildArena(makeRng((Math.random() * 4294967296) >>> 0), G.world.levels.density.battle, prot);
   for (const j of cells(SOFT)) if (Math.random() < 0.32) G.items[j] = weighted(BATTLE_ITEMS);
-  G.timeLeft = 100; G.phase = G.mode === 'demo' ? 'play' : 'intro'; G.phaseT = 0;
+  G.timeLeft = G.timeTotal = 100; G.phase = G.mode === 'demo' ? 'play' : 'intro'; G.phaseT = 0;
   buildSprites(); buildBg();
   if (G.mode === 'battle') {
     show(null); $('controls').hidden = false;
@@ -988,13 +990,20 @@ function simulate(dt) {
   collisions();
   if (!G.explosions.length && !G.bombs.length) G.chainKills = {};
 }
+// Play music starts at an easy pace and speeds up as the round clock runs down (slowly at first, steeply at the end).
+function roundBpm(key) {
+  if (key !== 'adventure' && key !== 'battle' || !G.timeTotal || G.phase === 'over') return 0;
+  const k = Math.min(1, Math.max(0, 1 - G.timeLeft / G.timeTotal));
+  return MUSIC[key][0] + (MUSIC_TOP - MUSIC[key][0]) * k * k;
+}
 function updateTimers(dt) {
   const before = Math.ceil(G.timeLeft);
   G.timeLeft = Math.max(0, G.timeLeft - dt);
+  const bpm = settings.music && roundBpm(G.musicKey); if (bpm) Sound.tempo(bpm);
   const now = Math.ceil(G.timeLeft);
   if (now !== before && now <= 10 && now >= 0 && (G.mode === 'adventure' ? !G.timeUp : !G.sudden || now > 0)) Sound.play.tick(now === 0);
   if (G.mode === 'adventure') {
-    if (!G.hurry && G.timeLeft <= 30) { G.hurry = true; banner('¡APÚRATE!', '30 segundos', 1.2, 'warn'); setMusic('hurry'); }
+    if (!G.hurry && G.timeLeft <= 30) { G.hurry = true; banner('¡APÚRATE!', '30 segundos', 1.2, 'warn'); }
     if (G.timeLeft <= 0 && !G.timeUp) { G.timeUp = true; spawnSwarm(); banner('¡SE ACABÓ EL TIEMPO!', '¡Corre!', 1.5, 'warn'); }
     if (G.exit && G.exit.cd > 0) G.exit.cd -= dt;
   } else if (!G.sudden && G.timeLeft <= 30) {
@@ -2440,12 +2449,13 @@ function syncToggles() {
   const bw = store.get('bworld', 'random');
   for (const b of document.querySelectorAll('#segWorld button')) b.classList.toggle('on', b.dataset.v === bw);
 }
-const MUSIC = { title: [112, -5], adventure: [132, 0], hurry: [168, 0], battle: [148, 2] };
+const MUSIC = { title: [112, -5], adventure: [112, 0], battle: [120, 2] };
+const MUSIC_TOP = 176;   // bpm when the round clock hits zero
 function setMusic(key) {
   G.musicKey = key;
   const [bpm, tr] = MUSIC[key];
   Sound.music(false);
-  if (settings.music) Sound.music(true, bpm, tr);
+  if (settings.music) Sound.music(true, roundBpm(key) || bpm, tr);
 }
 let wakeLock = null;
 function enterGame() {
