@@ -354,7 +354,7 @@ const Board3D = (() => {
     const floorTex = { forest: grassTex, desert: sandTex, snow: snowTex, volcano: basaltTex }[theme];
     k.mats.grass = [0, 1, 2, 3].map(v => pair(floorTex(f, v), { forest: 3.2, desert: 2.2, snow: 1.6, volcano: 4 }[theme], 1, { roughness: theme === 'snow' ? 0.8 : 0.95, color: lin(forest ? '#eef0e0' : '#ffffff') }));
     if (theme === 'snow') k.mats.pillar = glossy(iceTex(stone.pillar, 13), 3, { roughness: 0.14, emissive: lin('#3f86c8'), emissiveIntensity: 0.14 });   // clear ice
-    else if (theme === 'volcano') { const [a, h] = stoneTex(stone.pillar, 13); k.mats.pillar = pair([a, h, glowCracks(256, 77, 2)], 6, 1, { roughness: 0.28, emissiveIntensity: 2 }); }   // obsidian
+    else if (theme === 'volcano') { const [a, h] = stoneTex(stone.pillar, 13); k.mats.pillar = pair([a, h, glowCracks(256, 77, 1)], 6, 1, { roughness: 0.7, emissiveIntensity: 0.9 }); }   // warm carved tuff, one faint lava vein
     else k.mats.pillar = pair(stoneTex(stone.pillar, 13), 6, 1, { roughness: forest ? 0.74 : 0.9, color: lin(forest ? '#dcdedb' : '#ffffff') });
     k.mats.wall = pair(stoneTex(stone.wall, 29), 7, 1, { roughness: 0.82, color: lin(forest ? '#b9bebb' : '#ffffff') });
     k.mats.paving = pair(stoneTex(f.paving, 47), 2.5, 1, { roughness: 0.88 });
