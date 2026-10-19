@@ -197,7 +197,7 @@ const Fx3D = (() => {
       const age = st.t - b.born, armed = st.armed(b), urg = armed ? 1 - b.timer / st.bombTime : 0.2;
       const pulse = 1 + Math.sin(st.t * (8 + urg * 20)) * (0.04 + urg * 0.05);
       const pop = age < 0.2 ? 1 + 0.3 * Math.sin(age / 0.2 * Math.PI) : 1;
-      o.g.position.set(b.x + 0.5, 0, b.y + 0.5);
+      o.g.position.set(b.x + 0.5, 0, b.y + 0.5); o.tilt.position.y = b.z || 0;   // a thrown bomb arcs through the air
       o.tilt.scale.set(pulse * pop, pulse / pop, pulse * pop);
       // kicked bombs roll along the ground
       if (o.px !== null) {

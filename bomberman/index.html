@@ -127,6 +127,16 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   padding:calc(env(safe-area-inset-top,0px) + 18px) calc(env(safe-area-inset-right,0px) + 16px) calc(env(safe-area-inset-bottom,0px) + 18px) calc(env(safe-area-inset-left,0px) + 16px);
   background:radial-gradient(120% 75% at 50% 38%,rgba(8,10,24,.3),rgba(8,10,24,.9) 72%);overflow-y:auto;touch-action:pan-y;text-align:center}
 .screen.solid{background:rgba(7,9,22,.84)}
+.achs{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;width:100%;max-width:680px;text-align:left}
+.ach{display:flex;gap:9px;align-items:center;padding:8px 10px;border-radius:12px;background:var(--panel);border:1px solid var(--line);opacity:.42;filter:grayscale(1)}
+.ach.got{opacity:1;filter:none;border-color:var(--gold)}
+.ach i{font-style:normal;font-size:24px;line-height:1}
+.ach b{display:block;font-size:13px;line-height:1.15}
+.ach small{display:block;font-size:11px;color:var(--muted);line-height:1.2}
+#toast{position:absolute;top:calc(env(safe-area-inset-top,0px) + 58px);left:50%;z-index:9;transform:translate(-50%,-24px);opacity:0;transition:opacity .3s,transform .3s;pointer-events:none;
+  background:rgba(10,8,24,.9);border:2px solid var(--gold);border-radius:14px;padding:7px 14px;font-weight:900;color:#fff;font-size:14px;white-space:nowrap;text-align:center}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#toast small{display:block;color:var(--muted);font-size:11px;font-weight:800}
 .logoWrap{display:flex;flex-direction:column;align-items:center;animation:bob 3.2s ease-in-out infinite}
 .logoBomb{width:84px;height:84px;margin-bottom:-14px;transform:rotate(-12deg);filter:drop-shadow(0 8px 10px rgba(0,0,0,.5))}
 .logoBomb .spark{transform-origin:51px 8px;animation:spark .18s steps(2) infinite}
@@ -218,6 +228,7 @@ h2.warn{color:var(--warn)} h2.good{color:var(--good)}
   <div id="powers" hidden></div>
   <div id="hud" hidden></div>
   <div id="banner"></div>
+  <div id="toast"></div>
 
   <section class="screen" id="sTitle" hidden>
     <div class="logoWrap">
@@ -229,6 +240,7 @@ h2.warn{color:var(--warn)} h2.good{color:var(--good)}
       <button class="btn primary" data-act="adventure">AVENTURA<span class="sub">DESDE EL NIVEL 1</span></button>
       <button class="btn" data-act="continue" id="btnContinue">CONTINUAR<span class="sub" id="contSub">NIVEL 1</span></button>
       <button class="btn" data-act="battleMenu">BATALLA<span class="sub">TÚ CONTRA 3 RIVALES</span></button>
+      <button class="btn" data-act="achievements">LOGROS Y RÉCORDS<span class="sub" id="achSub">0 DE 15</span></button>
       <button class="btn ghost" data-act="settings">AJUSTES Y CONTROLES</button>
     </div>
     <div class="stats">
@@ -254,6 +266,13 @@ h2.warn{color:var(--warn)} h2.good{color:var(--good)}
       <button class="btn primary" data-act="battleStart">¡A PELEAR!</button>
       <button class="btn ghost" data-act="title">VOLVER</button>
     </div>
+  </section>
+
+  <section class="screen solid" id="sAch" hidden>
+    <h2>LOGROS Y RÉCORDS</h2>
+    <div class="stats" id="recStats"></div>
+    <div class="achs" id="achList"></div>
+    <button class="btn ghost" data-act="title">VOLVER</button>
   </section>
 
   <section class="screen solid" id="sSettings" hidden>
@@ -343,6 +362,44 @@ const store = {
 };
 const settings = { music: store.get('music', true), sfx: store.get('sfx', true), haptics: store.get('haptics', true) };
 
+// ---- achievements and lifetime records (kept on this device) ----
+const ACH = [
+  { id: 'first', i: '🚩', n: 'Primer paso', d: 'Supera el nivel 1' },
+  { id: 'boss_forest', i: '👑', n: 'Rey destronado', d: 'Derrota al Rey Bomba' },
+  { id: 'boss_desert', i: '🦂', n: 'Cazador del desierto', d: 'Derrota al Escorpión' },
+  { id: 'boss_snow', i: '❄️', n: 'Rompehielos', d: 'Derrota al Yeti' },
+  { id: 'boss_volcano', i: '🐉', n: 'Matadragones', d: 'Derrota al Dragón' },
+  { id: 'campaign', i: '🌋', n: 'Gira completa', d: 'Supera el nivel 20' },
+  { id: 'combo3', i: '💥', n: 'Combo', d: '3 enemigos con una sola bomba' },
+  { id: 'combo5', i: '🎆', n: 'Súper combo', d: '5 enemigos con una sola bomba' },
+  { id: 'fast', i: '⚡', n: 'Relámpago', d: 'Supera un nivel en menos de 60 s' },
+  { id: 'flawless', i: '🛡️', n: 'Intocable', d: 'Derrota a un jefe sin perder una vida' },
+  { id: 'maxfire', i: '🔥', n: 'Fuego total', d: 'Llega al fuego máximo' },
+  { id: 'collector', i: '🧤', n: 'Coleccionista', d: 'Consigue guante, perforante y reloj' },
+  { id: 'score100k', i: '💰', n: 'Cien mil', d: '100.000 puntos en una partida' },
+  { id: 'kills500', i: '☠️', n: 'Exterminador', d: 'Vence a 500 enemigos en total' },
+  { id: 'cup', i: '🏆', n: 'Campeón', d: 'Gana una copa en batalla' },
+];
+const achGot = new Set(store.get('ach', []));
+let toastTimer = 0;
+function award(id) {
+  if (achGot.has(id) || G.mode === 'demo') return;
+  const a = ACH.find(a => a.id === id); if (!a) return;
+  achGot.add(id); store.set('ach', [...achGot]);
+  const el = $('toast'); el.innerHTML = `${a.i} ¡LOGRO! ${a.n}<small>${a.d}</small>`; el.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+  Sound.play.oneup();
+}
+function stat(k, n = 1) { const st = store.get('stats', {}); st[k] = (st[k] || 0) + n; store.set('stats', st); return st[k]; }
+function showAchievements() {
+  const st = store.get('stats', {}), fast = store.get('fastest', 0), f = n => (n || 0).toLocaleString('es-ES');
+  const rec = [['RÉCORD', f(store.get('best', 0))], ['NIVEL MÁX.', store.get('maxStage', 1)], ['ENEMIGOS', f(st.kills)], ['JEFES', f(st.bosses)],
+    ['NIVELES', f(st.clears)], ['COPAS', store.get('cups', 0)], ['MÁS RÁPIDO', fast ? `${Math.floor(fast / 60)}:${String(fast % 60).padStart(2, '0')}` : '—']];
+  $('recStats').innerHTML = rec.map(([k, v]) => `<div class="stat"><small>${k}</small><b>${v}</b></div>`).join('');
+  $('achList').innerHTML = ACH.map(a => `<div class="ach${achGot.has(a.id) ? ' got' : ''}"><i>${a.i}</i><div><b>${a.n}</b><small>${a.d}</small></div></div>`).join('');
+  show('sAch');
+}
+
 // ================= content tables =================
 // Worlds (materials, lighting, scenery and level rules) live in js/worlds.js; levels are built by js/levels.js
 // and painted by js/board.js. This file keeps the rules of the game.
@@ -361,9 +418,12 @@ const ENEMIES = [
   { id: 'ojo', speed: 2.0, smart: 0.3, wall: true, pts: 2000, col: '#3ddc84' },
   { id: 'diablo', speed: 3.3, smart: 0.75, wall: false, pts: 4000, col: '#ff4d4d' },
   { id: 'calavera', speed: 3.9, smart: 0.9, wall: true, pts: 8000, col: '#f3ead8' },
-  { id: 'jefe', speed: 1.35, smart: 0.5, wall: false, pts: 20000, col: '#b04dff', boss: true },
+  { id: 'jefe', name: 'REY BOMBA', title: 'Rey Bomba', speed: 1.35, smart: 0.5, wall: false, pts: 20000, col: '#b04dff', boss: true },
+  { id: 'escorpion', name: 'ESCORPIÓN', title: 'Escorpión', hint: 'se esconde bajo la arena', power: 'burrow', speed: 1.45, smart: 0.5, wall: false, pts: 25000, col: '#e8a030', boss: true },
+  { id: 'yeti', name: 'YETI', title: 'Yeti', hint: 'su pisotón congela', power: 'stomp', speed: 1.25, smart: 0.5, wall: false, pts: 30000, col: '#7cc8ff', boss: true },
+  { id: 'dragon', name: 'DRAGÓN', title: 'Dragón', hint: 'escupe fuego en línea', power: 'breath', speed: 1.3, smart: 0.5, wall: false, pts: 40000, col: '#ff5a2a', boss: true },
 ];
-const BOSS = 8;
+const BOSS_OF = { forest: 8, desert: 9, snow: 10, volcano: 11 };   // each world's boss (stages 5, 10, 15, 20)
 const ITEMS = {
   bomb: { color: '#3b82f6', c2: '#1e40af', label: '+1 BOMBA' },
   fire: { color: '#f97316', c2: '#b4380c', label: '+1 FUEGO' },
@@ -375,9 +435,12 @@ const ITEMS = {
   shield: { color: '#06b6d4', c2: '#0b6475', label: 'ESCUDO 20s' },
   life: { color: '#ec4899', c2: '#9d1858', label: '+1 VIDA' },
   maxfire: { color: '#facc15', c2: '#b07c05', label: '¡FUEGO MÁXIMO!' },
+  pierce: { color: '#f43f5e', c2: '#9f1239', label: '¡BOMBA PERFORANTE!' },
+  throw: { color: '#0ea5e9', c2: '#075985', label: '¡GUANTE! LANZA TUS BOMBAS' },
+  freeze: { color: '#7cc4ff', c2: '#1d4ed8', label: '¡TIEMPO CONGELADO!' },
 };
-const SPECIAL = ['fire', 'bomb', 'speed', 'remote', 'bomb', 'kick', 'fire', 'shield', 'bpass', 'bomb', 'wpass', 'life', 'maxfire'];
-const BATTLE_ITEMS = [['bomb', 30], ['fire', 28], ['speed', 14], ['kick', 9], ['maxfire', 3], ['shield', 4]];
+const SPECIAL = ['fire', 'bomb', 'speed', 'remote', 'throw', 'bomb', 'kick', 'freeze', 'fire', 'shield', 'pierce', 'bpass', 'bomb', 'wpass', 'freeze', 'life', 'maxfire'];
+const BATTLE_ITEMS = [['bomb', 30], ['fire', 28], ['speed', 14], ['kick', 9], ['maxfire', 3], ['shield', 4], ['pierce', 4], ['throw', 4]];
 const DIFF = [
   { react: 0.5, bombRate: 0.35, aggro: 0.25, noise: 4, item: 6 },
   { react: 0.22, bombRate: 0.8, aggro: 0.8, noise: 1.5, item: 9 },
@@ -389,7 +452,7 @@ const CORNERS = [[1, 1], [COLS - 2, ROWS - 2], [COLS - 2, 1], [1, ROWS - 2]];
 const G = {
   mode: 'demo', phase: 'play', phaseT: 0, paused: false, fast: false, t: 0,
   grid: new Uint8Array(N), items: new Array(N).fill(null), fire: new Float32Array(N), fireChain: new Int32Array(N), fireOwner: new Array(N).fill(null),
-  bombGrid: new Array(N).fill(null), danger: new Float32Array(N),
+  bombGrid: new Array(N).fill(null), danger: new Float32Array(N), ice: new Float32Array(N), warns: [],
   bombs: [], explosions: [], burning: [], players: [], enemies: [], particles: [], texts: [], falling: [], landed: [],
   exit: null, world: WORLDS.forest, plan: null, stage: 1, score: 0, lives: 3, nextLife: 10000, timeLeft: 300, timeTotal: 300, hurry: false, timeUp: false,
   chainSeq: 0, chainKills: {}, kills: [], shake: 0, flash: 0, hero: null, round: 0, target: 3, difficulty: 1,
@@ -781,21 +844,22 @@ function paintHardToBg(x, y) {
 // ================= world setup =================
 function makePlayer(id, pal, human) {
   return { kind: 'player', id, pal, human, x: 1, y: 1, alive: true, deadT: 0, face: 0, walk: 0, moving: false, dust: 0,
-    speed: 3.3, bombs: 1, power: 1, active: 0, kick: false, remote: false, bpass: false, wpass: false, shieldT: 0, inv: 0,
+    speed: 3.3, bombs: 1, power: 1, active: 0, kick: false, remote: false, bpass: false, wpass: false, pierce: false, throw: false, shieldT: 0, inv: 0,
     wins: 0, path: null, goal: -1, think: 0, fleeing: false, bob: Math.random() * 6, winner: false };
 }
 function makeEnemy(type, x, y) {
   const def = ENEMIES[type];
   const hp = def.boss ? 3 + Math.min(2, Math.floor(G.stage / 20)) : 1;
   return { kind: 'enemy', def, x, y, tx: x, ty: y, px: x, py: y, di: (Math.random() * 4) | 0, alive: true, deadT: 0, spawnT: 0, hp, maxHp: hp, hitT: 0, summonT: 6,
-    speed: def.speed * (def.boss ? 1 + Math.min(0.15, Math.floor((G.stage - 1) / 20) * 0.08) : (1 + Math.min(0.3, (G.stage - 1) * 0.012)) * (0.93 + Math.random() * 0.14)), bob: Math.random() * 6, restT: 0, restCd: 4 };
+    speed: def.speed * (def.boss ? 1 + Math.min(0.15, Math.floor((G.stage - 1) / 20) * 0.08) : (1 + Math.min(0.3, (G.stage - 1) * 0.012)) * (0.93 + Math.random() * 0.14)), bob: Math.random() * 6, restT: 0, restCd: 4, pwCd: 4, charge: 0, under: false };
 }
 function resetWorld() {
   G.grid.fill(EMPTY); G.items.fill(null); G.fire.fill(0); G.fireChain.fill(0); G.bombGrid.fill(null); G.danger.fill(Infinity);
   G.bombs.length = 0; G.explosions.length = 0; G.burning.length = 0; G.enemies.length = 0;
   G.particles.length = 0; G.texts.length = 0; G.falling.length = 0; G.landed.length = 0;
   G.exit = null; G.chainKills = {}; G.kills.length = 0; G.shake = 0; G.flash = 0; G.fast = false; G.fieldT = 0;
-  G.sudden = false; G.suddenIdx = 0; G.suddenT = 0; G.hurry = false; G.timeUp = false;
+  G.sudden = false; G.suddenIdx = 0; G.suddenT = 0; G.hurry = false; G.timeUp = false; G.freezeT = 0;
+  G.ice.fill(0); G.warns.length = 0;
 }
 // Builds the arena from the world's level rules (js/levels.js) and keeps the plan for the renderer.
 function buildArena(rng, density, protect, layout) {
@@ -807,7 +871,7 @@ function cells(type) { const out = []; for (let j = 0; j < N; j++) if (G.grid[j]
 
 // ---- adventure ----
 function newAdventure(stage) {
-  G.mode = 'adventure'; G.stage = stage; G.score = 0; G.lives = 3; G.nextLife = 10000; G.bestBefore = store.get('best', 0);
+  G.mode = 'adventure'; G.stage = stage; G.score = 0; G.lives = 3; G.nextLife = 10000; G.stageNo = 0; G.bestBefore = store.get('best', 0);
   const p = makePlayer(0, PALS[0], true);
   const bonus = Math.min(3, Math.floor((stage - 1) / 4));
   p.bombs += bonus; p.power += bonus; p.speed += Math.min(3, Math.floor((stage - 1) / 5)) * 0.45;
@@ -821,19 +885,20 @@ function continueAdventure() {
   if (!sv || sv.stage !== st) { newAdventure(st); return; }
   newAdventure(st);
   const p = G.hero;
-  Object.assign(p, { bombs: sv.bombs, power: sv.power, speed: sv.speed, kick: sv.kick, remote: sv.remote, bpass: sv.bpass, wpass: sv.wpass });
+  Object.assign(p, { bombs: sv.bombs, power: sv.power, speed: sv.speed, kick: sv.kick, remote: sv.remote, bpass: sv.bpass, wpass: sv.wpass, pierce: !!sv.pierce, throw: !!sv.throw });
   G.score = sv.score; G.lives = Math.max(1, sv.lives); G.nextLife = sv.nextLife || G.nextLife;
-  G.snapshot = Object.assign({}, G.snapshot, { score: G.score, lives: G.lives, bombs: p.bombs, power: p.power, speed: p.speed, kick: p.kick, remote: p.remote, bpass: p.bpass, wpass: p.wpass });
+  G.snapshot = Object.assign({}, G.snapshot, { score: G.score, lives: G.lives, bombs: p.bombs, power: p.power, speed: p.speed, kick: p.kick, remote: p.remote, bpass: p.bpass, wpass: p.wpass, pierce: p.pierce, throw: p.throw });
   buildHud();
 }
 function startStage() {
   cineReset();
   const s = G.stage, p = G.hero;
+  if (G.stageNo !== s) { G.stageNo = s; G.stageDeaths = 0; }   // lives lost on this stage (for «Intocable»)
   G.world = worldForStage(s);
   resetWorld();
-  Object.assign(p, { x: 1, y: 1, alive: true, deadT: 0, active: 0, face: 0, moving: false, shieldT: 0, inv: 0 });
+  Object.assign(p, { x: 1, y: 1, alive: true, deadT: 0, active: 0, face: 0, moving: false, shieldT: 0, inv: 0, stunT: 0 });
   G.players = [p];
-  G.snapshot = { score: G.score, lives: G.lives, bombs: p.bombs, power: p.power, speed: p.speed, kick: p.kick, remote: p.remote, bpass: p.bpass, wpass: p.wpass };
+  G.snapshot = { score: G.score, lives: G.lives, bombs: p.bombs, power: p.power, speed: p.speed, kick: p.kick, remote: p.remote, bpass: p.bpass, wpass: p.wpass, pierce: p.pierce, throw: p.throw };
   // Each stage has its own seed, so a level is always the same layout (and a retry replays it).
   const boss = s % 5 === 0, rules = G.world.levels, dn = rules.density, rng = makeRng(s * 7919 + 101);
   const plan = buildArena(rng, boss ? dn.boss : Math.min(dn.max, dn.base + s * dn.perStage), [[1, 1], [2, 1], [1, 2], [3, 1], [1, 3]], boss ? rules.bossLayout : s === 1 ? rules.firstLayout : null);
@@ -852,9 +917,10 @@ function startStage() {
   items.forEach((it, i) => { if (rest[i] !== undefined) G.items[rest[i]] = it; });
   const reach = LevelGen.openFrom(G.grid, COLS, EMPTY, idx(1, 1));   // never where an enemy could walk to the hero without a block in between
   const empties = LevelGen.cellsOf(plan, EMPTY, rng).filter(j => manhattan(j, 1, 1) >= 7 && !reach.has(j));
+  const bossDef = ENEMIES[BOSS_OF[G.world.id] ?? 8];
   if (boss) {
     const bj = empties.slice().sort((a, b) => manhattan(b, 1, 1) - manhattan(a, 1, 1))[0];
-    G.enemies.push(makeEnemy(BOSS, bj % COLS, (bj / COLS) | 0));
+    G.enemies.push(makeEnemy(ENEMIES.indexOf(bossDef), bj % COLS, (bj / COLS) | 0));
     empties.splice(empties.indexOf(bj), 1);
   }
   // At most two wall-walkers a stage; the rest of their tier are swapped for foes that blocks still hold back.
@@ -863,7 +929,7 @@ function startStage() {
     .forEach((type, i) => { const j = empties[i]; if (j !== undefined) G.enemies.push(makeEnemy(type, j % COLS, (j / COLS) | 0)); });
   G.timeLeft = G.timeTotal = 300; G.phase = 'intro'; G.phaseT = 0;
   buildSprites(); buildBg();
-  if (boss) banner(`NIVEL ${s} · ¡JEFE!`, 'Derrota al Rey Bomba', 1.8, 'warn');
+  if (boss) banner(`NIVEL ${s} · ¡JEFE!`, `Derrota al ${bossDef.title}${bossDef.hint ? ' · ' + bossDef.hint : ''}`, 2.2, 'warn');
   else if (s > 1 && worldForStage(s - 1) !== G.world) banner(`MUNDO ${G.world.name}`, `Nivel ${s} · ¡un mundo nuevo!`, 2, 'warn');
   else banner(`NIVEL ${s}`, s === 1 ? 'Rompe bloques, vence a todos y entra al portal' : `Mundo ${G.world.name}`, 1.6);
   store.set('lastStage', s); if (s > store.get('maxStage', 1)) store.set('maxStage', s);
@@ -875,19 +941,24 @@ function startStage() {
 function restartStage() {
   const sn = G.snapshot, p = G.hero;
   G.score = sn.score; G.lives = sn.lives;
-  Object.assign(p, { bombs: sn.bombs, power: sn.power, speed: sn.speed, kick: sn.kick, remote: sn.remote, bpass: sn.bpass, wpass: sn.wpass });
+  Object.assign(p, { bombs: sn.bombs, power: sn.power, speed: sn.speed, kick: sn.kick, remote: sn.remote, bpass: sn.bpass, wpass: sn.wpass, pierce: !!sn.pierce, throw: !!sn.throw });
   startStage();
 }
 function loseLife() {
-  G.lives--;
+  G.lives--; G.stageDeaths = (G.stageDeaths || 0) + 1;
   if (G.lives <= 0) { gameOver(); return; }
-  const p = G.hero; p.remote = false; p.bpass = false; p.wpass = false; p.kick = false;
+  const p = G.hero; p.remote = false; p.bpass = false; p.wpass = false; p.kick = false; p.pierce = false; p.throw = false;
   startStage();
 }
 function stageClear() {
   G.phase = 'clear'; G.phaseT = 0;
   const bonus = Math.ceil(G.timeLeft) * 10 + 500;
   addScore(bonus);
+  const took = Math.round(G.timeTotal - G.timeLeft), fastest = store.get('fastest', 0);
+  stat('clears'); if (!fastest || took < fastest) store.set('fastest', took);
+  if (G.stage === 1) award('first');
+  if (took < 60) award('fast');
+  if (G.stage >= 20) award('campaign');
   addText(G.hero.x, G.hero.y - 0.6, `+${bonus}`, '#ffe36b', 0.62, 1.8);
   banner('¡NIVEL SUPERADO!', `Bonus +${bonus.toLocaleString('es-ES')}`, 2.8, 'good');
   confetti();
@@ -922,7 +993,7 @@ function startRound() {
   resetWorld();
   G.players.forEach((p, i) => Object.assign(p, {
     x: CORNERS[i][0], y: CORNERS[i][1], alive: true, deadT: 0, active: 0, bombs: 1, power: 2, speed: 3.3,
-    kick: false, remote: false, bpass: false, wpass: false, shieldT: 0, inv: 0, path: null, goal: -1, think: rnd(0.4),
+    kick: false, remote: false, bpass: false, wpass: false, pierce: false, throw: false, shieldT: 0, inv: 0, path: null, goal: -1, think: rnd(0.4),
     fleeing: false, moving: false, face: 0, winner: false }));
   const prot = [];
   for (const [x, y] of CORNERS) prot.push([x, y], [x + (x === 1 ? 1 : -1), y], [x, y + (y === 1 ? 1 : -1)]);
@@ -946,7 +1017,7 @@ function showResults(w) {
   $('rBtns').innerHTML = match
     ? '<button class="btn primary" data-act="rematch">REVANCHA</button><button class="btn" data-act="title">MENÚ PRINCIPAL</button>'
     : '<button class="btn primary" data-act="nextRound">SIGUIENTE RONDA</button><button class="btn ghost" data-act="title">SALIR</button>';
-  if (match && w.human) store.set('cups', store.get('cups', 0) + 1);
+  if (match && w.human) { store.set('cups', store.get('cups', 0) + 1); award('cup'); }
   show('sResult'); $('controls').hidden = true;
   Sound.music(false);
   if (w && w.human) Sound.play.clear(); else Sound.play.over();
@@ -985,7 +1056,7 @@ function simulate(dt) {
     }
   }
   for (let i = G.explosions.length - 1; i >= 0; i--) { const e = G.explosions[i]; e.t += dt; if (e.t >= e.dur) G.explosions.splice(i, 1); }
-  if (G.mode === 'adventure') updateEnemies(dt);
+  if (G.mode === 'adventure') { updateEnemies(dt); updateHazards(dt); }
   updateSudden(dt);
   collisions();
   if (!G.explosions.length && !G.bombs.length) G.chainKills = {};
@@ -1040,18 +1111,19 @@ function updatePlayer(p, dt) {
   if (p.shieldT > 0) p.shieldT -= dt;
   if (p.inv > 0) p.inv -= dt;
   if (G.phase !== 'play' && G.phase !== 'roundEnd') { p.moving = false; return; }
+  if (p.stunT > 0) { p.stunT -= dt; p.moving = false; input.bomb = false; return; }   // frozen solid by the yeti's stomp
   let moved = 0;
   if (p.human) {
     const d = readDir();
     if (d.p) {
-      const dist = p.speed * dt, last = p.lastDir;
+      const dist = p.speed * dt * (G.ice[idx(Math.round(p.x), Math.round(p.y))] > 0 ? 0.6 : 1), last = p.lastDir;
       moved = moveEntity(p, d.p, dist); let used = d.p;
       if (moved < 1e-4 && d.s) { moved = moveEntity(p, d.s, dist); used = d.s; }
       // Turn buffering: a turn pressed early keeps you rolling the old way until the corridor opens.
       if (moved < 1e-4 && last && last[0] * d.p[0] + last[1] * d.p[1] === 0) { moved = moveEntity(p, last, dist); used = last; }
       if (moved < 1e-4) p.face = faceOf(d.p[0], d.p[1]); else p.lastDir = used;
     } else p.lastDir = null;
-    if (input.bomb) { input.bomb = false; if (placeBomb(p)) haptic('light'); }
+    if (input.bomb) { input.bomb = false; if (placeBomb(p) || (p.throw && throwBomb(p))) haptic('light'); }
     if (input.det) { input.det = false; detonate(p); }
   } else moved = updateBot(p, dt);
   p.moving = moved > 1e-4;
@@ -1074,8 +1146,15 @@ function applyItem(p, type) {
     case 'wpass': p.wpass = true; break;
     case 'shield': p.shieldT = 20; break;
     case 'life': G.lives++; break;
+    case 'pierce': p.pierce = true; break;
+    case 'throw': p.throw = true; break;
+    case 'freeze': G.freezeT = 8; banner('¡TIEMPO CONGELADO!', 'Los enemigos no se mueven por 8 segundos', 1.4, 'good'); break;
   }
   if (G.mode === 'adventure') addScore(50);
+  if (p.human && G.mode !== 'demo') {
+    if (p.power >= 12) award('maxfire');
+    if (type === 'pierce' || type === 'throw' || type === 'freeze') { const got = new Set(store.get('newItems', [])); got.add(type); store.set('newItems', [...got]); if (got.size >= 3) award('collector'); }
+  }
   fxStars(p.x, p.y, ITEMS[type].color, 10);
   if (p.human) { addText(p.x, p.y - 0.7, ITEMS[type].label, '#ffffff', 0.38, 1.2); Sound.play.item(); haptic('light'); }
 }
@@ -1125,11 +1204,29 @@ function placeBomb(p) {
   if (!p.alive || p.active >= p.bombs || G.phase !== 'play') return false;
   const tx = Math.round(p.x), ty = Math.round(p.y), j = idx(tx, ty);
   if (G.bombGrid[j] || G.grid[j] !== EMPTY) return false;
-  const b = { tx, ty, x: tx, y: ty, timer: BOMB_TIME, power: p.power, owner: p, remote: p.remote, passers: new Set(), mv: null, chain: 0, born: G.t, dead: false };
+  const b = { tx, ty, x: tx, y: ty, timer: BOMB_TIME, power: p.power, owner: p, remote: p.remote, pierce: p.pierce, passers: new Set(), mv: null, chain: 0, born: G.t, dead: false };
   for (const e of G.players) if (e.alive && overlapTile(e, tx, ty)) b.passers.add(e);
   G.bombs.push(b); G.bombGrid[j] = b; p.active++; p.placeT = 0.22;
   Sound.play.place();
   return true;
+}
+// The glove: standing on your own bomb, the bomb button lobs it 3+ tiles ahead, over walls, to the first free tile.
+function throwBomb(p) {
+  if (!p.alive || G.phase !== 'play') return false;
+  const tx = Math.round(p.x), ty = Math.round(p.y), b = G.bombGrid[idx(tx, ty)];
+  if (!b || b.owner !== p || b.mv || b.fly) return false;
+  const [dx, dy] = DIRS[p.face];
+  for (let k = 3; k <= 6; k++) {
+    const x = tx + dx * k, y = ty + dy * k;
+    if (x < 1 || y < 1 || x > COLS - 2 || y > ROWS - 2) break;
+    const j = idx(x, y);
+    if (G.grid[j] !== EMPTY || G.bombGrid[j] || G.enemies.some(e => e.alive && Math.round(e.x) === x && Math.round(e.y) === y)) continue;
+    G.bombGrid[idx(tx, ty)] = null; b.passers.clear();
+    b.fly = { x0: tx, y0: ty, x1: x, y1: y, t: 0, dur: 0.25 + k * 0.05 };
+    Sound.play.kick();
+    return true;
+  }
+  return false;
 }
 function detonate(p) {
   const b = G.bombs.find(b => b.owner === p && b.remote && !b.dead);
@@ -1159,6 +1256,17 @@ function slideBomb(b, dt) {
 function updateBombs(dt) {
   for (const b of G.bombs.slice()) {
     if (b.dead) continue;
+    if (b.fly) {   // in the air: no fuse, no fire, lands on its tile at the end of the arc
+      const f = b.fly; f.t += dt; const k = Math.min(1, f.t / f.dur);
+      b.x = f.x0 + (f.x1 - f.x0) * k; b.y = f.y0 + (f.y1 - f.y0) * k; b.z = Math.sin(k * Math.PI) * 1.2;
+      if (k >= 1) {
+        b.fly = null; b.z = 0; b.tx = f.x1; b.ty = f.y1;
+        const j = idx(b.tx, b.ty), ob = G.bombGrid[j];
+        if (ob && ob !== b) explode(b); else { G.bombGrid[j] = b; for (const e of G.players) if (e.alive && overlapTile(e, b.tx, b.ty)) b.passers.add(e); }
+        G.shake = Math.min(1, G.shake + 0.15);
+      }
+      continue;
+    }
     for (const e of b.passers) if (!e.alive || !overlapTile(e, b.x, b.y)) b.passers.delete(e);
     if (b.mv) slideBomb(b, dt);
     if (!b.remote || b.chain || !b.owner.alive) b.timer -= dt;
@@ -1186,7 +1294,11 @@ function explode(b) {
     for (let i = 1; i <= b.power; i++) {
       const x = cx + dx * i, y = cy + dy * i, j = idx(x, y), c = G.grid[j];
       if (c === HARD) break;
-      if (c === SOFT || c === BURN) { if (c === SOFT) destroySoft(x, y); ignite(j, chain, b.owner); arms[d] = i - 0.5; break; }
+      if (c === SOFT || c === BURN) {
+        if (c === SOFT) destroySoft(x, y); ignite(j, chain, b.owner); arms[d] = i - 0.5;
+        if (b.pierce) { arms[d] = i; continue; }   // the piercing bomb burns straight through breakable blocks
+        break;
+      }
       ignite(j, chain, b.owner); arms[d] = i;
       const ob = G.bombGrid[j];
       if (ob) { if (!ob.chain) ob.chain = chain; ob.timer = Math.min(ob.timer, 0.07); break; }
@@ -1219,13 +1331,14 @@ function collisions() {
     if (G.fire[j] > 0 && p.shieldT <= 0 && p.inv <= 0) { killPlayer(p, G.fireOwner[j]); continue; }
     if (G.mode === 'adventure' && p.shieldT <= 0 && p.inv <= 0) for (const e of G.enemies) {   // the shield and respawn grace also hold off enemies
       const r = e.def.boss ? 0.78 : 0.62;
-      if (e.alive && e.spawnT <= 0 && Math.abs(e.x - p.x) < r && Math.abs(e.y - p.y) < r) { killPlayer(p); break; }
+      if (e.alive && e.spawnT <= 0 && !e.under && Math.abs(e.x - p.x) < r && Math.abs(e.y - p.y) < r) { killPlayer(p); break; }
     }
   }
   for (const e of G.enemies) {
-    if (!e.alive || e.spawnT > 0) continue;
+    if (!e.alive || e.spawnT > 0 || e.under) continue;
     const j = idx(Math.round(e.x), Math.round(e.y));
-    if (G.fire[j] > 0) { if (e.def.boss) hitBoss(e, G.fireChain[j]); else killEnemy(e, G.fireChain[j]); }
+    // a boss's own fire never hurts its side
+    if (G.fire[j] > 0 && !(G.fireOwner[j] && G.fireOwner[j].kind === 'enemy')) { if (e.def.boss) hitBoss(e, G.fireChain[j]); else killEnemy(e, G.fireChain[j]); }
   }
 }
 function hitBoss(e, chain) {
@@ -1251,7 +1364,7 @@ function drawBossBar() {
   const gr = ctx.createLinearGradient(x, 0, x + w, 0); gr.addColorStop(0, '#ff4df5'); gr.addColorStop(1, '#b04dff');
   ctx.fillStyle = gr; rr(ctx, x, y + 14, Math.max(h, w * b.hp / b.maxHp), h, 6); ctx.fill();
   ctx.font = `900 11px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = '#fff';
-  ctx.fillText('REY BOMBA', x + w / 2, y - 1);
+  ctx.fillText(b.def.name, x + w / 2, y - 1);
 }
 function killPlayer(p, by) {
   if (!p.alive) return;
@@ -1267,6 +1380,11 @@ function killPlayer(p, by) {
 function killEnemy(e, chain) {
   e.alive = false; e.deadT = 0; e.burnBig = e.def.boss ? 1.75 : 1;   // enemies die in the blast's fire: they burn up
   const n = (G.chainKills[chain] || 0) + 1; G.chainKills[chain] = n;
+  if (G.mode === 'adventure') {
+    if (stat('kills') >= 500) award('kills500');
+    if (n >= 3) award('combo3'); if (n >= 5) award('combo5');
+    if (e.def.boss) { stat('bosses'); award('boss_' + G.world.id); if (!G.stageDeaths) award('flawless'); }
+  }
   const mult = Math.pow(2, Math.min(n - 1, 5)), pts = e.def.pts * mult;
   addScore(pts);
   addText(e.x, e.y - 0.4, mult > 1 ? `${pts} ×${mult}` : `${pts}`, mult > 1 ? '#ffd23f' : '#ffffff', mult > 1 ? 0.5 : 0.42, 1.1);
@@ -1284,6 +1402,7 @@ function killEnemy(e, chain) {
 function addScore(n) {
   if (G.mode !== 'adventure') return;
   G.score += n;
+  if (G.score >= 100000) award('score100k');
   if (G.score >= G.nextLife) {
     G.nextLife += 10000; G.lives++;
     addText(G.hero.x, G.hero.y - 0.9, '¡VIDA EXTRA!', '#ff7ab8', 0.45, 1.4); Sound.play.oneup();
@@ -1309,11 +1428,12 @@ function fieldFrom(x0, y0, out, wall) {
 function enemyPassable(e, x, y) {
   if (isBorder(x, y)) return false;
   const j = idx(x, y), c = G.grid[j];
-  if (c === HARD || (c !== EMPTY && !e.def.wall)) return false;
-  return !G.bombGrid[j];
+  if (c === HARD || (c !== EMPTY && !e.def.wall && !e.under)) return false;
+  return e.under || !G.bombGrid[j];
 }
 function updateEnemies(dt) {
   fieldTimer -= dt;
+  if (G.freezeT > 0) G.freezeT -= dt;
   const hero = G.hero;
   if (fieldTimer <= 0 && hero.alive) {
     fieldTimer = 0.25;
@@ -1328,6 +1448,7 @@ function updateEnemies(dt) {
     }
     if (e.spawnT > 0) { e.spawnT -= dt; continue; }
     if (e.hitT > 0) e.hitT -= dt;
+    e.frozen = G.freezeT > 0; if (e.frozen) continue;
     if (e.def.boss) {
       e.summonT -= dt;
       if (e.summonT <= 0) {
@@ -1338,24 +1459,130 @@ function updateEnemies(dt) {
           Sound.play.spawn();
         }
       }
+      if (e.def.power && bossPower(e, dt)) continue;   // a power being wound up or played out holds the boss still
       // The king stops to catch its breath every few seconds (and after each hit): the opening to trap it.
-      if (e.restT > 0) { e.restT -= dt; continue; }
+      if (e.restT > 0 && !e.under) { e.restT -= dt; continue; }
       e.restCd -= dt;
     }
     // A bomb on the tile ahead always turns an enemy around unless its center is already on that tile.
-    if (G.bombGrid[idx(e.tx, e.ty)] && (Math.round(e.x) !== e.tx || Math.round(e.y) !== e.ty) && (e.tx !== e.px || e.ty !== e.py)) {
+    if (!e.under && G.bombGrid[idx(e.tx, e.ty)] && (Math.round(e.x) !== e.tx || Math.round(e.y) !== e.ty) && (e.tx !== e.px || e.ty !== e.py)) {
       [e.tx, e.px] = [e.px, e.tx]; [e.ty, e.py] = [e.py, e.ty]; e.di = 3 - e.di;
     }
     // Wall-walkers ooze slowly through blocks, so there's time to catch them coming out.
     const inBlock = e.def.wall && (G.grid[idx(e.tx, e.ty)] === SOFT || G.grid[idx(Math.round(e.x), Math.round(e.y))] === SOFT);
-    const sp = e.speed * (inBlock ? 0.5 : 1) * dt, ddx = e.tx - e.x, ddy = e.ty - e.y;
+    const sp = e.speed * (e.under ? 2 : inBlock ? 0.5 : 1) * dt, ddx = e.tx - e.x, ddy = e.ty - e.y;
     if (Math.abs(ddx) + Math.abs(ddy) <= sp) {
       e.x = e.tx; e.y = e.ty; e.px = e.tx; e.py = e.ty; chooseDir(e);
-      if (e.def.boss && e.restCd <= 0) { e.restT = 1.3; e.restCd = 4 + Math.random() * 2; }
+      if (e.def.boss && e.restCd <= 0 && !e.under) { e.restT = 1.3; e.restCd = 4 + Math.random() * 2; }
     }
     else { e.x += Math.sign(ddx) * sp; e.y += Math.sign(ddy) * sp; }
   }
   for (let i = G.enemies.length - 1; i >= 0; i--) if (!G.enemies[i].alive && G.enemies[i].deadT > ENEMY_BURN) G.enemies.splice(i, 1);
+}
+// ---- boss powers ----
+// Each world's boss has one move: burrow (scorpion), stomp (yeti), breath (dragon). The yeti and the dragon wind
+// up for 0.9 s with the affected tiles marked on the floor, so there's always time to get out of the way.
+function warnTiles(tiles, t, col) { for (const j of tiles) G.warns.push({ j, t, max: t, col }); }
+function stompTiles(e) {
+  const cx = Math.round(e.x), cy = Math.round(e.y), out = [];
+  for (let y = cy - 2; y <= cy + 2; y++) for (let x = cx - 2; x <= cx + 2; x++)
+    if (Math.abs(x - cx) + Math.abs(y - cy) <= 2 && !isBorder(x, y) && G.grid[idx(x, y)] !== HARD) out.push(idx(x, y));
+  return out;
+}
+function breathLine(e, d) {
+  const out = [];
+  for (let i = 1; i <= 5; i++) {
+    const x = Math.round(e.x) + DIRS[d][0] * i, y = Math.round(e.y) + DIRS[d][1] * i;
+    if (isBorder(x, y)) break;
+    const c = G.grid[idx(x, y)]; if (c === HARD) break;
+    out.push(idx(x, y)); if (c !== EMPTY) break;
+  }
+  return out;
+}
+function bossPower(e, dt) {
+  const kind = e.def.power, centered = Number.isInteger(e.x) && Number.isInteger(e.y), hero = G.hero;   // on a tile centre (it just arrived)
+  if (kind === 'burrow') {
+    if (e.under) {
+      e.underT -= dt;
+      if (Math.random() < dt * 14) addP({ kind: 'smoke', x: e.x + rnd(-0.25, 0.25), y: e.y + 0.3, vx: rnd(-0.4, 0.4), vy: -0.4, life: 0.5, size: rnd(0.1, 0.18), color: '#d9b06a' });
+      const j = idx(Math.round(e.x), Math.round(e.y));
+      if (e.underT <= 0 && centered && G.grid[j] === EMPTY && !G.bombGrid[j]) {   // surfaces only on open ground
+        if (e.emergeT === undefined) { e.emergeT = 0.6; Sound.play.crumble(); }
+        e.emergeT -= dt;
+        if (Math.random() < dt * 30) addP({ kind: 'smoke', x: e.x + rnd(-0.3, 0.3), y: e.y + 0.2, vx: rnd(-0.8, 0.8), vy: rnd(-1.6, -0.6), life: 0.6, size: rnd(0.12, 0.22), color: '#e8c27a' });
+        if (e.emergeT <= 0) { e.under = false; e.emergeT = undefined; e.pwCd = 5 + Math.random() * 2; G.shake = Math.max(G.shake, 0.5); Sound.play.bossHit(); }
+        return true;
+      }
+      return false;
+    }
+    e.pwCd -= dt;
+    if (e.pwCd <= 0 && centered && e.hitT <= 0) {
+      e.under = true; e.underT = 2;
+      for (let i = 0; i < 12; i++) addP({ kind: 'smoke', x: e.x + rnd(-0.4, 0.4), y: e.y + 0.2, vx: rnd(-1, 1), vy: rnd(-1.5, -0.4), life: 0.7, size: rnd(0.14, 0.26), color: '#d9b06a' });
+      Sound.play.crumble();
+    }
+    return false;
+  }
+  if (e.charge > 0) {
+    e.charge -= dt;
+    if (e.charge <= 0) {
+      if (kind === 'stomp') {
+        for (const j of e.pwTiles) {
+          G.ice[j] = 4;
+          for (const p of G.players) if (p.alive && idx(Math.round(p.x), Math.round(p.y)) === j && p.shieldT <= 0) p.stunT = 1.1;
+          addP({ kind: 'smoke', x: j % COLS + rnd(-0.3, 0.3), y: ((j / COLS) | 0) + 0.2, vx: 0, vy: -0.6, life: 0.6, size: 0.2, color: '#eaf6ff' });
+        }
+        G.shake = Math.max(G.shake, 0.9); Sound.play.bossHit(); haptic('heavy');
+      } else {   // breath: a line of fire that burns blocks and sets off bombs, like a blast
+        const chain = ++G.chainSeq, arms = [0, 0, 0, 0];
+        e.pwTiles.forEach((j, i) => {
+          if (G.grid[j] === SOFT) destroySoft(j % COLS, (j / COLS) | 0);
+          ignite(j, chain, e); arms[e.pwDir] = i + 1;
+          const ob = G.bombGrid[j]; if (ob) { if (!ob.chain) ob.chain = chain; ob.timer = Math.min(ob.timer, 0.07); }
+        });
+        G.explosions.push({ x: Math.round(e.x), y: Math.round(e.y), arms, t: 0, dur: 0.62, power: 5 });
+        fxExplosion(Math.round(e.x), Math.round(e.y), arms, 5);
+        G.shake = Math.min(1.1, G.shake + 0.5); Sound.play.boom(0, 4);
+      }
+      e.pwCd = kind === 'stomp' ? 6 + Math.random() * 2 : 5 + Math.random() * 2;
+    }
+    return true;
+  }
+  e.pwCd -= dt;
+  if (e.pwCd > 0 || !centered || e.hitT > 0 || !hero || !hero.alive) return false;
+  const hx = Math.round(hero.x), hy = Math.round(hero.y), ex = Math.round(e.x), ey = Math.round(e.y);
+  if (kind === 'stomp') {
+    if (Math.abs(hx - ex) + Math.abs(hy - ey) > 4) return false;   // only when the hero is close
+    e.pwTiles = stompTiles(e);
+  } else {
+    let d = e.di;   // aim at the hero when lined up, otherwise breathe the way it faces
+    if (hx === ex && Math.abs(hy - ey) <= 5) d = hy > ey ? 0 : 3;
+    else if (hy === ey && Math.abs(hx - ex) <= 5) d = hx > ex ? 2 : 1;
+    e.pwDir = d; e.di = d; e.pwTiles = breathLine(e, d);
+    if (!e.pwTiles.length) { e.pwCd = 1; return false; }
+  }
+  e.charge = 0.9; warnTiles(e.pwTiles, 0.9, kind === 'stomp' ? '#9fd8ff' : '#ff4a1a');
+  addText(e.x, e.y - 1.1, kind === 'stomp' ? '¡PISOTÓN!' : '¡FUEGO!', kind === 'stomp' ? '#bfe6ff' : '#ff8a4a', 0.42, 0.9);
+  return true;
+}
+function updateHazards(dt) {
+  for (let j = 0; j < N; j++) if (G.ice[j] > 0) G.ice[j] -= dt;
+  for (let i = G.warns.length - 1; i >= 0; i--) if ((G.warns[i].t -= dt) <= 0) G.warns.splice(i, 1);
+}
+// Floor marks: tiles a boss is about to hit (pulsing) and ice left by the yeti.
+function drawHazards() {
+  for (let j = 0; j < N; j++) {
+    const v = G.ice[j]; if (v <= 0) continue;
+    const x = j % COLS, y = (j / COLS) | 0; onBoard(x, y, true);
+    ctx.globalAlpha = Math.min(1, v) * 0.55; ctx.fillStyle = '#d8f2ff'; rr(ctx, SX(x) - T * 0.46, SY(y) - T * 0.46, T * 0.92, T * 0.92, T * 0.12); ctx.fill();
+    ctx.globalAlpha *= 0.8; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = T * 0.04; ctx.beginPath(); ctx.moveTo(SX(x) - T * 0.25, SY(y) - T * 0.1); ctx.lineTo(SX(x) - T * 0.05, SY(y) - T * 0.3); ctx.moveTo(SX(x) + T * 0.05, SY(y) + T * 0.25); ctx.lineTo(SX(x) + T * 0.28, SY(y) + T * 0.02); ctx.stroke();
+  }
+  for (const w of G.warns) {
+    const x = w.j % COLS, y = (w.j / COLS) | 0; onBoard(x, y, true);
+    ctx.globalAlpha = 0.25 + 0.35 * (0.5 + 0.5 * Math.sin(G.t * 22)); ctx.fillStyle = w.col;
+    rr(ctx, SX(x) - T * 0.45, SY(y) - T * 0.45, T * 0.9, T * 0.9, T * 0.14); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 }
 function chooseDir(e) {
   const opts = [];
@@ -1366,11 +1593,11 @@ function chooseDir(e) {
   // Smart enemies usually dodge blasts, but not every time, so they can still be outplayed.
   const dodge = smart >= 0.5 && !e.def.boss && Math.random() < 0.55 + smart * 0.35;
   if (smart > 0 && hero.alive && Math.random() < smart) {
-    const F = e.def.wall ? pdistW : pdist; let bd = 1e9;
+    const F = e.def.wall || e.under ? pdistW : pdist; let bd = 1e9;
     for (const d of opts) {
       const k = idx(e.x + DIRS[d][0], e.y + DIRS[d][1]), v = F[k];
       if (dodge && G.danger[k] !== Infinity) continue;
-      if (v >= 0 && v <= (e.def.wall ? 6 : 12) && v < bd) { bd = v; dir = d; }
+      if (v >= 0 && v <= (e.def.wall && !e.def.boss ? 6 : 12) && v < bd) { bd = v; dir = d; }
     }
   }
   if (dir < 0) {
@@ -1650,7 +1877,7 @@ function render() {
   if (PROJ) { onScreen(); ctx.rect(-T, Math.max(0, TOPBAR - T * 0.4), W + 2 * T, H + T); }
   else { const clipTop = Math.max(FY, TOPBAR - T * 0.4); ctx.rect(FX, clipTop, COLS * T, FY + ROWS * T - clipTop); }   // tall heroes may peek into the HUD band
   ctx.clip();
-  drawExit(); drawItems(); drawSoftBlocks(); drawBurning(); drawBombs(); drawExplosions(); drawFalling();
+  drawExit(); drawItems(); drawHazards(); drawSoftBlocks(); drawBurning(); drawBombs(); drawExplosions(); drawFalling();
   const ents = [];
   for (const p of G.players) ents.push(p);
   for (const e of G.enemies) ents.push(e);
@@ -1770,6 +1997,20 @@ function glyph(type) {
     case 'shield':
       ctx.fillStyle = '#e8fdff'; ctx.beginPath(); ctx.moveTo(0, -0.26); ctx.lineTo(0.2, -0.18); ctx.quadraticCurveTo(0.2, 0.12, 0, 0.26); ctx.quadraticCurveTo(-0.2, 0.12, -0.2, -0.18); ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.fillStyle = '#06b6d4'; ctx.beginPath(); ctx.moveTo(0, -0.16); ctx.lineTo(0.11, -0.11); ctx.quadraticCurveTo(0.11, 0.07, 0, 0.15); ctx.closePath(); ctx.fill(); break;
+    case 'pierce':
+      miniBomb(-0.04, 0.06, 0.16);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.06; ctx.beginPath(); ctx.moveTo(-0.28, 0.06); ctx.lineTo(0.2, 0.06); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = OUT; ctx.lineWidth = 0.03; ctx.beginPath(); ctx.moveTo(0.29, 0.06); ctx.lineTo(0.15, -0.04); ctx.lineTo(0.15, 0.16); ctx.closePath(); ctx.fill(); ctx.stroke(); break;
+    case 'throw':
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(-0.16, 0.2); ctx.lineTo(-0.18, -0.02); ctx.quadraticCurveTo(-0.2, -0.2, -0.05, -0.2); ctx.lineTo(0.12, -0.2);
+      ctx.quadraticCurveTo(0.2, -0.2, 0.2, -0.12); ctx.quadraticCurveTo(0.2, -0.05, 0.1, -0.05); ctx.lineTo(0.14, 0.02); ctx.quadraticCurveTo(0.2, 0.12, 0.08, 0.2); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#ff4f8b'; ctx.fillRect(-0.17, 0.14, 0.26, 0.07);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.035; ctx.beginPath(); ctx.arc(0.02, 0.05, 0.3, -2.4, -1.5); ctx.stroke(); break;
+    case 'freeze':
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.055;
+      for (let i = 0; i < 3; i++) { const a = i * Math.PI / 3; ctx.beginPath(); ctx.moveTo(Math.cos(a) * -0.24, Math.sin(a) * -0.24); ctx.lineTo(Math.cos(a) * 0.24, Math.sin(a) * 0.24); ctx.stroke(); }
+      for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3, x = Math.cos(a) * 0.15, y = Math.sin(a) * 0.15; ctx.beginPath(); ctx.moveTo(x + Math.cos(a + 2.3) * 0.07, y + Math.sin(a + 2.3) * 0.07); ctx.lineTo(x, y); ctx.lineTo(x + Math.cos(a - 2.3) * 0.07, y + Math.sin(a - 2.3) * 0.07); ctx.stroke(); }
+      break;
     case 'life':
       ctx.fillStyle = '#ff4d8d'; ctx.beginPath(); ctx.moveTo(0, 0.22);
       ctx.bezierCurveTo(-0.3, 0.02, -0.22, -0.26, 0, -0.12); ctx.bezierCurveTo(0.22, -0.26, 0.3, 0.02, 0, 0.22); ctx.fill(); ctx.stroke();
@@ -1787,7 +2028,7 @@ function drawBombs() {
   }
   for (const b of G.bombs) {
     onBoard(b.x, b.y);
-    const cx = SX(b.x), cy = SY(b.y) + T * 0.06, age = G.t - b.born;
+    const cx = SX(b.x), cy = SY(b.y) + T * 0.06 - (b.z || 0) * T, age = G.t - b.born;
     const armed = !(b.remote && !b.chain && b.owner.alive);
     const urg = armed ? 1 - b.timer / BOMB_TIME : 0.2;
     const pulse = 1 + Math.sin(G.t * (8 + urg * 20)) * (0.04 + urg * 0.05);
@@ -2162,6 +2403,37 @@ const ENEMY_DRAW = {
     ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(-0.15, y + 0.08); ctx.quadraticCurveTo(0, y + 0.22, 0.15, y + 0.08); ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#fff'; for (const xx of [-0.09, 0, 0.09]) { ctx.beginPath(); ctx.moveTo(xx - 0.03, y + 0.09); ctx.lineTo(xx + 0.03, y + 0.09); ctx.lineTo(xx, y + 0.14); ctx.fill(); }
   },
+  escorpion(t, dx, dy) {   // desert boss: sand scorpion with claws and a curled stinger
+    const y = -0.32 - Math.abs(Math.sin(t * 5)) * 0.02;
+    ctx.strokeStyle = '#8a5a1a'; ctx.lineWidth = 0.05;
+    for (const s of [-1, 1]) for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.moveTo(s * 0.15, y + 0.05 + i * 0.07); ctx.lineTo(s * 0.34, y + 0.12 + i * 0.09 + Math.sin(t * 12 + i) * 0.02); ctx.stroke(); }
+    ctx.strokeStyle = OUT; ctx.lineWidth = 0.045;
+    ctx.fillStyle = '#c9862a'; for (let i = 0; i < 5; i++) { const a = -0.6 - i * 0.55, r = 0.3; circ(Math.cos(a) * 0.05, y - 0.05 + Math.sin(a) * r * (0.6 + i * 0.12), 0.07 - i * 0.006); ctx.fill(); ctx.stroke(); }
+    ctx.fillStyle = '#3a1a08'; ctx.beginPath(); ctx.moveTo(0.02, y - 0.5); ctx.lineTo(0.12, y - 0.42); ctx.lineTo(0.0, y - 0.38); ctx.closePath(); ctx.fill();
+    for (const s of [-1, 1]) { ctx.fillStyle = '#d9962e'; ell(s * 0.3, y - 0.06, 0.1, 0.08); ctx.fill(); ctx.stroke(); }
+    ctx.fillStyle = grad('#ffd889', '#e8a030', '#8a5414', y, 0.3); ell(0, y, 0.27, 0.22); ctx.fill(); ctx.stroke();
+    eyes(y - 0.03, 0.1, 0.06, dx, dy, '#fff', true);
+    ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(-0.1, y + 0.08); ctx.quadraticCurveTo(0, y + 0.16, 0.1, y + 0.08); ctx.closePath(); ctx.fill();
+  },
+  yeti(t, dx, dy) {   // snow boss: a white furry brute with horns
+    const y = -0.44 - Math.abs(Math.sin(t * 3)) * 0.03, sw = Math.sin(t * 4) * 0.06;
+    ctx.fillStyle = '#e8f2ff'; for (const s of [-1, 1]) { ell(s * 0.33, y + 0.12 + s * sw, 0.09, 0.2); ctx.fill(); ctx.stroke(); }
+    ctx.fillStyle = '#efe2c4'; for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 0.16, y - 0.28); ctx.quadraticCurveTo(s * 0.34, y - 0.42, s * 0.3, y - 0.52); ctx.lineTo(s * 0.22, y - 0.3); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+    ctx.fillStyle = grad('#ffffff', '#e2eefc', '#9fb6d6', y, 0.38); circ(0, y, 0.34); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#7cc8ff'; ell(0, y + 0.03, 0.2, 0.17); ctx.fill();
+    eyes(y - 0.01, 0.09, 0.06, dx, dy, '#fff', true);
+    ctx.fillStyle = OUT; ctx.beginPath(); ctx.moveTo(-0.11, y + 0.09); ctx.quadraticCurveTo(0, y + 0.18, 0.11, y + 0.09); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#fff'; for (const xx of [-0.06, 0.06]) { ctx.beginPath(); ctx.moveTo(xx - 0.025, y + 0.095); ctx.lineTo(xx + 0.025, y + 0.095); ctx.lineTo(xx, y + 0.14); ctx.fill(); }
+  },
+  dragon(t, dx, dy) {   // volcano boss: a red dragon with wings and horns
+    const y = -0.42 - Math.abs(Math.sin(t * 3)) * 0.03, fl = Math.sin(t * 7) * 0.12;
+    ctx.fillStyle = '#9a1f12'; for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 0.2, y - 0.05); ctx.lineTo(s * 0.55, y - 0.3 - fl); ctx.lineTo(s * 0.5, y + 0.05); ctx.lineTo(s * 0.4, y - 0.02); ctx.lineTo(s * 0.32, y + 0.12); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+    ctx.fillStyle = '#efe2c4'; for (const s of [-1, 1]) { ctx.beginPath(); ctx.moveTo(s * 0.12, y - 0.26); ctx.lineTo(s * 0.22, y - 0.48); ctx.lineTo(s * 0.2, y - 0.24); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+    ctx.fillStyle = grad('#ff9a6a', '#e83a1a', '#7a1008', y, 0.34); circ(0, y, 0.3); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ffcf8a'; ell(0, y + 0.13, 0.16, 0.11); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = OUT; circ(-0.05, y + 0.11, 0.02); ctx.fill(); circ(0.05, y + 0.11, 0.02); ctx.fill();
+    eyes(y - 0.08, 0.1, 0.06, dx, dy, '#ffe56b', true);
+  },
   globo(t, dx, dy) {
     const y = -0.45 + Math.sin(t * 3) * 0.04;
     ctx.strokeStyle = '#5a3a2a'; ctx.lineWidth = 0.025; ctx.beginPath(); ctx.moveTo(0, y + 0.34); ctx.quadraticCurveTo(0.07, y + 0.4, 0, y + 0.47); ctx.stroke();
@@ -2245,6 +2517,13 @@ const ENEMY_DRAW = {
   },
 };
 function drawEnemy(e) {
+  if (e.under && e.alive) {   // burrowed: a moving mound of sand (3D and flat views alike)
+    onBoard(e.x, e.y, true);
+    const cx = SX(e.x), cy = SY(e.y) + T * 0.15, k = e.emergeT !== undefined ? 1 + Math.sin(G.t * 40) * 0.12 : 1;
+    ctx.fillStyle = '#c99a52'; ell(cx, cy, T * 0.42 * k, T * 0.2 * k); ctx.fill();
+    ctx.fillStyle = '#e8c27a'; ell(cx - T * 0.08, cy - T * 0.05, T * 0.24 * k, T * 0.1 * k); ctx.fill();
+    return;
+  }
   if (F3) return;   // the enemies are 3D models (js/chars3d.js)
   const cx = SX(e.x), cy = SY(e.y), big = e.def.boss ? 1.75 : 1;
   let a = 1, sx = 1, sy = 1;
@@ -2261,6 +2540,7 @@ function drawEnemy(e) {
   if (e.def.id === 'chispa') glow(cx, cy - T * 0.12, T * 0.75, SPR.yellow, 0.35);
   else if (e.def.id === 'calavera') glow(cx, cy - T * 0.15, T * 0.6, glowOf('#ff3b3b'), 0.3);
   else if (e.def.boss) glow(cx, cy - T * 0.5, T * 1.4, glowOf(e.def.col), 0.35 + 0.1 * Math.sin(G.t * 5));
+  if (e.frozen) glow(cx, cy - T * 0.3, T * 1.1, glowOf('#9fd8ff'), 0.55);
 }
 // Burning up: a white-hot flash, then the body scorches orange to charcoal, shudders, and crumbles into ash.
 const ENEMY_BURN = 1.15, burnCv = document.createElement('canvas'), burnCtx = burnCv.getContext('2d');
@@ -2374,6 +2654,8 @@ const PIX = {
   ghost: ['..WWWW..', '.WWWWWW.', 'WWKWWKWW', 'WWKWWKWW', 'WWWWWWWW', 'WWWWWWWW', 'WWWWWWWW', 'W.WW.WW.'],
   brick: ['OOOOOOOO', 'OOOKOOOO', 'KKKKKKKK', 'OKOOOOKO', 'KKKKKKKK', 'OOOKOOOO', 'KKKKKKKK', '........'],
   pause: ['........', '.WW..WW.', '.WW..WW.', '.WW..WW.', '.WW..WW.', '.WW..WW.', '.WW..WW.', '........'],
+  pierce: ['...KK...', '.KKKKK..', 'KKKKKKK.', 'RRRRRRRR', 'KKKKKKKR', 'KKKKKKK.', '.KKKKK..', '...KK...'],
+  glove: ['..WW.W..', '.WWWWWW.', '.WWWWWW.', 'WWWWWWW.', 'WWWWWWW.', '.WWWWWW.', '..BBBB..', '..BBBB..'],
   star: ['...YY...', '...YY...', 'YYYYYYYY', '.YYYYYY.', '..YYYY..', '.YY..YY.', 'YY....YY', '........'],
 };
 const pixCache = {};
@@ -2413,7 +2695,7 @@ function hudTick() {
   const p = G.hero;
   if (p) {
     const spd = Math.round((p.speed - 3.3) / 0.45) + 1;
-    const key = [p.bombs, p.power, spd, p.kick, p.remote, p.bpass, p.wpass, p.shieldT > 0].join();
+    const key = [p.bombs, p.power, spd, p.kick, p.remote, p.bpass, p.wpass, p.pierce, p.throw, p.shieldT > 0].join();
     if (key !== powersKey) {
       powersKey = key;
       let s = `<span class="pw">${pix('bomb')}<b>${p.bombs}</b></span><span class="pw">${pix('fire')}<b>${p.power}</b></span><span class="pw">${pix('bolt')}<b>${spd}</b></span>`;
@@ -2421,6 +2703,8 @@ function hudTick() {
       if (p.remote) s += `<span class="pw" title="Detonador">${pix('remote')}</span>`;
       if (p.bpass) s += `<span class="pw" title="Atraviesa bombas">${pix('ghost')}</span>`;
       if (p.wpass) s += `<span class="pw" title="Atraviesa muros">${pix('brick')}</span>`;
+      if (p.pierce) s += `<span class="pw" title="Bomba perforante">${pix('pierce')}</span>`;
+      if (p.throw) s += `<span class="pw" title="Guante">${pix('glove')}</span>`;
       if (p.shieldT > 0) s += `<span class="pw" title="Escudo">${pix('shield')}</span>`;
       $('powers').innerHTML = s;
     }
@@ -2432,6 +2716,7 @@ function updateTitle() {
   $('tBest').textContent = store.get('best', 0).toLocaleString('es-ES');
   $('tMax').textContent = store.get('maxStage', 1);
   $('tCups').textContent = store.get('cups', 0);
+  $('achSub').textContent = `${achGot.size} DE ${ACH.length}`;
   const last = store.get('lastStage', 1);
   $('btnContinue').hidden = last <= 1;
   const sv = store.get('save', null);
@@ -2489,6 +2774,7 @@ function act(a, el) {
     case 'rounds': store.set('rounds', +el.dataset.v); syncToggles(); break;
     case 'bworld': store.set('bworld', el.dataset.v); syncToggles(); break;
     case 'settings': syncToggles(); show('sSettings'); break;
+    case 'achievements': showAchievements(); break;
     case 'title': toTitle(); break;
     case 'pause': pause(); break;
     case 'resume': resume(); break;
@@ -2691,7 +2977,7 @@ setInterval(() => { if (!document.hidden) checkUpdate(); }, 600000);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
-window.BOMBLAST = { G, step: n => { for (let i = 0; i < n; i++) update(STEP); }, act, avatar, layout };
+window.BOMBLAST = { G, input, step: n => { for (let i = 0; i < n; i++) update(STEP); }, act, avatar, layout };
 })();
 </script>
 </body>
