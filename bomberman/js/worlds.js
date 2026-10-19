@@ -197,9 +197,9 @@ WORLDS.volcano = {
     flowerRate: 0, cloverRate: 0.35,
     paving: ['#5c504c', '#3c3330', '#221c1a'],
   },
-  pillar: { top: ['#3c3644', '#1e1a26'], side: ['#2a2432', '#0f0c16'], crack: '#ff6a1a', moss: ['#ff7a1a', '#c23a0a'], mossRate: 0 },
+  pillar: { top: ['#d2c4b8', '#a69488'], side: ['#8a7a70', '#544640'], crack: '#ff8a2a', moss: ['#ff7a1a', '#c23a0a'], mossRate: 0 },   // pale volcanic stone
   wall: { top: ['#5c4c46', '#2c221e'], side: ['#40342e', '#1a1210'], seam: '#100a08', moss: ['#3a302c', '#221a16'], vine: ['#ff6a1a', '#ff9a2a', '#ffc04a'] },
-  brick: { top: ['#5c3c32', '#442c24'], side: ['#3c261e', '#24160f'], mortar: '#ff7a1a', shade: '#120806' },
+  brick: { top: ['#a06a52', '#7e4c3a'], side: ['#6e4232', '#4a2a1e'], mortar: '#ff7a1a', shade: '#120806' },
   obstacle: {
     rock: { top: ['#4a4448', '#2a262c'], side: ['#2a2428', '#141014'], moss: ['#ff7a1a', '#c23a0a'] },
     stump: { bark: ['#2e221c', '#1a120e', '#0e0806'], wood: ['#ff9a2a', '#ff6a1a', '#c23a0a'], moss: ['#3a2e28', '#221a16'] },
@@ -221,8 +221,8 @@ WORLDS.volcano = {
     lamp: { color: '#ff6a1a', intensity: 8, distance: 5.5 },
     fog: '#1c0d0a', exposure: 1.32, base: '#1a100c',
     heights: { wall: 0.66, pillar: 0.6, brick: 0.6 },
-    stone: { pillar: ['#4a4456', '#141018'], wall: ['#5e4e48', '#22181a'] },
-    brick: { style: 'magma', colors: ['#463430', '#3a2a26', '#4e3a34', '#30221e'], mortar: '#2a1810', glow: '#e8500e' },
+    stone: { pillar: ['#c4b6aa', '#6e5e56'], wall: ['#5e4e48', '#22181a'] },
+    brick: { style: 'magma', colors: ['#8c5844', '#7a4a38', '#966250', '#6c4030'], mortar: '#3a2014', glow: '#e8500e' },
   },
   levels: Object.assign(sameLevels([['rock', 3], ['stump', 2]]), { plazaPool: true }),
 };
