@@ -106,6 +106,9 @@ export function makeChars(scene, env) {
     fantasma: { up: 0.42, w: 2.1, h: 1.61, eyes: 'hollow', sep: 0.36, ey: -0.24, rx: 0.2, ry: 0.13, pupil: '#9fe8ff', glow: true, mouth: 'maw', my: 0.34, mw: 0.42, mh: 0.36, teeth: 4 },
     diablo: { up: 0.52, w: 2.1, h: 1.47, eyes: 'angry', sep: 0.36, ey: -0.26, rx: 0.21, ry: 0.23, pupil: '#ffd23f', glow: true, mouth: 'grin', my: 0.34, mw: 0.8, mh: 0.24, teeth: 6, fangs: true },
     calavera: { up: 0.38, w: 2.22, h: 1.68, eyes: 'sockets', sep: 0.36, ey: -0.2, rx: 0.25, ry: 0.22, pupil: '#ff2a1a', glow: true, mouth: 'nose', my: 0.22 },
+    escorpion: { brow: '#5a2e08', up: 0.32, w: 2.1, h: 1.47, eyes: 'angry', sep: 0.34, ey: -0.24, rx: 0.19, ry: 0.22, pupil: '#120f22', mouth: 'grin', my: 0.32, mw: 0.62, mh: 0.2, teeth: 5, fangs: true },
+    yeti: { brow: '#5a8cc8', up: 0.34, w: 2.0, h: 1.4, eyes: 'angry', sep: 0.32, ey: -0.24, rx: 0.18, ry: 0.21, pupil: '#2a6ad8', glow: true, mouth: 'grin', my: 0.32, mw: 0.66, mh: 0.24, teeth: 5, fangs: true },
+    dragon: { brow: '#5a0a04', up: 0.62, w: 2.0, h: 1.2, eyes: 'angry', sep: 0.34, ey: -0.12, rx: 0.2, ry: 0.24, pupil: '#ffd23f', glow: true, mouth: 'grit', my: 0.66, mw: 0.3, mh: 0.1 },
     jefe: { brow: '#ff3b3b', up: 0.3, w: 2.1, h: 1.47, eyes: 'angry', sep: 0.36, ey: -0.26, rx: 0.21, ry: 0.24, pupil: '#ff3b3b', glow: true, mouth: 'grin', my: 0.34, mw: 0.86, mh: 0.26, teeth: 7, fangs: true },
   };
   const ENEMY_MODES = ['idle', 'hunt', 'hurt', 'dead'];
@@ -650,6 +653,80 @@ export function makeChars(scene, env) {
       };
     },
   };
+  // ---------- the world bosses (desert, snow, volcano) ----------
+  Object.assign(EN, {
+    escorpion(o, c) {   // sand scorpion: crushing claws, six legs, a curled stinger it digs in with
+      const m = o.mat(glossy(c.col, { clearcoat: 1 })), d = o.mat(glossy(dark(c.col, 0.62))), R = new THREE.Vector3(0.27, 0.22, 0.26), g = new THREE.Group(); g.position.y = 0.27; o.body.add(g);
+      o.float = 0.02; mesh(sph, m, g, 0, 0, 0, R.x, R.y, R.z);
+      for (let i = 0; i < 2; i++) mesh(sph, d, o.body, 0, 0.24, -0.27 - i * 0.15, 0.2 - i * 0.04, 0.14, 0.12);
+      // tail: a chain of segments curling back, up and over the body, ending in the stinger
+      const tail = new THREE.Group(); tail.position.set(0, 0.2, -0.46); o.body.add(tail);
+      const seg = th => [0.3 - 0.3 * Math.cos(th), -0.3 * Math.sin(th)];
+      for (let i = 0; i < 8; i++) { const [y, z] = seg(i / 7 * 3.5); mesh(sph, i % 2 ? m : d, tail, 0, y, z, 0.085 - i * 0.005); }
+      const [sy, sz] = seg(3.75), sting = mesh(cone, o.mat(glossy('#3a1a08')), tail, 0, sy, sz, 0.045, 0.16, 0.045); sting.rotation.x = 2.2;
+      o.claws = [];
+      for (const s of [-1, 1]) {
+        capsule(o.body, d, 0.035, 0.22, s * 0.25, 0.22, 0.2).rotation.set(1.2, 0, -s * 0.5);
+        const cl = new THREE.Group(); cl.position.set(s * 0.33, 0.24, 0.36); o.body.add(cl);
+        const a = mesh(sph, m, cl, s * 0.04, 0, 0, 0.06, 0.05, 0.13), b = mesh(sph, m, cl, -s * 0.04, 0, 0, 0.05, 0.045, 0.12);
+        o.claws.push([a, b, s]);
+      }
+      o.legs = [];
+      for (const s of [-1, 1]) for (let i = 0; i < 3; i++) { const l = capsule(o.body, d, 0.022, 0.22, s * 0.28, 0.12, 0.08 - i * 0.14); l.rotation.z = s * 1.0; o.legs.push(l); }
+      enemyFace(o, g, R, c);
+      o.anim = (t, e) => {
+        o.body.position.y = o.float + Math.abs(Math.sin(t * 6 + e.bob)) * 0.03;
+        tail.rotation.x = Math.sin(t * 2.4) * 0.12;
+        o.claws.forEach(([a, b, s], i) => { const k = Math.max(0, Math.sin(t * 5 + i)) * 0.35; a.rotation.y = s * k; b.rotation.y = -s * k; });
+        o.legs.forEach((l, i) => { l.rotation.x = Math.sin(t * 14 + i * 1.7) * 0.3; });
+      };
+    },
+    yeti(o, c) {   // snow brute: shaggy white fur, curled horns, long arms it slams the ground with
+      const fur = o.mat(satin('#f2f7ff', { roughness: 0.82, clearcoat: 0.15 })), R = new THREE.Vector3(0.3, 0.33, 0.28), g = new THREE.Group(); g.position.y = 0.4; o.body.add(g);
+      o.float = 0.02; mesh(sph, fur, g, 0, 0, 0, R.x, R.y, R.z);
+      for (let i = 0; i < 16; i++) { const a = i * 2.4, b = -0.6 + (i % 5) * 0.32; if (Math.cos(a) > 0.55 && b > -0.2 && b < 0.8) continue; mesh(sphLo, fur, decal(g, R, a, b), 0, 0, 0, 0.09, 0.09, 0.06); }
+      const horn = o.mat(glossy('#efe2c4'));
+      for (const s of [-1, 1]) { const h = mesh(cone, horn, g, s * 0.2, 0.28, -0.02, 0.05, 0.2, 0.05); h.rotation.z = -s * 0.9; }
+      o.arms = [];
+      for (const s of [-1, 1]) {
+        const arm = new THREE.Group(); arm.position.set(s * 0.32, 0.55, 0); o.body.add(arm);
+        capsule(arm, fur, 0.08, 0.34, 0, -0.17, 0); mesh(sph, o.mat(satin(c.col, { roughness: 0.6 })), arm, 0, -0.38, 0.02, 0.09);
+        o.arms.push([arm, s]);
+      }
+      for (const s of [-1, 1]) mesh(sph, o.mat(satin(c.col, { roughness: 0.6 })), o.body, s * 0.13, 0.04, 0.05, 0.1, 0.06, 0.13);
+      enemyFace(o, g, R, c);
+      o.anim = (t, e) => {
+        const up = e.charge > 0 ? 1 : 0; o.lift = (o.lift || 0) + (up - (o.lift || 0)) * 0.25;
+        o.body.position.y = o.float + Math.abs(Math.sin(t * 3 + e.bob)) * 0.05 + o.lift * 0.08;
+        o.arms.forEach(([a, s]) => { a.rotation.x = Math.sin(t * 4 + s) * 0.35 * (1 - o.lift) - o.lift * 2.7; a.rotation.z = s * (0.15 + o.lift * 0.3); });
+      };
+    },
+    dragon(o, c) {   // volcano dragon: horned, winged, a snout that glows before it breathes fire
+      const m = o.mat(glossy(c.col, { clearcoat: 1 })), belly = o.mat(glossy('#ffcf8a')), wingM = o.mat(satin(dark(c.col, 0.55), { side: THREE.DoubleSide, roughness: 0.6 }));
+      const R = new THREE.Vector3(0.27, 0.27, 0.26), g = new THREE.Group(); g.position.y = 0.36; o.body.add(g);
+      o.float = 0.04; mesh(sph, m, g, 0, 0, 0, R.x, R.y, R.z);
+      mesh(sph, belly, o.body, 0, 0.22, 0.14, 0.17, 0.15, 0.12);
+      const snout = mesh(sph, m, g, 0, -0.07, 0.25, 0.14, 0.1, 0.15);
+      for (const s of [-1, 1]) mesh(sphLo, INK, g, s * 0.05, -0.03, 0.38, 0.018);
+      const fire = mesh(sphLo, o.mat(new THREE.MeshBasicMaterial({ color: '#ffb03a', transparent: true, opacity: 0, depthWrite: false, toneMapped: false })), g, 0, -0.1, 0.38, 0.09);
+      const horn = o.mat(glossy('#efe2c4'));
+      for (const s of [-1, 1]) { const h = mesh(cone, horn, g, s * 0.14, 0.24, -0.08, 0.04, 0.18, 0.04); h.rotation.set(-0.6, 0, -s * 0.3); }
+      const wingShape = new THREE.Shape(); wingShape.moveTo(0, 0); wingShape.lineTo(0.5, 0.32); wingShape.lineTo(0.46, 0.02); wingShape.lineTo(0.34, 0.08); wingShape.lineTo(0.24, -0.06); wingShape.closePath();
+      const wingG = new THREE.ShapeGeometry(wingShape); o.wings = [];
+      for (const s of [-1, 1]) { const w = new THREE.Group(); w.position.set(s * 0.18, 0.45, -0.1); o.body.add(w); const wm = new THREE.Mesh(wingG, wingM); wm.scale.set(s * 0.72, 0.72, 0.72); wm.rotation.y = -s * 0.5; w.add(wm); o.wings.push([w, s]); }
+      const tail = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0.2, -0.22), new THREE.Vector3(0, 0.1, -0.4), new THREE.Vector3(0.12, 0.08, -0.56), new THREE.Vector3(0.2, 0.16, -0.64)]), 16, 0.04, 6), m); o.body.add(tail);
+      const tip = mesh(cone, m, o.body, 0.22, 0.2, -0.66, 0.07, 0.12, 0.03); tip.rotation.x = -1.2;
+      for (const s of [-1, 1]) mesh(sph, m, o.body, s * 0.13, 0.05, 0.04, 0.08, 0.06, 0.1);
+      enemyFace(o, g, R, c);
+      o.anim = (t, e) => {
+        o.body.position.y = o.float + Math.sin(t * 3 + e.bob) * 0.04;
+        o.wings.forEach(([w, s]) => { w.rotation.z = s * (0.2 + Math.sin(t * 7) * 0.35); });
+        const k = e.charge > 0 ? 1 - e.charge / 0.9 : 0;
+        fire.material.opacity = k * (0.7 + 0.3 * Math.sin(t * 40)); fire.scale.setScalar(0.06 + k * 0.08);
+        snout.scale.set(0.14, 0.1 + k * 0.02, 0.15);
+      };
+    },
+  });
   function makeEnemy(e) {
     const def = e.def, root = new THREE.Group(), tilt = new THREE.Group(), yaw = new THREE.Group(), body = new THREE.Group();
     root.add(tilt); tilt.add(yaw); yaw.add(body); tilt.rotation.x = -TILT;
@@ -680,6 +757,8 @@ export function makeChars(scene, env) {
     // frozen by the clock power-up: tinted icy blue, back to its own colours when time runs again
     if (e.alive && (e.frozen || o.iced)) { o.iced = !!e.frozen; for (const m of o.mats) { m.color.copy(m.userData.base); if (o.iced) m.color.lerp(ICE, 0.55); } }
     let vis = true, sc = o.big;
+    o.dig = (o.dig || 0) + ((e.under ? 1 : 0) - (o.dig || 0)) * Math.min(1, dt * 8);   // the scorpion sinks into the sand and climbs back out
+    if (o.dig > 0.01) { sc *= Math.max(0.0001, 1 - o.dig); if (o.dig > 0.97) vis = false; }
     if (e.spawnT > 0) { sc *= Math.max(0.05, 1 - e.spawnT / 0.9); vis = Math.sin(t * 30) > -0.3; }
     if (e.hitT > 0 && Math.floor(t * 20) % 2) vis = false;
     // burning up: flash white, scorch orange → charcoal, shudder, then slump and crumble (fx3d adds fire and ash)
