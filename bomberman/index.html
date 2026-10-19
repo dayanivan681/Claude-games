@@ -127,6 +127,16 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   padding:calc(env(safe-area-inset-top,0px) + 18px) calc(env(safe-area-inset-right,0px) + 16px) calc(env(safe-area-inset-bottom,0px) + 18px) calc(env(safe-area-inset-left,0px) + 16px);
   background:radial-gradient(120% 75% at 50% 38%,rgba(8,10,24,.3),rgba(8,10,24,.9) 72%);overflow-y:auto;touch-action:pan-y;text-align:center}
 .screen.solid{background:rgba(7,9,22,.84)}
+.achs{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;width:100%;max-width:680px;text-align:left}
+.ach{display:flex;gap:9px;align-items:center;padding:8px 10px;border-radius:12px;background:var(--panel);border:1px solid var(--line);opacity:.42;filter:grayscale(1)}
+.ach.got{opacity:1;filter:none;border-color:var(--gold)}
+.ach i{font-style:normal;font-size:24px;line-height:1}
+.ach b{display:block;font-size:13px;line-height:1.15}
+.ach small{display:block;font-size:11px;color:var(--muted);line-height:1.2}
+#toast{position:absolute;top:calc(env(safe-area-inset-top,0px) + 58px);left:50%;z-index:9;transform:translate(-50%,-24px);opacity:0;transition:opacity .3s,transform .3s;pointer-events:none;
+  background:rgba(10,8,24,.9);border:2px solid var(--gold);border-radius:14px;padding:7px 14px;font-weight:900;color:#fff;font-size:14px;white-space:nowrap;text-align:center}
+#toast.show{opacity:1;transform:translate(-50%,0)}
+#toast small{display:block;color:var(--muted);font-size:11px;font-weight:800}
 .logoWrap{display:flex;flex-direction:column;align-items:center;animation:bob 3.2s ease-in-out infinite}
 .logoBomb{width:84px;height:84px;margin-bottom:-14px;transform:rotate(-12deg);filter:drop-shadow(0 8px 10px rgba(0,0,0,.5))}
 .logoBomb .spark{transform-origin:51px 8px;animation:spark .18s steps(2) infinite}
@@ -218,6 +228,7 @@ h2.warn{color:var(--warn)} h2.good{color:var(--good)}
   <div id="powers" hidden></div>
   <div id="hud" hidden></div>
   <div id="banner"></div>
+  <div id="toast"></div>
 
   <section class="screen" id="sTitle" hidden>
     <div class="logoWrap">
@@ -229,6 +240,7 @@ h2.warn{color:var(--warn)} h2.good{color:var(--good)}
       <button class="btn primary" data-act="adventure">AVENTURA<span class="sub">DESDE EL NIVEL 1</span></button>
       <button class="btn" data-act="continue" id="btnContinue">CONTINUAR<span class="sub" id="contSub">NIVEL 1</span></button>
       <button class="btn" data-act="battleMenu">BATALLA<span class="sub">TÚ CONTRA 3 RIVALES</span></button>
+      <button class="btn" data-act="achievements">LOGROS Y RÉCORDS<span class="sub" id="achSub">0 DE 15</span></button>
       <button class="btn ghost" data-act="settings">AJUSTES Y CONTROLES</button>
     </div>
     <div class="stats">
@@ -254,6 +266,13 @@ h2.warn{color:var(--warn)} h2.good{color:var(--good)}
       <button class="btn primary" data-act="battleStart">¡A PELEAR!</button>
       <button class="btn ghost" data-act="title">VOLVER</button>
     </div>
+  </section>
+
+  <section class="screen solid" id="sAch" hidden>
+    <h2>LOGROS Y RÉCORDS</h2>
+    <div class="stats" id="recStats"></div>
+    <div class="achs" id="achList"></div>
+    <button class="btn ghost" data-act="title">VOLVER</button>
   </section>
 
   <section class="screen solid" id="sSettings" hidden>
@@ -342,6 +361,44 @@ const store = {
   set(k, v) { try { localStorage.setItem('bomblast_' + k, JSON.stringify(v)); } catch (e) { /* storage blocked */ } }
 };
 const settings = { music: store.get('music', true), sfx: store.get('sfx', true), haptics: store.get('haptics', true) };
+
+// ---- achievements and lifetime records (kept on this device) ----
+const ACH = [
+  { id: 'first', i: '🚩', n: 'Primer paso', d: 'Supera el nivel 1' },
+  { id: 'boss_forest', i: '👑', n: 'Rey destronado', d: 'Derrota al Rey Bomba' },
+  { id: 'boss_desert', i: '🦂', n: 'Cazador del desierto', d: 'Derrota al Escorpión' },
+  { id: 'boss_snow', i: '❄️', n: 'Rompehielos', d: 'Derrota al Yeti' },
+  { id: 'boss_volcano', i: '🐉', n: 'Matadragones', d: 'Derrota al Dragón' },
+  { id: 'campaign', i: '🌋', n: 'Gira completa', d: 'Supera el nivel 20' },
+  { id: 'combo3', i: '💥', n: 'Combo', d: '3 enemigos con una sola bomba' },
+  { id: 'combo5', i: '🎆', n: 'Súper combo', d: '5 enemigos con una sola bomba' },
+  { id: 'fast', i: '⚡', n: 'Relámpago', d: 'Supera un nivel en menos de 60 s' },
+  { id: 'flawless', i: '🛡️', n: 'Intocable', d: 'Derrota a un jefe sin perder una vida' },
+  { id: 'maxfire', i: '🔥', n: 'Fuego total', d: 'Llega al fuego máximo' },
+  { id: 'collector', i: '🧤', n: 'Coleccionista', d: 'Consigue guante, perforante y reloj' },
+  { id: 'score100k', i: '💰', n: 'Cien mil', d: '100.000 puntos en una partida' },
+  { id: 'kills500', i: '☠️', n: 'Exterminador', d: 'Vence a 500 enemigos en total' },
+  { id: 'cup', i: '🏆', n: 'Campeón', d: 'Gana una copa en batalla' },
+];
+const achGot = new Set(store.get('ach', []));
+let toastTimer = 0;
+function award(id) {
+  if (achGot.has(id) || G.mode === 'demo') return;
+  const a = ACH.find(a => a.id === id); if (!a) return;
+  achGot.add(id); store.set('ach', [...achGot]);
+  const el = $('toast'); el.innerHTML = `${a.i} ¡LOGRO! ${a.n}<small>${a.d}</small>`; el.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+  Sound.play.oneup();
+}
+function stat(k, n = 1) { const st = store.get('stats', {}); st[k] = (st[k] || 0) + n; store.set('stats', st); return st[k]; }
+function showAchievements() {
+  const st = store.get('stats', {}), fast = store.get('fastest', 0), f = n => (n || 0).toLocaleString('es-ES');
+  const rec = [['RÉCORD', f(store.get('best', 0))], ['NIVEL MÁX.', store.get('maxStage', 1)], ['ENEMIGOS', f(st.kills)], ['JEFES', f(st.bosses)],
+    ['NIVELES', f(st.clears)], ['COPAS', store.get('cups', 0)], ['MÁS RÁPIDO', fast ? `${Math.floor(fast / 60)}:${String(fast % 60).padStart(2, '0')}` : '—']];
+  $('recStats').innerHTML = rec.map(([k, v]) => `<div class="stat"><small>${k}</small><b>${v}</b></div>`).join('');
+  $('achList').innerHTML = ACH.map(a => `<div class="ach${achGot.has(a.id) ? ' got' : ''}"><i>${a.i}</i><div><b>${a.n}</b><small>${a.d}</small></div></div>`).join('');
+  show('sAch');
+}
 
 // ================= content tables =================
 // Worlds (materials, lighting, scenery and level rules) live in js/worlds.js; levels are built by js/levels.js
@@ -810,7 +867,7 @@ function cells(type) { const out = []; for (let j = 0; j < N; j++) if (G.grid[j]
 
 // ---- adventure ----
 function newAdventure(stage) {
-  G.mode = 'adventure'; G.stage = stage; G.score = 0; G.lives = 3; G.nextLife = 10000; G.bestBefore = store.get('best', 0);
+  G.mode = 'adventure'; G.stage = stage; G.score = 0; G.lives = 3; G.nextLife = 10000; G.stageNo = 0; G.bestBefore = store.get('best', 0);
   const p = makePlayer(0, PALS[0], true);
   const bonus = Math.min(3, Math.floor((stage - 1) / 4));
   p.bombs += bonus; p.power += bonus; p.speed += Math.min(3, Math.floor((stage - 1) / 5)) * 0.45;
@@ -832,6 +889,7 @@ function continueAdventure() {
 function startStage() {
   cineReset();
   const s = G.stage, p = G.hero;
+  if (G.stageNo !== s) { G.stageNo = s; G.stageDeaths = 0; }   // lives lost on this stage (for «Intocable»)
   G.world = worldForStage(s);
   resetWorld();
   Object.assign(p, { x: 1, y: 1, alive: true, deadT: 0, active: 0, face: 0, moving: false, shieldT: 0, inv: 0 });
@@ -882,7 +940,7 @@ function restartStage() {
   startStage();
 }
 function loseLife() {
-  G.lives--;
+  G.lives--; G.stageDeaths = (G.stageDeaths || 0) + 1;
   if (G.lives <= 0) { gameOver(); return; }
   const p = G.hero; p.remote = false; p.bpass = false; p.wpass = false; p.kick = false; p.pierce = false; p.throw = false;
   startStage();
@@ -891,6 +949,11 @@ function stageClear() {
   G.phase = 'clear'; G.phaseT = 0;
   const bonus = Math.ceil(G.timeLeft) * 10 + 500;
   addScore(bonus);
+  const took = Math.round(G.timeTotal - G.timeLeft), fastest = store.get('fastest', 0);
+  stat('clears'); if (!fastest || took < fastest) store.set('fastest', took);
+  if (G.stage === 1) award('first');
+  if (took < 60) award('fast');
+  if (G.stage >= 20) award('campaign');
   addText(G.hero.x, G.hero.y - 0.6, `+${bonus}`, '#ffe36b', 0.62, 1.8);
   banner('¡NIVEL SUPERADO!', `Bonus +${bonus.toLocaleString('es-ES')}`, 2.8, 'good');
   confetti();
@@ -949,7 +1012,7 @@ function showResults(w) {
   $('rBtns').innerHTML = match
     ? '<button class="btn primary" data-act="rematch">REVANCHA</button><button class="btn" data-act="title">MENÚ PRINCIPAL</button>'
     : '<button class="btn primary" data-act="nextRound">SIGUIENTE RONDA</button><button class="btn ghost" data-act="title">SALIR</button>';
-  if (match && w.human) store.set('cups', store.get('cups', 0) + 1);
+  if (match && w.human) { store.set('cups', store.get('cups', 0) + 1); award('cup'); }
   show('sResult'); $('controls').hidden = true;
   Sound.music(false);
   if (w && w.human) Sound.play.clear(); else Sound.play.over();
@@ -1082,6 +1145,10 @@ function applyItem(p, type) {
     case 'freeze': G.freezeT = 8; banner('¡TIEMPO CONGELADO!', 'Los enemigos no se mueven por 8 segundos', 1.4, 'good'); break;
   }
   if (G.mode === 'adventure') addScore(50);
+  if (p.human && G.mode !== 'demo') {
+    if (p.power >= 12) award('maxfire');
+    if (type === 'pierce' || type === 'throw' || type === 'freeze') { const got = new Set(store.get('newItems', [])); got.add(type); store.set('newItems', [...got]); if (got.size >= 3) award('collector'); }
+  }
   fxStars(p.x, p.y, ITEMS[type].color, 10);
   if (p.human) { addText(p.x, p.y - 0.7, ITEMS[type].label, '#ffffff', 0.38, 1.2); Sound.play.item(); haptic('light'); }
 }
@@ -1306,6 +1373,11 @@ function killPlayer(p, by) {
 function killEnemy(e, chain) {
   e.alive = false; e.deadT = 0; e.burnBig = e.def.boss ? 1.75 : 1;   // enemies die in the blast's fire: they burn up
   const n = (G.chainKills[chain] || 0) + 1; G.chainKills[chain] = n;
+  if (G.mode === 'adventure') {
+    if (stat('kills') >= 500) award('kills500');
+    if (n >= 3) award('combo3'); if (n >= 5) award('combo5');
+    if (e.def.boss) { stat('bosses'); award('boss_' + G.world.id); if (!G.stageDeaths) award('flawless'); }
+  }
   const mult = Math.pow(2, Math.min(n - 1, 5)), pts = e.def.pts * mult;
   addScore(pts);
   addText(e.x, e.y - 0.4, mult > 1 ? `${pts} ×${mult}` : `${pts}`, mult > 1 ? '#ffd23f' : '#ffffff', mult > 1 ? 0.5 : 0.42, 1.1);
@@ -1323,6 +1395,7 @@ function killEnemy(e, chain) {
 function addScore(n) {
   if (G.mode !== 'adventure') return;
   G.score += n;
+  if (G.score >= 100000) award('score100k');
   if (G.score >= G.nextLife) {
     G.nextLife += 10000; G.lives++;
     addText(G.hero.x, G.hero.y - 0.9, '¡VIDA EXTRA!', '#ff7ab8', 0.45, 1.4); Sound.play.oneup();
@@ -2492,6 +2565,7 @@ function updateTitle() {
   $('tBest').textContent = store.get('best', 0).toLocaleString('es-ES');
   $('tMax').textContent = store.get('maxStage', 1);
   $('tCups').textContent = store.get('cups', 0);
+  $('achSub').textContent = `${achGot.size} DE ${ACH.length}`;
   const last = store.get('lastStage', 1);
   $('btnContinue').hidden = last <= 1;
   const sv = store.get('save', null);
@@ -2549,6 +2623,7 @@ function act(a, el) {
     case 'rounds': store.set('rounds', +el.dataset.v); syncToggles(); break;
     case 'bworld': store.set('bworld', el.dataset.v); syncToggles(); break;
     case 'settings': syncToggles(); show('sSettings'); break;
+    case 'achievements': showAchievements(); break;
     case 'title': toTitle(); break;
     case 'pause': pause(); break;
     case 'resume': resume(); break;
