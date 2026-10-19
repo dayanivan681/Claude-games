@@ -375,9 +375,12 @@ const ITEMS = {
   shield: { color: '#06b6d4', c2: '#0b6475', label: 'ESCUDO 20s' },
   life: { color: '#ec4899', c2: '#9d1858', label: '+1 VIDA' },
   maxfire: { color: '#facc15', c2: '#b07c05', label: '¡FUEGO MÁXIMO!' },
+  pierce: { color: '#f43f5e', c2: '#9f1239', label: '¡BOMBA PERFORANTE!' },
+  throw: { color: '#0ea5e9', c2: '#075985', label: '¡GUANTE! LANZA TUS BOMBAS' },
+  freeze: { color: '#7cc4ff', c2: '#1d4ed8', label: '¡TIEMPO CONGELADO!' },
 };
-const SPECIAL = ['fire', 'bomb', 'speed', 'remote', 'bomb', 'kick', 'fire', 'shield', 'bpass', 'bomb', 'wpass', 'life', 'maxfire'];
-const BATTLE_ITEMS = [['bomb', 30], ['fire', 28], ['speed', 14], ['kick', 9], ['maxfire', 3], ['shield', 4]];
+const SPECIAL = ['fire', 'bomb', 'speed', 'remote', 'throw', 'bomb', 'kick', 'freeze', 'fire', 'shield', 'pierce', 'bpass', 'bomb', 'wpass', 'freeze', 'life', 'maxfire'];
+const BATTLE_ITEMS = [['bomb', 30], ['fire', 28], ['speed', 14], ['kick', 9], ['maxfire', 3], ['shield', 4], ['pierce', 4], ['throw', 4]];
 const DIFF = [
   { react: 0.5, bombRate: 0.35, aggro: 0.25, noise: 4, item: 6 },
   { react: 0.22, bombRate: 0.8, aggro: 0.8, noise: 1.5, item: 9 },
@@ -781,7 +784,7 @@ function paintHardToBg(x, y) {
 // ================= world setup =================
 function makePlayer(id, pal, human) {
   return { kind: 'player', id, pal, human, x: 1, y: 1, alive: true, deadT: 0, face: 0, walk: 0, moving: false, dust: 0,
-    speed: 3.3, bombs: 1, power: 1, active: 0, kick: false, remote: false, bpass: false, wpass: false, shieldT: 0, inv: 0,
+    speed: 3.3, bombs: 1, power: 1, active: 0, kick: false, remote: false, bpass: false, wpass: false, pierce: false, throw: false, shieldT: 0, inv: 0,
     wins: 0, path: null, goal: -1, think: 0, fleeing: false, bob: Math.random() * 6, winner: false };
 }
 function makeEnemy(type, x, y) {
@@ -795,7 +798,7 @@ function resetWorld() {
   G.bombs.length = 0; G.explosions.length = 0; G.burning.length = 0; G.enemies.length = 0;
   G.particles.length = 0; G.texts.length = 0; G.falling.length = 0; G.landed.length = 0;
   G.exit = null; G.chainKills = {}; G.kills.length = 0; G.shake = 0; G.flash = 0; G.fast = false; G.fieldT = 0;
-  G.sudden = false; G.suddenIdx = 0; G.suddenT = 0; G.hurry = false; G.timeUp = false;
+  G.sudden = false; G.suddenIdx = 0; G.suddenT = 0; G.hurry = false; G.timeUp = false; G.freezeT = 0;
 }
 // Builds the arena from the world's level rules (js/levels.js) and keeps the plan for the renderer.
 function buildArena(rng, density, protect, layout) {
@@ -821,9 +824,9 @@ function continueAdventure() {
   if (!sv || sv.stage !== st) { newAdventure(st); return; }
   newAdventure(st);
   const p = G.hero;
-  Object.assign(p, { bombs: sv.bombs, power: sv.power, speed: sv.speed, kick: sv.kick, remote: sv.remote, bpass: sv.bpass, wpass: sv.wpass });
+  Object.assign(p, { bombs: sv.bombs, power: sv.power, speed: sv.speed, kick: sv.kick, remote: sv.remote, bpass: sv.bpass, wpass: sv.wpass, pierce: !!sv.pierce, throw: !!sv.throw });
   G.score = sv.score; G.lives = Math.max(1, sv.lives); G.nextLife = sv.nextLife || G.nextLife;
-  G.snapshot = Object.assign({}, G.snapshot, { score: G.score, lives: G.lives, bombs: p.bombs, power: p.power, speed: p.speed, kick: p.kick, remote: p.remote, bpass: p.bpass, wpass: p.wpass });
+  G.snapshot = Object.assign({}, G.snapshot, { score: G.score, lives: G.lives, bombs: p.bombs, power: p.power, speed: p.speed, kick: p.kick, remote: p.remote, bpass: p.bpass, wpass: p.wpass, pierce: p.pierce, throw: p.throw });
   buildHud();
 }
 function startStage() {
@@ -833,7 +836,7 @@ function startStage() {
   resetWorld();
   Object.assign(p, { x: 1, y: 1, alive: true, deadT: 0, active: 0, face: 0, moving: false, shieldT: 0, inv: 0 });
   G.players = [p];
-  G.snapshot = { score: G.score, lives: G.lives, bombs: p.bombs, power: p.power, speed: p.speed, kick: p.kick, remote: p.remote, bpass: p.bpass, wpass: p.wpass };
+  G.snapshot = { score: G.score, lives: G.lives, bombs: p.bombs, power: p.power, speed: p.speed, kick: p.kick, remote: p.remote, bpass: p.bpass, wpass: p.wpass, pierce: p.pierce, throw: p.throw };
   // Each stage has its own seed, so a level is always the same layout (and a retry replays it).
   const boss = s % 5 === 0, rules = G.world.levels, dn = rules.density, rng = makeRng(s * 7919 + 101);
   const plan = buildArena(rng, boss ? dn.boss : Math.min(dn.max, dn.base + s * dn.perStage), [[1, 1], [2, 1], [1, 2], [3, 1], [1, 3]], boss ? rules.bossLayout : s === 1 ? rules.firstLayout : null);
@@ -875,13 +878,13 @@ function startStage() {
 function restartStage() {
   const sn = G.snapshot, p = G.hero;
   G.score = sn.score; G.lives = sn.lives;
-  Object.assign(p, { bombs: sn.bombs, power: sn.power, speed: sn.speed, kick: sn.kick, remote: sn.remote, bpass: sn.bpass, wpass: sn.wpass });
+  Object.assign(p, { bombs: sn.bombs, power: sn.power, speed: sn.speed, kick: sn.kick, remote: sn.remote, bpass: sn.bpass, wpass: sn.wpass, pierce: !!sn.pierce, throw: !!sn.throw });
   startStage();
 }
 function loseLife() {
   G.lives--;
   if (G.lives <= 0) { gameOver(); return; }
-  const p = G.hero; p.remote = false; p.bpass = false; p.wpass = false; p.kick = false;
+  const p = G.hero; p.remote = false; p.bpass = false; p.wpass = false; p.kick = false; p.pierce = false; p.throw = false;
   startStage();
 }
 function stageClear() {
@@ -922,7 +925,7 @@ function startRound() {
   resetWorld();
   G.players.forEach((p, i) => Object.assign(p, {
     x: CORNERS[i][0], y: CORNERS[i][1], alive: true, deadT: 0, active: 0, bombs: 1, power: 2, speed: 3.3,
-    kick: false, remote: false, bpass: false, wpass: false, shieldT: 0, inv: 0, path: null, goal: -1, think: rnd(0.4),
+    kick: false, remote: false, bpass: false, wpass: false, pierce: false, throw: false, shieldT: 0, inv: 0, path: null, goal: -1, think: rnd(0.4),
     fleeing: false, moving: false, face: 0, winner: false }));
   const prot = [];
   for (const [x, y] of CORNERS) prot.push([x, y], [x + (x === 1 ? 1 : -1), y], [x, y + (y === 1 ? 1 : -1)]);
@@ -1051,7 +1054,7 @@ function updatePlayer(p, dt) {
       if (moved < 1e-4 && last && last[0] * d.p[0] + last[1] * d.p[1] === 0) { moved = moveEntity(p, last, dist); used = last; }
       if (moved < 1e-4) p.face = faceOf(d.p[0], d.p[1]); else p.lastDir = used;
     } else p.lastDir = null;
-    if (input.bomb) { input.bomb = false; if (placeBomb(p)) haptic('light'); }
+    if (input.bomb) { input.bomb = false; if (placeBomb(p) || (p.throw && throwBomb(p))) haptic('light'); }
     if (input.det) { input.det = false; detonate(p); }
   } else moved = updateBot(p, dt);
   p.moving = moved > 1e-4;
@@ -1074,6 +1077,9 @@ function applyItem(p, type) {
     case 'wpass': p.wpass = true; break;
     case 'shield': p.shieldT = 20; break;
     case 'life': G.lives++; break;
+    case 'pierce': p.pierce = true; break;
+    case 'throw': p.throw = true; break;
+    case 'freeze': G.freezeT = 8; banner('¡TIEMPO CONGELADO!', 'Los enemigos no se mueven por 8 segundos', 1.4, 'good'); break;
   }
   if (G.mode === 'adventure') addScore(50);
   fxStars(p.x, p.y, ITEMS[type].color, 10);
@@ -1125,11 +1131,29 @@ function placeBomb(p) {
   if (!p.alive || p.active >= p.bombs || G.phase !== 'play') return false;
   const tx = Math.round(p.x), ty = Math.round(p.y), j = idx(tx, ty);
   if (G.bombGrid[j] || G.grid[j] !== EMPTY) return false;
-  const b = { tx, ty, x: tx, y: ty, timer: BOMB_TIME, power: p.power, owner: p, remote: p.remote, passers: new Set(), mv: null, chain: 0, born: G.t, dead: false };
+  const b = { tx, ty, x: tx, y: ty, timer: BOMB_TIME, power: p.power, owner: p, remote: p.remote, pierce: p.pierce, passers: new Set(), mv: null, chain: 0, born: G.t, dead: false };
   for (const e of G.players) if (e.alive && overlapTile(e, tx, ty)) b.passers.add(e);
   G.bombs.push(b); G.bombGrid[j] = b; p.active++; p.placeT = 0.22;
   Sound.play.place();
   return true;
+}
+// The glove: standing on your own bomb, the bomb button lobs it 3+ tiles ahead, over walls, to the first free tile.
+function throwBomb(p) {
+  if (!p.alive || G.phase !== 'play') return false;
+  const tx = Math.round(p.x), ty = Math.round(p.y), b = G.bombGrid[idx(tx, ty)];
+  if (!b || b.owner !== p || b.mv || b.fly) return false;
+  const [dx, dy] = DIRS[p.face];
+  for (let k = 3; k <= 6; k++) {
+    const x = tx + dx * k, y = ty + dy * k;
+    if (x < 1 || y < 1 || x > COLS - 2 || y > ROWS - 2) break;
+    const j = idx(x, y);
+    if (G.grid[j] !== EMPTY || G.bombGrid[j] || G.enemies.some(e => e.alive && Math.round(e.x) === x && Math.round(e.y) === y)) continue;
+    G.bombGrid[idx(tx, ty)] = null; b.passers.clear();
+    b.fly = { x0: tx, y0: ty, x1: x, y1: y, t: 0, dur: 0.25 + k * 0.05 };
+    Sound.play.kick();
+    return true;
+  }
+  return false;
 }
 function detonate(p) {
   const b = G.bombs.find(b => b.owner === p && b.remote && !b.dead);
@@ -1159,6 +1183,17 @@ function slideBomb(b, dt) {
 function updateBombs(dt) {
   for (const b of G.bombs.slice()) {
     if (b.dead) continue;
+    if (b.fly) {   // in the air: no fuse, no fire, lands on its tile at the end of the arc
+      const f = b.fly; f.t += dt; const k = Math.min(1, f.t / f.dur);
+      b.x = f.x0 + (f.x1 - f.x0) * k; b.y = f.y0 + (f.y1 - f.y0) * k; b.z = Math.sin(k * Math.PI) * 1.2;
+      if (k >= 1) {
+        b.fly = null; b.z = 0; b.tx = f.x1; b.ty = f.y1;
+        const j = idx(b.tx, b.ty), ob = G.bombGrid[j];
+        if (ob && ob !== b) explode(b); else { G.bombGrid[j] = b; for (const e of G.players) if (e.alive && overlapTile(e, b.tx, b.ty)) b.passers.add(e); }
+        G.shake = Math.min(1, G.shake + 0.15);
+      }
+      continue;
+    }
     for (const e of b.passers) if (!e.alive || !overlapTile(e, b.x, b.y)) b.passers.delete(e);
     if (b.mv) slideBomb(b, dt);
     if (!b.remote || b.chain || !b.owner.alive) b.timer -= dt;
@@ -1186,7 +1221,11 @@ function explode(b) {
     for (let i = 1; i <= b.power; i++) {
       const x = cx + dx * i, y = cy + dy * i, j = idx(x, y), c = G.grid[j];
       if (c === HARD) break;
-      if (c === SOFT || c === BURN) { if (c === SOFT) destroySoft(x, y); ignite(j, chain, b.owner); arms[d] = i - 0.5; break; }
+      if (c === SOFT || c === BURN) {
+        if (c === SOFT) destroySoft(x, y); ignite(j, chain, b.owner); arms[d] = i - 0.5;
+        if (b.pierce) { arms[d] = i; continue; }   // the piercing bomb burns straight through breakable blocks
+        break;
+      }
       ignite(j, chain, b.owner); arms[d] = i;
       const ob = G.bombGrid[j];
       if (ob) { if (!ob.chain) ob.chain = chain; ob.timer = Math.min(ob.timer, 0.07); break; }
@@ -1314,6 +1353,7 @@ function enemyPassable(e, x, y) {
 }
 function updateEnemies(dt) {
   fieldTimer -= dt;
+  if (G.freezeT > 0) G.freezeT -= dt;
   const hero = G.hero;
   if (fieldTimer <= 0 && hero.alive) {
     fieldTimer = 0.25;
@@ -1328,6 +1368,7 @@ function updateEnemies(dt) {
     }
     if (e.spawnT > 0) { e.spawnT -= dt; continue; }
     if (e.hitT > 0) e.hitT -= dt;
+    e.frozen = G.freezeT > 0; if (e.frozen) continue;
     if (e.def.boss) {
       e.summonT -= dt;
       if (e.summonT <= 0) {
@@ -1770,6 +1811,20 @@ function glyph(type) {
     case 'shield':
       ctx.fillStyle = '#e8fdff'; ctx.beginPath(); ctx.moveTo(0, -0.26); ctx.lineTo(0.2, -0.18); ctx.quadraticCurveTo(0.2, 0.12, 0, 0.26); ctx.quadraticCurveTo(-0.2, 0.12, -0.2, -0.18); ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.fillStyle = '#06b6d4'; ctx.beginPath(); ctx.moveTo(0, -0.16); ctx.lineTo(0.11, -0.11); ctx.quadraticCurveTo(0.11, 0.07, 0, 0.15); ctx.closePath(); ctx.fill(); break;
+    case 'pierce':
+      miniBomb(-0.04, 0.06, 0.16);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.06; ctx.beginPath(); ctx.moveTo(-0.28, 0.06); ctx.lineTo(0.2, 0.06); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.strokeStyle = OUT; ctx.lineWidth = 0.03; ctx.beginPath(); ctx.moveTo(0.29, 0.06); ctx.lineTo(0.15, -0.04); ctx.lineTo(0.15, 0.16); ctx.closePath(); ctx.fill(); ctx.stroke(); break;
+    case 'throw':
+      ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(-0.16, 0.2); ctx.lineTo(-0.18, -0.02); ctx.quadraticCurveTo(-0.2, -0.2, -0.05, -0.2); ctx.lineTo(0.12, -0.2);
+      ctx.quadraticCurveTo(0.2, -0.2, 0.2, -0.12); ctx.quadraticCurveTo(0.2, -0.05, 0.1, -0.05); ctx.lineTo(0.14, 0.02); ctx.quadraticCurveTo(0.2, 0.12, 0.08, 0.2); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#ff4f8b'; ctx.fillRect(-0.17, 0.14, 0.26, 0.07);
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.035; ctx.beginPath(); ctx.arc(0.02, 0.05, 0.3, -2.4, -1.5); ctx.stroke(); break;
+    case 'freeze':
+      ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 0.055;
+      for (let i = 0; i < 3; i++) { const a = i * Math.PI / 3; ctx.beginPath(); ctx.moveTo(Math.cos(a) * -0.24, Math.sin(a) * -0.24); ctx.lineTo(Math.cos(a) * 0.24, Math.sin(a) * 0.24); ctx.stroke(); }
+      for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3, x = Math.cos(a) * 0.15, y = Math.sin(a) * 0.15; ctx.beginPath(); ctx.moveTo(x + Math.cos(a + 2.3) * 0.07, y + Math.sin(a + 2.3) * 0.07); ctx.lineTo(x, y); ctx.lineTo(x + Math.cos(a - 2.3) * 0.07, y + Math.sin(a - 2.3) * 0.07); ctx.stroke(); }
+      break;
     case 'life':
       ctx.fillStyle = '#ff4d8d'; ctx.beginPath(); ctx.moveTo(0, 0.22);
       ctx.bezierCurveTo(-0.3, 0.02, -0.22, -0.26, 0, -0.12); ctx.bezierCurveTo(0.22, -0.26, 0.3, 0.02, 0, 0.22); ctx.fill(); ctx.stroke();
@@ -1787,7 +1842,7 @@ function drawBombs() {
   }
   for (const b of G.bombs) {
     onBoard(b.x, b.y);
-    const cx = SX(b.x), cy = SY(b.y) + T * 0.06, age = G.t - b.born;
+    const cx = SX(b.x), cy = SY(b.y) + T * 0.06 - (b.z || 0) * T, age = G.t - b.born;
     const armed = !(b.remote && !b.chain && b.owner.alive);
     const urg = armed ? 1 - b.timer / BOMB_TIME : 0.2;
     const pulse = 1 + Math.sin(G.t * (8 + urg * 20)) * (0.04 + urg * 0.05);
@@ -2261,6 +2316,7 @@ function drawEnemy(e) {
   if (e.def.id === 'chispa') glow(cx, cy - T * 0.12, T * 0.75, SPR.yellow, 0.35);
   else if (e.def.id === 'calavera') glow(cx, cy - T * 0.15, T * 0.6, glowOf('#ff3b3b'), 0.3);
   else if (e.def.boss) glow(cx, cy - T * 0.5, T * 1.4, glowOf(e.def.col), 0.35 + 0.1 * Math.sin(G.t * 5));
+  if (e.frozen) glow(cx, cy - T * 0.3, T * 1.1, glowOf('#9fd8ff'), 0.55);
 }
 // Burning up: a white-hot flash, then the body scorches orange to charcoal, shudders, and crumbles into ash.
 const ENEMY_BURN = 1.15, burnCv = document.createElement('canvas'), burnCtx = burnCv.getContext('2d');
@@ -2374,6 +2430,8 @@ const PIX = {
   ghost: ['..WWWW..', '.WWWWWW.', 'WWKWWKWW', 'WWKWWKWW', 'WWWWWWWW', 'WWWWWWWW', 'WWWWWWWW', 'W.WW.WW.'],
   brick: ['OOOOOOOO', 'OOOKOOOO', 'KKKKKKKK', 'OKOOOOKO', 'KKKKKKKK', 'OOOKOOOO', 'KKKKKKKK', '........'],
   pause: ['........', '.WW..WW.', '.WW..WW.', '.WW..WW.', '.WW..WW.', '.WW..WW.', '.WW..WW.', '........'],
+  pierce: ['...KK...', '.KKKKK..', 'KKKKKKK.', 'RRRRRRRR', 'KKKKKKKR', 'KKKKKKK.', '.KKKKK..', '...KK...'],
+  glove: ['..WW.W..', '.WWWWWW.', '.WWWWWW.', 'WWWWWWW.', 'WWWWWWW.', '.WWWWWW.', '..BBBB..', '..BBBB..'],
   star: ['...YY...', '...YY...', 'YYYYYYYY', '.YYYYYY.', '..YYYY..', '.YY..YY.', 'YY....YY', '........'],
 };
 const pixCache = {};
@@ -2413,7 +2471,7 @@ function hudTick() {
   const p = G.hero;
   if (p) {
     const spd = Math.round((p.speed - 3.3) / 0.45) + 1;
-    const key = [p.bombs, p.power, spd, p.kick, p.remote, p.bpass, p.wpass, p.shieldT > 0].join();
+    const key = [p.bombs, p.power, spd, p.kick, p.remote, p.bpass, p.wpass, p.pierce, p.throw, p.shieldT > 0].join();
     if (key !== powersKey) {
       powersKey = key;
       let s = `<span class="pw">${pix('bomb')}<b>${p.bombs}</b></span><span class="pw">${pix('fire')}<b>${p.power}</b></span><span class="pw">${pix('bolt')}<b>${spd}</b></span>`;
@@ -2421,6 +2479,8 @@ function hudTick() {
       if (p.remote) s += `<span class="pw" title="Detonador">${pix('remote')}</span>`;
       if (p.bpass) s += `<span class="pw" title="Atraviesa bombas">${pix('ghost')}</span>`;
       if (p.wpass) s += `<span class="pw" title="Atraviesa muros">${pix('brick')}</span>`;
+      if (p.pierce) s += `<span class="pw" title="Bomba perforante">${pix('pierce')}</span>`;
+      if (p.throw) s += `<span class="pw" title="Guante">${pix('glove')}</span>`;
       if (p.shieldT > 0) s += `<span class="pw" title="Escudo">${pix('shield')}</span>`;
       $('powers').innerHTML = s;
     }
@@ -2691,7 +2751,7 @@ setInterval(() => { if (!document.hidden) checkUpdate(); }, 600000);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
-window.BOMBLAST = { G, step: n => { for (let i = 0; i < n; i++) update(STEP); }, act, avatar, layout };
+window.BOMBLAST = { G, input, step: n => { for (let i = 0; i < n; i++) update(STEP); }, act, avatar, layout };
 })();
 </script>
 </body>

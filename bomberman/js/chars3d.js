@@ -16,7 +16,7 @@ import * as THREE from '../vendor/three.module.min.js';
 import { GLTFLoader } from '../vendor/loaders/GLTFLoader.js';
 
 export function makeChars(scene, env) {
-  const C = new THREE.Color(), C2 = new THREE.Color(), V = new THREE.Vector3(), Z = new THREE.Vector3(0, 0, 1), Y = new THREE.Vector3(0, 1, 0);
+  const ICE = new THREE.Color('#9fd8ff'), C = new THREE.Color(), C2 = new THREE.Color(), V = new THREE.Vector3(), Z = new THREE.Vector3(0, 0, 1), Y = new THREE.Vector3(0, 1, 0);
   const sph = new THREE.SphereGeometry(1, 28, 20), sphLo = new THREE.SphereGeometry(1, 16, 12);
   const cyl = new THREE.CylinderGeometry(1, 1, 1, 18), cone = new THREE.ConeGeometry(1, 1, 16), box = new THREE.BoxGeometry(1, 1, 1);
   const cap = new THREE.CapsuleGeometry(0.5, 1, 6, 14);   // 2 tall, 1 wide: scale (2r, h/2, 2r)
@@ -677,6 +677,8 @@ export function makeChars(scene, env) {
       const mode = !e.alive ? 'dead' : e.hitT > 0 ? 'hurt' : o.hunt > 0.5 ? 'hunt' : 'idle';
       if (mode !== o.face.mode) { o.face.mode = mode; const tx = enemyFaceTex(e.def.id, mode, e.def), m = o.face.m; m.map = tx[0]; m.bumpMap = tx[1]; m.clearcoatMap = tx[2]; m.emissiveMap = tx[3]; }
     }
+    // frozen by the clock power-up: tinted icy blue, back to its own colours when time runs again
+    if (e.alive && (e.frozen || o.iced)) { o.iced = !!e.frozen; for (const m of o.mats) { m.color.copy(m.userData.base); if (o.iced) m.color.lerp(ICE, 0.55); } }
     let vis = true, sc = o.big;
     if (e.spawnT > 0) { sc *= Math.max(0.05, 1 - e.spawnT / 0.9); vis = Math.sin(t * 30) > -0.3; }
     if (e.hitT > 0 && Math.floor(t * 20) % 2) vis = false;
