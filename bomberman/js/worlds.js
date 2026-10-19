@@ -67,8 +67,8 @@ const WORLDS = {
       layouts: [['classic', 4], ['grove', 3], ['clearings', 3], ['plaza', 2]],
       firstLayout: 'classic', bossLayout: 'plaza',   // stage 1 teaches on the classic grid; bosses fight on the plaza
       obstacleSkins: [['rock', 2], ['stump', 3]],
-      density: { base: 0.44, perStage: 0.005, max: 0.56, boss: 0.24, battle: 0.7 },
-      enemies: { base: 3, perStage: 0.55, max: 11, tierEvery: 2, maxTier: 6 },
+      density: { base: 0.5, perStage: 0.004, max: 0.6, boss: 0.24, battle: 0.7 },
+      enemies: { base: 3, perStage: 0.25, max: 7, tierEvery: 3, maxTier: 6 },   // few at a time, like the arcade: clear them one by one
     },
   },
 };
