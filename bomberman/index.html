@@ -436,7 +436,7 @@ const ITEMS = {
   life: { color: '#ec4899', c2: '#9d1858', label: '+1 VIDA' },
   maxfire: { color: '#facc15', c2: '#b07c05', label: '¡FUEGO MÁXIMO!' },
   pierce: { color: '#f43f5e', c2: '#9f1239', label: '¡BOMBA PERFORANTE!' },
-  throw: { color: '#0ea5e9', c2: '#075985', label: '¡GUANTE! LANZA TUS BOMBAS' },
+  throw: { color: '#0ea5e9', c2: '#075985', label: '¡GUANTE! TOCA BOMBA FRENTE A UNA BOMBA' },
   freeze: { color: '#7cc4ff', c2: '#1d4ed8', label: '¡TIEMPO CONGELADO!' },
 };
 const SPECIAL = ['fire', 'bomb', 'speed', 'remote', 'throw', 'bomb', 'kick', 'freeze', 'fire', 'shield', 'pierce', 'bpass', 'bomb', 'wpass', 'freeze', 'life', 'maxfire'];
@@ -1130,7 +1130,7 @@ function updatePlayer(p, dt) {
       if (moved < 1e-4 && last && last[0] * d.p[0] + last[1] * d.p[1] === 0) { moved = moveEntity(p, last, dist); used = last; }
       if (moved < 1e-4) p.face = faceOf(d.p[0], d.p[1]); else p.lastDir = used;
     } else p.lastDir = null;
-    if (input.bomb) { input.bomb = false; if (placeBomb(p) || (p.throw && throwBomb(p))) haptic('light'); }
+    if (input.bomb) { input.bomb = false; if ((p.throw && gloveBomb(p) && throwBomb(p)) || placeBomb(p)) haptic('light'); }   // with the glove, a bomb under or in front of you is thrown first
     if (input.det) { input.det = false; detonate(p); }
   } else moved = updateBot(p, dt);
   p.moving = moved > 1e-4;
@@ -1217,19 +1217,26 @@ function placeBomb(p) {
   Sound.play.place();
   return true;
 }
-// The glove: standing on your own bomb, the bomb button lobs it 3+ tiles ahead, over walls, to the first free tile.
+// The glove: the bomb you stand on, or the one right in front of you, is lobbed over walls to the first free tile 2–7 ahead.
+function gloveBomb(p) {
+  const tx = Math.round(p.x), ty = Math.round(p.y), under = G.bombGrid[idx(tx, ty)];
+  if (under) return under;
+  const [dx, dy] = DIRS[p.face];
+  if (Math.abs(p.x - tx) > 0.2 || Math.abs(p.y - ty) > 0.2) return null;   // pressed up against it
+  return G.bombGrid[idx(tx + dx, ty + dy)] || null;
+}
 function throwBomb(p) {
   if (!p.alive || G.phase !== 'play') return false;
-  const tx = Math.round(p.x), ty = Math.round(p.y), b = G.bombGrid[idx(tx, ty)];
-  if (!b || b.owner !== p || b.mv || b.fly) return false;
-  const [dx, dy] = DIRS[p.face];
-  for (let k = 3; k <= 6; k++) {
-    const x = tx + dx * k, y = ty + dy * k;
-    if (x < 1 || y < 1 || x > COLS - 2 || y > ROWS - 2) break;
+  const b = gloveBomb(p);
+  if (!b || b.mv || b.fly || b.dead) return false;
+  const [dx, dy] = DIRS[p.face], bx = b.tx, by = b.ty;
+  for (const k of [3, 4, 5, 6, 7, 2]) {
+    const x = bx + dx * k, y = by + dy * k;
+    if (x < 1 || y < 1 || x > COLS - 2 || y > ROWS - 2) continue;
     const j = idx(x, y);
     if (G.grid[j] !== EMPTY || G.bombGrid[j] || G.enemies.some(e => e.alive && Math.round(e.x) === x && Math.round(e.y) === y)) continue;
-    G.bombGrid[idx(tx, ty)] = null; b.passers.clear();
-    b.fly = { x0: tx, y0: ty, x1: x, y1: y, t: 0, dur: 0.25 + k * 0.05 };
+    G.bombGrid[idx(bx, by)] = null; b.passers.clear();
+    b.fly = { x0: bx, y0: by, x1: x, y1: y, t: 0, dur: 0.25 + k * 0.05 };
     Sound.play.kick();
     return true;
   }
