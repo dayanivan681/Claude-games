@@ -3,19 +3,19 @@
 // Layout sizes are in iOS points and converted to internal pixels so buttons stay thumb-sized on every screen.
 
 const input = { left: false, right: false, up: false, down: false, fire: false, jump: false, bomb: false,
-  jumpPressed: false, bombPressed: false, pausePressed: false };
+  jumpPressed: false, bombPressed: false, rollPressed: false, pausePressed: false };
 const keys = new Set();
 let stick = null;                        // { id, ox, oy, x, y }
 const btnTouch = new Map();              // pointerId -> { name, sy, swiped }
 let touchUI = isTouch;
 let upLatch = false, downLatch = false;
 let pulseJump = false, pulseBomb = false, pulsePause = false;
-let prevJump = false, prevBomb = false;
+let prevJump = false, prevBomb = false, prevRoll = false;
 const padEdge = { up: false, down: false, left: false, right: false, a: false, b: false, start: false };
 let padPrev = {};
 
 const KEYMAP = { ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right", ArrowUp: "up", KeyW: "up", ArrowDown: "down", KeyS: "down",
-  KeyJ: "fire", KeyZ: "fire", KeyK: "jump", KeyX: "jump", Space: "jump", KeyL: "bomb", KeyC: "bomb" };
+  KeyJ: "fire", KeyZ: "fire", KeyK: "jump", KeyX: "jump", Space: "jump", KeyL: "bomb", KeyC: "bomb", ShiftLeft: "roll", ShiftRight: "roll" };
 
 // ---------- Layout ----------
 const DEFAULT_LAYOUT = {
@@ -167,7 +167,7 @@ function pollGamepad() {
   if (gp) {
     const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0, bt = i => !!gp.buttons[i]?.pressed;
     cur.left = ax < -0.4 || bt(14); cur.right = ax > 0.4 || bt(15); cur.up = ay < -0.55 || bt(12); cur.down = ay > 0.6 || bt(13);
-    cur.a = bt(0); cur.b = bt(1); cur.x = bt(2); cur.y = bt(3); cur.start = bt(9); cur.rb = bt(5) || bt(7);
+    cur.a = bt(0); cur.b = bt(1); cur.x = bt(2); cur.y = bt(3); cur.start = bt(9); cur.rb = bt(5) || bt(7); cur.lb = bt(4) || bt(6);
     touchUI = touchUI && !gp;
   }
   for (const k of Object.keys(padEdge)) padEdge[k] = cur[k] && !padPrev[k];
@@ -195,6 +195,8 @@ function readInput() {
   input.jumpPressed ||= pulseJump || (input.jump && !prevJump && !!pad?.a);
   input.bombPressed ||= pulseBomb || (input.bomb && !prevBomb && !!(pad?.b || pad?.y));
   input.pausePressed = pulsePause || padEdge.start;
+  const roll = keys.has("roll") || !!pad?.lb;
+  input.rollPressed ||= roll && !prevRoll; prevRoll = roll;
   prevJump = input.jump; prevBomb = input.bomb;
   pulseJump = false; pulseBomb = false; pulsePause = false;
   if (!inPlayControls() && pad) {
@@ -202,4 +204,4 @@ function readInput() {
     if (padEdge.a) uiKey("ok"); if (padEdge.b) uiKey("back"); if (padEdge.start) uiKey(state === "play" ? "back" : "ok");
   }
 }
-function clearInputEdges() { pulseJump = pulseBomb = pulsePause = false; input.jumpPressed = input.bombPressed = false; }
+function clearInputEdges() { pulseJump = pulseBomb = pulsePause = false; input.jumpPressed = input.bombPressed = input.rollPressed = false; }

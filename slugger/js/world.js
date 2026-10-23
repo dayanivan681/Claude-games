@@ -260,15 +260,20 @@ function updatePlayer(dt) {
   // Dodge roll: pull down while running. Short burst of speed and no damage while rolling.
   const downEdge = input.down && !P.wasDown; P.wasDown = input.down;
   P.rollT = Math.max(0, (P.rollT || 0) - dt); P.rollCD = Math.max(0, (P.rollCD || 0) - dt);
-  if (downEdge && dir && P.onGround && P.rollCD <= 0) { P.rollT = ROLL_T; P.rollCD = 0.75; P.rollDir = dir; sfx.jump(); dust(P.x, P.y, 4); }
+  if ((downEdge && dir || input.rollPressed) && P.onGround && P.rollCD <= 0) { P.rollT = ROLL_T; P.rollCD = 0.75; P.rollDir = dir || P.face; sfx.jump(); dust(P.x, P.y, 4); hapticTap(true); }
   if (P.rollT > 0) P.crouch = true;
   else if (dir) P.face = dir;
   const speed = P.crouch ? 36 : 92 * (1 + heroPerk("speed"));
   P.vx = approach(P.vx, 0, 400 * dt);
   if (P.rollT > 0) { movePlayerX(P.rollDir * 200 * dt); if (chance(0.5)) dust(P.x, P.y, 1); }
   else movePlayerX((dir * speed + P.vx) * dt);
-  if (input.jumpPressed && P.onGround && P.rollT <= 0) {
-    if (input.down && onRoof()) { P.dropT = 0.3; P.onGround = false; P.vy = -40; }
+  // Forgiving jumps: a press up to 0.13 s before landing still counts (buffer), and so does one
+  // up to 0.1 s after running off an edge (coyote time).
+  P.coyote = P.onGround ? 0.1 : Math.max(0, (P.coyote || 0) - dt);
+  P.jumpBuf = input.jumpPressed ? 0.13 : Math.max(0, (P.jumpBuf || 0) - dt);
+  if (P.jumpBuf > 0 && P.coyote > 0 && P.rollT <= 0) {
+    P.jumpBuf = 0; P.coyote = 0;
+    if (input.down && P.onGround && onRoof()) { P.dropT = 0.3; P.onGround = false; P.vy = -40; }
     else { P.vy = 300; P.onGround = false; sfx.jump(); dust(P.x, P.y, 3); }
   }
   const prevY = P.y, wasGround = P.onGround;
