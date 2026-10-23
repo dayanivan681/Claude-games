@@ -1,5 +1,20 @@
 # Claude Games
 
+La página principal (`index.html`) enlaza a los dos juegos. Cada juego es una PWA independiente: se instala en la pantalla de inicio y funciona sin conexión.
+
+## Slugger (`slugger/`)
+
+Run-and-gun en pixel art estilo Metal Slug, para jugar en horizontal.
+
+- **4 soldados** con ventaja propia (pistola doble, munición +50 %, 20 granadas, más velocidad).
+- **Armas** H, R, F y S, granadas, cuchillo cuerpo a cuerpo, rehenes que dan premios y el tanque **SLUG**.
+- **3 misiones** que se repiten más difíciles (desierto, selva, nieve), cada una con techos, arenas, camión, helicóptero y su propio jefe.
+- Todo en un solo archivo (`slugger/index.html`): gráficos en canvas, sonido sintetizado y fuente Press Start 2P incrustada.
+
+Instalar: abre `https://<usuario>.github.io/Claude-games/slugger/` en Safari → Compartir → **Agregar a inicio**.
+
+Controles: joystick a la izquierda (arriba apunta, abajo se agacha) y botones FUEGO / SALTO / BOMBA. Teclado: flechas, J dispara, K salta, L granada, P pausa, M silencio.
+
 ## Bomblast (`bomberman/`)
 
 Juego estilo Bomberman para iPhone, hecho como PWA (se instala en la pantalla de inicio y funciona sin conexión).
