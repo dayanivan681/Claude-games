@@ -412,7 +412,7 @@ const BOSSES = {
       procBlit(p, sx(b.x) - X, gy - Y - b.bob, { flash: f });
       // water in front of the hull
       const wx = sx(b.x - 6);
-      g.fillStyle = "#1e4a6a"; g.fillRect(wx, gy, W - wx + 4, GROUND);
+      g.fillStyle = "#1e4a6a"; g.fillRect(wx, gy, W - wx + 4, GROUND + VPAD);
       g.fillStyle = "#4a8ab0";
       for (let x = wx; x < W; x += 12) g.fillRect(x + Math.round(Math.sin(clock * 3 + x) * 2), gy + 1 + (x % 24 ? 0 : 2), 7, 1);
     } },

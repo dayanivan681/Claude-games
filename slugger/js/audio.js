@@ -1,14 +1,24 @@
 "use strict";
 // Synthesized audio: sound effects, a small step sequencer for music, and spoken callouts.
 
-let ac = null, masterGain = null, musicGain = null, sfxGain = null, noiseBuf = null;
+let ac = null, masterGain = null, musicGain = null, sfxGain = null, noiseBuf = null, gtrBus = null;
 
 function initAudio() {
   if (ac) { if (ac.state === "suspended") ac.resume(); return; }
   try {
     ac = new (window.AudioContext || window.webkitAudioContext)();
     masterGain = ac.createGain(); masterGain.connect(ac.destination);
-    musicGain = ac.createGain(); musicGain.connect(masterGain);
+    musicGain = ac.createGain();
+    const comp = ac.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 4;
+    musicGain.connect(comp); comp.connect(masterGain);
+    // rhythm guitar bus: soft-clip distortion, then a lowpass so the chugs stay warm under the lead
+    const shaper = ac.createWaveShaper(), curve = new Float32Array(1024);
+    for (let i = 0; i < 1024; i++) { const x = i / 512 - 1; curve[i] = Math.tanh(x * 6); }
+    shaper.curve = curve;
+    const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2600;
+    gtrBus = ac.createGain(); gtrBus.gain.value = 0.3;
+    shaper.connect(lp); lp.connect(gtrBus); gtrBus.connect(musicGain);
+    gtrBus.input = shaper;
     sfxGain = ac.createGain(); sfxGain.connect(masterGain);
     noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
     const d = noiseBuf.getChannelData(0);
@@ -105,39 +115,39 @@ function vibrate(ms) { if (!save.settings.haptics) return; if (NATIVE) return na
 // ---------- Music ----------
 // 32 eighth-note steps per pattern; "." is a rest. Drums: k kick, s snare, h hat, t tom.
 const TRACKS = {
-  menu: { bpm: 108, lead: "triangle", leadVol: 0.12, bassLen: 3.5,
-    bass: "A2 . . . E3 . . . F2 . . . C3 . . . D2 . . . A2 . . . E2 . . . G#2 . . .",
-    mel: "E5 . . . C5 . A4 . . . C5 . D5 . . . F5 . E5 . D5 . C5 . B4 . . . G#4 . . .",
-    drums: "k.......s.......k.......s...s..." },
-  desert: { bpm: 150, lead: "square", leadVol: 0.11, bassLen: 0.9,
+  menu: { bpm: 132, lead: "square", leadVol: 0.09, bassLen: 0.9, gtr: true,
+    bass: "E2 . E2 E2 . E2 E2 . G2 . G2 G2 . G2 A2 . C3 . C3 C3 . C3 C3 . B2 . B2 B2 A2 . G2 .",
+    mel: "E5 . . B4 E5 . F#5 G5 . . F#5 . E5 . D5 . E5 . . . G5 . A5 B5 . . A5 . G5 . F#5 .",
+    drums: "k.h.s.h.k.k.s.h.k.h.s.h.k.k.s.ss" },
+  desert: { bpm: 156, lead: "square", leadVol: 0.1, bassLen: 0.9, gtr: true,
     bass: "A2 . A2 A2 C3 . A2 . G2 . G2 G2 E2 . G2 . F2 . F2 F2 A2 . F2 . E2 . E2 G#2 E2 . E2 .",
     mel: "A4 . E5 . D5 C5 B4 . C5 . D5 . E5 . . . F5 . E5 D5 C5 . A4 . B4 . G#4 . E4 . . .",
     drums: "k.h.s.h.k.h.s.h.k.h.s.h.k.k.s.hh" },
-  jungle: { bpm: 138, lead: "square", leadVol: 0.09, bassLen: 0.9,
+  jungle: { bpm: 148, lead: "square", leadVol: 0.09, bassLen: 0.9, gtr: true,
     bass: "D2 . D3 . D2 . C3 . D2 . D3 . F2 . G2 . A2 . A3 . A2 . G2 . F2 . E2 . D2 . C2 .",
     mel: "A4 . . C5 D5 . A4 . G4 . A4 . . . F4 G4 A4 . C5 . D5 . E5 . D5 . C5 . A4 . . .",
     drums: "k.t.k.tts.t.k.t.k.t.k.tts.t.ktt." },
-  snow: { bpm: 124, lead: "triangle", leadVol: 0.15, bassLen: 3.5,
-    bass: "E2 . . . B2 . . . C3 . . . B2 . . . A2 . . . E3 . . . B2 . . . D3 . . .",
+  snow: { bpm: 144, lead: "square", leadVol: 0.09, bassLen: 0.9, gtr: true,
+    bass: "E2 . E2 E2 E2 . E2 . C2 . C2 C2 C2 . C2 . A1 . A1 A1 A1 . A1 . B1 . B1 B1 B1 . D2 .",
     mel: "E5 . G5 . B5 . G5 . A5 . . . G5 . F#5 . E5 . . . D5 . E5 . B4 . . . . . . .",
-    drums: "k...s...k...s...k...s...k..ss..." },
-  city: { bpm: 150, lead: "sawtooth", leadVol: 0.06, bassLen: 0.8,
+    drums: "k.h.s.h.k.h.s.h.k.h.s.h.k.k.s.hh" },
+  city: { bpm: 156, lead: "sawtooth", leadVol: 0.06, bassLen: 0.8, gtr: true,
     bass: "C2 C3 C2 C3 C2 C3 C2 C3 G#1 G#2 G#1 G#2 G#1 G#2 G#1 G#2 A#1 A#2 A#1 A#2 A#1 A#2 A#1 A#2 G1 G2 G1 G2 G1 G2 G1 G2",
     mel: "C5 . D#5 . G5 . . . F5 D#5 D5 . C5 . . . G#4 . C5 . D#5 . D5 . . . B4 . D5 . G5 . . .",
     drums: "k.h.s.h.k.h.s.h.k.h.s.h.k.k.s.hh" },
-  harbor: { bpm: 140, lead: "square", leadVol: 0.1, bassLen: 0.9,
+  harbor: { bpm: 150, lead: "square", leadVol: 0.09, bassLen: 0.9, gtr: true,
     bass: "G2 . D3 . G2 . D3 . F2 . C3 . F2 . C3 . G2 . D3 . G2 . B2 . C3 . A2 . D3 . F#2 .",
     mel: "D5 . B4 . G4 . B4 D5 . G5 . F5 . D5 . C5 . A4 . F4 . A4 C5 . D5 . . . F#5 . G5 .",
     drums: "k..sk..sk..sk.sskk.sk..sk..skkss" },
-  fortress: { bpm: 160, lead: "sawtooth", leadVol: 0.07, bassLen: 0.8,
+  fortress: { bpm: 166, lead: "sawtooth", leadVol: 0.07, bassLen: 0.8, gtr: true,
     bass: "A#1 A#1 . A#1 A#2 . A#1 . C#2 C#2 . C#2 C#3 . C#2 . F#1 F#1 . F#1 F#2 . F#1 . F1 F1 . F1 F2 . G#1 .",
     mel: "A#4 . . F5 . . E5 . . C#5 . . A#4 . C5 . C#5 . . A#4 . . F4 . . G#4 . A4 . A#4 .",
     drums: "k.k.s.k.k.k.s.kkk.k.s.k.k.ksss.s" },
-  boss: { bpm: 172, lead: "square", leadVol: 0.11, bassLen: 0.9,
+  boss: { bpm: 176, lead: "square", leadVol: 0.1, bassLen: 0.9, gtr: true,
     bass: "A2 . A2 A2 C3 . A2 . G2 . G2 G2 E2 . G2 . F2 . F2 F2 A2 . F2 . E2 . E2 G#2 E2 . E2 .",
     mel: "E5 E5 . E5 F5 . E5 . D5 D5 . D5 E5 . C5 . A4 A4 . C5 D5 . E5 . G#4 . B4 . E5 . E5 .",
     drums: "k.hsk.hsk.hsk.hskkhsk.hsk.hskkss" },
-  survival: { bpm: 180, lead: "sawtooth", leadVol: 0.06, bassLen: 0.8,
+  survival: { bpm: 180, lead: "sawtooth", leadVol: 0.06, bassLen: 0.8, gtr: true,
     bass: "E2 E3 E2 E3 G2 G3 G2 G3 A2 A3 A2 A3 C3 B2 A2 G2 E2 E3 E2 E3 G2 G3 G2 G3 A2 A3 B2 B3 B2 A2 G2 F#2",
     mel: "E5 . B4 . E5 G5 . E5 A5 . G5 . E5 . D5 . E5 . B4 . E5 G5 . A5 B5 . A5 . G5 . F#5 .",
     drums: "k.hsk.hsk.hsk.hskkhsk.hsk.hskkss" },
@@ -160,15 +170,35 @@ function musicTick() {
   const step = 60 / music.bpm / 2;
   if (nextNote < ac.currentTime) nextNote = ac.currentTime + 0.05;
   while (nextNote < ac.currentTime + 0.15) {
-    const t = nextNote - ac.currentTime, i = mStep % 32, tr = music;
-    const b = tr.B[i], m = tr.M[i], d = tr.drums[i];
-    if (b && b !== ".") tone("triangle", noteFreq(b), noteFreq(b), step * tr.bassLen, 0.5, t, musicGain);
-    if (m && m !== ".") tone(tr.lead, noteFreq(m), noteFreq(m), step * 0.8, tr.leadVol, t, musicGain);
-    if (d === "k") tone("sine", 130, 40, 0.12, 0.6, t, musicGain);
-    else if (d === "s") noise(0.09, 1800, 0.7, 0.35, "bandpass", t, musicGain);
-    else if (d === "h") noise(0.03, 7000, 1, 0.12, "highpass", t, musicGain);
-    else if (d === "t") tone("sine", 220, 90, 0.15, 0.4, t, musicGain);
+    const t = nextNote - ac.currentTime, i = mStep % 32, tr = music, loop = Math.floor(mStep / 32);
+    const b = tr.B[i], m = tr.M[i];
+    // every 4th loop ends on a snare fill; every other loop opens with a crash
+    const d = loop % 4 === 3 && i >= 28 ? "s" : tr.drums[i];
+    if (b && b !== ".") {
+      const f = noteFreq(b);
+      tone("triangle", f, f, step * tr.bassLen, 0.5, t, musicGain);
+      if (tr.gtr) powerChord(f * 2, step * 0.85, t);   // palm-muted power chord, an octave above the bass
+    }
+    if (m && m !== ".") {
+      const f = noteFreq(m);
+      tone(tr.lead, f, f, step * 0.8, tr.leadVol, t, musicGain);
+      if (loop % 2 === 1) tone("triangle", f / 2, f / 2, step * 0.8, tr.leadVol * 1.2, t, musicGain);   // thicker second pass
+    }
+    if (i === 0 && loop % 2 === 0) noise(1.1, 6500, 0.6, 0.16, "highpass", t, musicGain);
+    if (d === "k") { tone("sine", 150, 42, 0.16, 0.85, t, musicGain); noise(0.015, 3000, 1, 0.25, "bandpass", t, musicGain); }
+    else if (d === "s") { noise(0.11, 1900, 0.7, 0.42, "bandpass", t, musicGain); tone("triangle", 200, 150, 0.07, 0.22, t, musicGain); }
+    else if (d === "h") noise(0.03, 7500, 1, 0.12, "highpass", t, musicGain);
+    else if (d === "t") tone("sine", 220, 90, 0.15, 0.45, t, musicGain);
     nextNote += step; mStep++;
+  }
+}
+function powerChord(f, dur, t0) {
+  if (!gtrBus) return;
+  const t = ac.currentTime + Math.max(0, t0);
+  for (const r of [1, 1.5, 2]) {
+    const o = ac.createOscillator(); o.type = "sawtooth"; o.frequency.value = f * r;
+    const gn = ac.createGain(); gn.gain.setValueAtTime(0.22, t); gn.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(gn); gn.connect(gtrBus.input); o.start(t); o.stop(t + dur + 0.02);
   }
 }
 function jingle(kind) {
