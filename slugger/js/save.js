@@ -19,7 +19,7 @@ function defaultSave() {
     daily: { day: "", tasks: [], streak: 0, lastDone: "", max: { combo: 0, wave: 0 } },
     seen: {},
     settings: { autoFire: null, aimAssist: true, haptics: true, shake: true, music: 0.8, sfx: 1, voice: true,
-      ctrlSize: 1, ctrlAlpha: 0.6, leftHanded: false, layout: {} },
+      ctrlSize: 1, ctrlAlpha: 0.6, leftHanded: false, layout: {}, gore: true },
   };
 }
 function mergeSave(base, data) {
