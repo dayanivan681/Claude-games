@@ -14,6 +14,8 @@ Run-and-gun en pixel art estilo Metal Slug, pensado para jugar en horizontal en 
 
 Instalar: abre `https://<usuario>.github.io/Claude-games/slugger/` en Safari → Compartir → **Agregar a inicio**.
 
+App iOS nativa: [`slugger-ios/`](slugger-ios) envuelve este mismo juego (un solo código). Instrucciones para compilarla en el iPhone con Xcode en [`slugger-ios/README.md`](slugger-ios/README.md).
+
 ### Código
 
 Scripts clásicos sin paso de compilación, cargados en orden desde `slugger/index.html`:
