@@ -84,13 +84,14 @@ function makeBuilder(rng) {
   return L;
 }
 const waveSq = (n, side, o = {}) => Array.from({ length: n }, (_, i) => ({ type: o.types ? o.types[i % o.types.length] : pickType(), side, para: o.para, delay: i * 0.55, elite: o.elite }));
+const drones = (n, side = "r") => Array.from({ length: n }, (_, i) => ({ type: "drone", side, delay: 0.4 + i * 0.8 }));
 const ARENAS = [
   d => [waveSq(3, "r"), [{ type: "truck", delay: 0 }], waveSq(3, "l"), waveSq(3, "r", { para: true })],
   d => [waveSq(4, "r"), waveSq(3, "l", { types: ["knife", "shield"] }), [{ type: "heli", delay: 0 }, ...waveSq(2, "r", { para: true })]],
-  d => [[{ type: "truck", delay: 0 }], waveSq(4, "r", { types: ["rifle", "bazooka", "grenadier"] }), [{ type: "heli", delay: 0 }], waveSq(3, "l", { para: true })],
+  d => [[{ type: "truck", delay: 0 }], waveSq(4, "r", { types: ["rifle", "bazooka", "grenadier"] }), [{ type: "heli", delay: 0 }], [...drones(2), ...waveSq(3, "l", { para: true })]],
   d => [waveSq(4, "r"), [{ type: "biker", delay: 0 }, { type: "biker", delay: 1.2 }], waveSq(3, "l", { types: ["shield", "knife"] }), [{ type: "heli", delay: 0 }, ...waveSq(3, "r", { para: true, elite: true })]],
-  d => [[{ type: "truck", delay: 0 }], waveSq(4, "l"), [{ type: "jugg", delay: 0 }], waveSq(4, "r", { para: true })],
-  d => [waveSq(5, "r", { elite: true }), [{ type: "heli", delay: 0 }, { type: "heli", delay: 4 }], [{ type: "jugg", delay: 0 }, ...waveSq(3, "l")]],
+  d => [[{ type: "truck", delay: 0 }], [...waveSq(4, "l"), ...drones(2)], [{ type: "jugg", delay: 0 }], waveSq(4, "r", { para: true })],
+  d => [waveSq(5, "r", { elite: true }), [{ type: "heli", delay: 0 }, { type: "heli", delay: 4 }, ...drones(2, "l")], [{ type: "jugg", delay: 0 }, ...waveSq(3, "l")]],
   d => [[{ type: "truck", delay: 0 }, { type: "biker", delay: 2 }], waveSq(5, "r", { para: true, elite: true }), [{ type: "jugg", delay: 0 }, { type: "jugg", delay: 3 }]],
 ];
 
@@ -145,7 +146,7 @@ const CHUNKS = {
   arena(L, x, k = 0) {
     L.lock(x, ARENAS[k](L.d));
     L.cover(x + Math.round(W * 0.3)); L.cover(x + Math.round(W * 0.7));
-    L.crate(x + Math.round(W * 0.5), GROUND, L.pick(["H", "R", "S", "F"]));
+    L.crate(x + Math.round(W * 0.5), GROUND, L.pick(["H", "R", "S", "F", "L"]));
     return W + 40;
   },
   garage(L, x) {
@@ -238,10 +239,11 @@ function updateSurvival(dt) {
     if (w % 4 === 0) list.push({ type: "biker", delay: 1 }, { type: "biker", delay: 3 });
     if (w % 5 === 0) list.push({ type: "jugg", delay: 1.5 });
     if (w % 7 === 0) list.push({ type: "truck", delay: 0.5 });
+    if (w > 2 && w % 2 === 0) list.push(...drones(Math.min(1 + Math.floor(w / 4), 4), chance(0.5) ? "r" : "l"));
   }
   game.waveLeft = list.map(s => ({ ...s, side: s.side || "r" }));
   game.waveT = 2.5;
-  dropItem(rand(W * 0.2, W * 0.8), H + 10, w % 3 === 0 ? "vest" : pick(["H", "R", "S", "F", "B"]), { chute: true });
+  dropItem(rand(W * 0.2, W * 0.8), H + 10, w % 3 === 0 ? "vest" : pick(["H", "R", "S", "F", "L", "B"]), { chute: true });
 }
 
 // ---------- Parallax layers (pre-rendered once per mission) ----------

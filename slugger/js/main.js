@@ -22,7 +22,7 @@ function loop(t) {
       if (slowT > 0) { slowT -= dt; sim *= 0.3; }
       acc += sim * devSpeed;
       let n = 0;
-      while (acc >= STEP && n < 6 * devSpeed) { clock += STEP; stepGame(STEP); input.jumpPressed = input.bombPressed = false; acc -= STEP; n++; }
+      while (acc >= STEP && n < 6 * devSpeed) { clock += STEP; stepGame(STEP); input.jumpPressed = input.bombPressed = input.rollPressed = false; acc -= STEP; n++; }
       if (n >= 6 * devSpeed) acc = 0;
       save.stats.playTime += dt;
     }

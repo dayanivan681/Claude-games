@@ -15,9 +15,11 @@ const ENEMY = {
   truck: { hp: 22, score: 800, coins: 10, vehicle: true },
   jugg: { hp: 40, score: 3000, coins: 20 },
   mgnest: { hp: 12, score: 600, coins: 6, vehicle: true },
+  drone: { hp: 1.5, score: 250, coins: 3, vehicle: true },
 };
-const hpScale = () => 1 + game.diff * 0.15;
-const fireRate = e => (1 + game.diff * 0.12) * (e.elite ? 1.4 : 1);
+// Gentler late-game curve: mission 6 enemies have 1.6x health and fire 1.4x as often as mission 1's.
+const hpScale = () => 1 + game.diff * 0.12;
+const fireRate = e => (1 + game.diff * 0.08) * (e.elite ? 1.35 : 1);
 function pickType(diff = game.diff) {
   const r = Math.random();
   if (diff < 1) return r < 0.45 ? "rifle" : r < 0.7 ? "knife" : r < 0.85 ? "grenadier" : "bazooka";
@@ -34,6 +36,7 @@ function mkEnemy(type, x, o = {}) {
     wave: !!o.wave, idleKind: o.idle ? pick(["chat", "chat", "sleep"]) : null, t: 0, plat: o.plat || null,
     pal: type === "jugg" ? `jugg_${th}` : (o.elite || type === "sniper" ? `elite_${th}` : `rebel_${th}`) };
   e.maxHp = e.hp;
+  if (type === "drone") { e.baseY = e.y = GROUND + rand(62, 100); e.mode = "hover"; e.cd = rand(1.4, 2.4); e.offX = rand(-14, 14); }   // hovers almost overhead: aim up to shoot it
   if (type === "heli") { e.y = 150; e.baseY = 150 + rand(-8, 8); e.cd = 2; }
   if (type === "truck") { e.stopX = camX + W - 74; e.unload = 3 + Math.min(game.diff, 3); e.unT = 0.6; }
   if (type === "biker") { e.warn = 0.8; e.face = -1; e.hitDone = false; sfx.engine(); }
@@ -48,6 +51,7 @@ function mkEnemy(type, x, o = {}) {
 function ebox(e) {
   switch (e.type) {
     case "heli": return { x: e.x - 15, y: e.y - 9, w: 30, h: 17 };
+    case "drone": return { x: e.x - 6, y: e.y - 4, w: 12, h: 8 };
     case "truck": return { x: e.x - 28, y: e.y, w: 56, h: 30 };
     case "biker": return { x: e.x - 12, y: e.y, w: 24, h: 20 };
     case "jugg": return { x: e.x - 9, y: e.y, w: 18, h: 32 };
@@ -76,6 +80,7 @@ function killEnemy(e, kind, src = "P") {
   addScore(d.score * (e.elite ? 2 : 1), e.x, e.y + (e.type === "heli" ? 10 : 30));
   gainCoins(d.coins * (e.elite ? 2 : 1), e.x, e.y + 12);
   onKill(src, !!d.vehicle);
+  if (e.type === "drone") { boom(e.x, e.y, 0.6); sfx.boom(false); debris(e.x, e.y, 5, "#4a4a52"); sparks(e.x, e.y, 6, "#ffd34d", 120); return; }
   if (e.type === "heli") { corpses.push({ kind: "heli", x: e.x, y: e.y, vx: e.face * 30, vy: 0, t: 0, face: e.face, rot: 0 }); sfx.boom(false); hitstop = 0.05; return; }
   if (e.type === "truck" || e.type === "mgnest") {
     explode(e.x, e.y + 14, 40, 10, "p", 2.6, src); debris(e.x, e.y + 14, 16, "#4a5528"); hitstop = 0.06;
@@ -89,7 +94,7 @@ function killEnemy(e, kind, src = "P") {
   }
   if (e.type === "jugg") {
     explode(e.x, e.y + 14, 34, 8, "p", 2.2, src); hitstop = 0.1; addShake(5);
-    dropItem(e.x, e.y + 20, pick(["H", "R", "S", "F"])); dropItem(e.x + 8, e.y + 20, "vest");
+    dropItem(e.x, e.y + 20, pick(["H", "R", "S", "F", "L"])); dropItem(e.x + 8, e.y + 20, "vest");
     announce("JUGGERNAUT DOWN!", "#8ae06a");
   }
   if (e.type === "mortar") { explode(e.x + 10, e.y + 6, 22, 4, "p", 1.2, src); }
@@ -117,6 +122,7 @@ function updateEnemies(dt) {
     e.hitT = Math.max(0, e.hitT - dt);
     switch (e.type) {
       case "heli": updateHeli(e, dt, tg); continue;
+      case "drone": updateDrone(e, dt, tg); continue;
       case "truck": updateTruck(e, dt); continue;
       case "biker": updateBiker(e, dt); continue;
       case "jugg": updateJugg(e, dt, tg); continue;
@@ -258,6 +264,27 @@ function updateHeli(e, dt, tg) {
   if (e.cd <= 0 && Math.abs(tg.x - e.x) < 80) { e.cd = 1.25; addB({ kind: "ebomb", team: "e", x: e.x, y: e.y - 8, vx: e.face * 20, vy: -20, grav: GRAV * 0.6, life: 4 }); }
   if (chance(0.02) && e.hp < e.maxHp * 0.4) smoke(e.x, e.y, 1, 3);
 }
+// Kamikaze drone: hovers near you, blinks red while it locks on, then dives at that spot.
+// Shoot it down (aim up), step away from the marked spot, or roll through it.
+function updateDrone(e, dt, tg) {
+  e.t += dt;
+  if (e.mode === "hover") {
+    const want = clamp(tg.x + e.offX, camX + 20, camX + W - 20), d = want - e.x;
+    e.x += Math.sign(d) * Math.min(Math.abs(d), 85 * dt);
+    e.y = e.baseY + Math.sin(e.t * 3) * 4;
+    e.face = tg.x > e.x ? 1 : -1;
+    e.cd -= dt * fireRate(e);
+    if (e.cd <= 0 && e.x > camX && e.x < camX + W) { e.mode = "lock"; e.lockT = 0.65; e.aim = { x: tg.x, y: tg.y }; }
+  } else if (e.mode === "lock") {
+    e.lockT -= dt;
+    if (Math.floor(e.lockT * 12) % 2 === 0 && !throttled("drone", 0.12)) sfx.beep();
+    if (e.lockT <= 0) { const a = Math.atan2(e.aim.y - e.y, e.aim.x - e.x); e.vx = Math.cos(a) * 210; e.vy = Math.sin(a) * 210; e.mode = "dive"; }
+  } else {
+    e.x += e.vx * dt; e.y += e.vy * dt;
+    const hitP = !P.dead && !P.inTank && overlap(ebox(e), pBox()), hitT = P.inTank && tank && overlap(ebox(e), tankBox());
+    if (hitP || hitT || e.y <= GROUND + 2) { e.dead = true; explode(e.x, Math.max(GROUND, e.y), 16, 1, "e", 0.8, "drone"); }
+  }
+}
 function updateTruck(e, dt) {
   e.face = -1;
   if (e.x > e.stopX) { e.x -= 70 * dt; e.moving = true; return; }
@@ -335,6 +362,7 @@ function drawEnemy(e) {
   const mode = e.flash > 0 ? "flash" : "normal";
   switch (e.type) {
     case "heli": return drawHeli(e);
+    case "drone": return drawDrone(e);
     case "truck": return drawTruck(e);
     case "biker": return drawBiker(e);
     case "mgnest": return drawNest(e);
@@ -380,6 +408,16 @@ function drawEdgeWarning(y) {
   const x = W - SAFE.r - 14;
   text("!", x, y - 4, "#ff4a3a", { outline: true });
   g.fillStyle = "#ff4a3a"; g.fillRect(x + 8, y - 2, 4, 4);
+}
+function drawDrone(e) {
+  const p = procCanvas(24, 14), c = p.g, cx = 12, cy = 8, lock = e.mode === "lock" || e.mode === "dive";
+  PR(c, cx - 5, cy - 2, 10, 5, "#3a3e46"); PR(c, cx - 5, cy - 2, 10, 1, "#5a606a"); PR(c, cx - 3, cy + 3, 6, 1, "#2a2e34");
+  PR(c, cx - 1, cy, 3, 2, lock && Math.floor(clock * 14) % 2 ? "#ff3020" : "#8fd0e8");
+  const rw = Math.round(Math.abs(Math.sin(clock * 50)) * 5 + 2);
+  PR(c, cx - 8, cy - 3, 3, 1, "#3a3e46"); PR(c, cx + 5, cy - 3, 3, 1, "#3a3e46");
+  PR(c, cx - 7 - (rw >> 1), cy - 5, rw, 1, "#222"); PR(c, cx + 7 - (rw >> 1), cy - 5, rw, 1, "#222");
+  procBlit(p, sx(e.x) - cx, H - Math.round(e.y) - cy, { flip: e.face < 0, flash: e.flash > 0 });
+  if (e.mode === "lock") { g.fillStyle = "#ff3020"; const mx = sx(e.aim.x), my = H - GROUND; if (Math.floor(clock * 10) % 2) { g.fillRect(mx - 4, my - 1, 9, 1); g.fillRect(mx, my - 5, 1, 9); } }
 }
 function drawHeli(e) {
   const p = procCanvas(70, 30), c = p.g, cx = 35, cy = 16;
