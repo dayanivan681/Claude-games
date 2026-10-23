@@ -5,7 +5,7 @@
 let game = null, P = null, tank = null, boss = null;
 let enemies = [], bullets = [], items = [], coins = [], pows = [], crates = [], barrels = [], covers = [];
 let plats = [], walls = [], props = [], flags = [], hints = [], placed = [];
-let parts = [], booms = [], corpses = [], popups = [], blasts = [], decals = [];
+let parts = [], booms = [], corpses = [], popups = [], blasts = [], beams = [], decals = [];
 let camX = 0, shake = 0, hitstop = 0, slowT = 0, hurtFlash = 0;
 let banner = null, announceMsg = null;
 let progressDirty = false;
@@ -16,8 +16,9 @@ const WEAPONS = {
   R: { name: "ROCKET LAUNCHER", cd: 0.42, ammo: 30, voice: "Rocket launcher!" },
   F: { name: "FLAME SHOT", cd: 0.38, ammo: 30, voice: "Flame shot!" },
   S: { name: "SHOTGUN", cd: 0.6, ammo: 30, voice: "Shotgun!" },
+  L: { name: "LASER", cd: 0.1, ammo: 120, voice: "Laser gun!" },
 };
-const ITEM_COLORS = { H: "#ffd34d", R: "#ff7a4a", F: "#ffa02a", S: "#7ad0ff", B: "#8ae06a" };
+const ITEM_COLORS = { H: "#ffd34d", R: "#ff7a4a", F: "#ffa02a", S: "#7ad0ff", L: "#8fd0e8", B: "#8ae06a" };
 const dmgMul = () => 1 + save.armory.power * 0.12;
 const ammoMul = () => 1 + save.armory.ammo * 0.2 + heroPerk("ammo");
 const sx = x => Math.round(x - camX);
@@ -26,7 +27,7 @@ const sy = y => Math.round(H - y);
 function resetWorld() {
   enemies = []; bullets = []; items = []; coins = []; pows = []; crates = []; barrels = []; covers = [];
   plats = []; walls = []; props = []; flags = []; hints = []; placed = [];
-  parts = []; booms = []; corpses = []; popups = []; blasts = []; decals = [];
+  parts = []; booms = []; corpses = []; popups = []; blasts = []; beams = []; decals = [];
   tank = null; boss = null; camX = 0; shake = 0; hitstop = 0; slowT = 0; hurtFlash = 0; banner = null; announceMsg = null;
 }
 
@@ -346,10 +347,30 @@ function shoot() {
     }
     case "S": blasts.push({ x: ox, y: oy, dx, dy, t: 0 }); shotgunHit(ox, oy, dx, dy, 6 * mul); sfx.shotgun(); addShake(2); break;
     case "R": addB({ kind: "rocket", team: "p", x: ox, y: oy, vx: dx * 90, vy: dy * 90, acc: 520, max: 320, life: 2.2, dmg: 5 * mul, src: "R" }); sfx.rocket(); break;
+    case "L": laserShot(ox, oy, dx, dy, 1.1 * mul); if (!throttled("laser", 0.2)) sfx.laser(); break;
     case "F": addB({ kind: "flame", team: "p", x: ox, y: oy, vx: dx * 180, vy: dy * 180, life: 0.55, dmg: 2 * mul, hits: new Set(), src: "F" }); sfx.flame(); break;
   }
   muzzle(ox, oy, P.weapon !== "P");
   if (P.weapon !== "P" && --P.ammo <= 0) { P.weapon = "P"; P.ammo = Infinity; announce("OUT OF AMMO", "#cfc3b0"); }
+}
+// Laser: an instant beam that pierces soldiers, shields and vehicles; walls and bosses stop it.
+function laserShot(x, y, dx, dy, dmg) {
+  let len = dx ? (dx > 0 ? camX + W + 10 - x : x - camX + 10) : dy > 0 ? H + 10 - y : y - GROUND;
+  const seg = l => dx ? { x: dx > 0 ? x : x - l, y: y - 2, w: l, h: 4 } : { x: x - 2, y: dy > 0 ? y : y - l, w: 4, h: l };
+  const dist = b => Math.max(0, dx ? (dx > 0 ? b.x - x : x - (b.x + b.w)) : dy > 0 ? b.y - y : y - (b.y + b.h));
+  let wallHit = null, bossHit = null;
+  for (const w of walls) if (!w.dead && overlap(seg(len), w) && dist(w) < len) { len = dist(w); wallHit = w; }
+  for (const b of bossTargets()) if (overlap(seg(len), b) && dist(b) <= len) { len = dist(b); bossHit = b; wallHit = null; }
+  const r = seg(len);
+  for (const e of enemies) if (!e.dead && overlap(r, ebox(e))) damageEnemy(e, dmg, "laser", x, "L");
+  for (const c of crates) if (!c.dead && overlap(r, c)) damageCrate(c, dmg);
+  for (const b of barrels) if (!b.dead && overlap(r, b)) damageBarrel(b, dmg);
+  for (const p of pows) if (p.state === "tied" && overlap(r, powBox(p))) freePow(p);
+  if (wallHit) damageWall(wallHit, dmg);
+  if (bossHit) hitBossBox(bossHit, dmg);
+  if (wallHit || bossHit) sparks(x + dx * len, y + dy * len, 2, "#8fd0e8", 90);
+  beams.push({ x, y, dx, dy, len, t: 0 });
+  light(x + dx * 12, y + dy * 12, 28, 0.06, "#8fd0e8");
 }
 function shotgunHit(x, y, dx, dy, dmg) {
   const inCone = (cx, cy) => {
@@ -437,7 +458,7 @@ function updateTank(dt) {
 
 // ---------- Pickups, crates, barrels, walls, prisoners ----------
 function dropItem(x, y, kind, extra = {}) { items.push({ x, y, vy: 110, kind, t: 0, ...extra }); }
-function randItem(rng = Math.random) { const r = rng(); return r < 0.3 ? "H" : r < 0.45 ? "R" : r < 0.6 ? "F" : r < 0.75 ? "S" : r < 0.88 ? "B" : r < 0.94 ? "vest" : "food"; }
+function randItem(rng = Math.random) { const r = rng(); return r < 0.27 ? "H" : r < 0.4 ? "R" : r < 0.52 ? "F" : r < 0.64 ? "S" : r < 0.75 ? "L" : r < 0.88 ? "B" : r < 0.94 ? "vest" : "food"; }
 function damageCrate(c, d) {
   c.hp -= d; c.flash = 0.06;
   if (c.hp <= 0 && !c.dead) {
@@ -635,6 +656,8 @@ function updateFx(dt) {
   booms = booms.filter(b => b.t < b.dur + 0.2);
   for (const b of blasts) b.t += dt;
   blasts = blasts.filter(b => b.t < 0.22);
+  for (const b of beams) b.t += dt;
+  beams = beams.filter(b => b.t < 0.1);
   for (const p of popups) p.t += dt;
   popups = popups.filter(p => p.t < 0.9);
   for (const l of lights) l.life -= dt;
@@ -702,6 +725,7 @@ function spawnWaveUnit(s) {
   if (s.type === "heli") { mkEnemy("heli", camX + W + 40, o); announce("ENEMY CHOPPER!", "#ff9a4a"); }
   else if (s.type === "truck") { mkEnemy("truck", camX + W + 40, o); announce("ENEMY TRUCK!", "#ff9a4a"); }
   else if (s.type === "biker") mkEnemy("biker", camX + W + 60, o);
+  else if (s.type === "drone") mkEnemy("drone", s.side === "l" ? camX - 10 : camX + W + 10, o);
   else if (s.type === "jugg") { mkEnemy("jugg", camX + W + 20, o); announce("JUGGERNAUT!", "#ff5a4a"); }
   else if (s.para) mkEnemy(s.type, camX + rand(70, W - 60), { ...o, y: H + 10, para: true });
   else mkEnemy(s.type, s.side === "r" ? camX + W + 12 : camX - 12, o);

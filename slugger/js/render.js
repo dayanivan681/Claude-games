@@ -311,6 +311,14 @@ function drawBullet(b) {
     case "wave": { const dir = b.vx > 0 ? 1 : -1; for (let i = 0; i < 4; i++) { const h = 9 - i * 2; g.fillStyle = i % 2 ? game.theme.groundTop : "#ffffff"; g.fillRect(x - dir * i * 3 - 1, sy(GROUND + h), 3, h); } break; }
   }
 }
+function drawBeam(b) {
+  const x0 = sx(b.x), y0 = sy(b.y), wob = Math.floor(clock * 60) % 2;
+  const r = b.dx ? { x: b.dx > 0 ? x0 : x0 - b.len, y: y0 - 1 - wob, w: b.len, h: 3 + wob } : { x: x0 - 1 - wob, y: b.dy > 0 ? y0 - b.len : y0, w: 3 + wob, h: b.len };
+  g.globalAlpha = 1 - b.t / 0.1;
+  g.fillStyle = "#3aa0d8"; g.fillRect(r.x, r.y - (b.dx ? 1 : 0), r.w + (b.dx ? 0 : 2), r.h + (b.dx ? 2 : 0));
+  g.fillStyle = "#e6f6ff"; g.fillRect(b.dx ? r.x : r.x + 1, b.dx ? r.y + 1 : r.y, b.dx ? r.w : 1, b.dx ? 1 : r.h);
+  g.globalAlpha = 1;
+}
 function drawBlast(b) {
   const p = b.t / 0.22, x = sx(b.x), y = sy(b.y), len = 30 + p * 50, wid = 8 + p * 22;
   g.save(); g.translate(x, y); g.rotate(Math.atan2(-b.dy, b.dx)); g.globalAlpha = 1 - p;
@@ -411,6 +419,7 @@ function drawWorld(dt) {
     drawBullet(b);
   }
   for (const b of blasts) drawBlast(b);
+  for (const b of beams) drawBeam(b);
   for (const b of booms) drawBoom(b);
   drawParts();
   for (const c of coins) drawCoin(c);

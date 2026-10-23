@@ -128,12 +128,13 @@ defSprite("g_pistol", ["MMMMMML", "MmM....", ".mm...."], 1, 1, { muzzle: [7, 0] 
 defSprite("g_H", ["..mmmmm.....", "MMMMMMMMMMML", "MmmLLLLLLMMM", "..MM..mm....", "..mm..mm...."], 2, 2, { muzzle: [12, 1] });
 defSprite("g_R", ["..VVVVVVVVVVR", "MVVVVVVVVVVVV", "MvvvvvvvvvvvM", "...mm........"], 3, 2, { muzzle: [13, 1] });
 defSprite("g_F", ["..OO.......", "MMMMMMMMMRR", "MOOmmmmmmMM", ".OO.mm....."], 2, 2, { muzzle: [11, 1] });
+defSprite("g_L", ["..GGGG......", "MMMMMMMMMMGW", "MmmGGGGGGMMG", "..mm........"], 2, 2, { muzzle: [12, 1] });
 defSprite("g_S", ["MMMMMMMMMMML", "wwwwMmmmmmmm", "ww.mm......."], 3, 1, { muzzle: [12, 0] });
 defSprite("g_rifle", ["....MMMMMMML", "wwwwwMmmm...", "ww..mm......"], 3, 1, { muzzle: [12, 0] });
 defSprite("g_bazooka", [".VVVVVVVVVVVVVV.", "MVVVVVVVVVVVVVVM", "MvvvvvvvvvvvvvvM", ".......mm......."], 7, 3, { muzzle: [16, 1] });
 defSprite("g_minigun", ["...MMMMMMMMMMM", "..MmLLLLLLLLLm", "MMMMMMMMMMMMMM", "MmmMmLLLLLLLLm", "..mm....MMMMMM"], 3, 2, { muzzle: [14, 2] });
 defSprite("g_knife", ["WWWWw"], 0, 0);
-for (const id of ["g_pistol", "g_H", "g_R", "g_F", "g_S", "g_rifle"]) {
+for (const id of ["g_pistol", "g_H", "g_R", "g_F", "g_S", "g_L", "g_rifle"]) {
   const s = SPR[id];
   for (const dir of [1, -1]) {
     const tag = dir === 1 ? "_u" : "_d";
