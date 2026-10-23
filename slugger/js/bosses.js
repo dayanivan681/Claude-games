@@ -18,6 +18,7 @@ function updateBoss(dt) {
   if (!boss) return;
   const b = boss, tg = targetPos();
   b.flash = Math.max(0, b.flash - dt); b.recoil = Math.max(0, b.recoil - dt);
+  if (!b.enter && !banner && (b.hintT = (b.hintT || 0) + dt) > 1.5) showHint("roll", "PULL DOWN WHILE RUNNING TO ROLL PAST SHOTS");
   if (b.dying) {
     b.dieT += dt; b.boomT -= dt; addShake(2);
     b.def.dying?.(b, dt);
@@ -66,15 +67,20 @@ function bossBlast(x, y, R, dmg) {
 }
 function drawBoss() { if (boss) boss.def.draw(boss); }
 function bossBurst(b, dt, mx, my, tg, speed = 170) {
-  if (b.burst <= 0) return;
+  if (b.burst <= 0) { b.burstAim = null; return; }
+  if (!b.burstAim) {
+    // warn first, then fire the whole burst at where you were: keep moving (or roll) to dodge it
+    b.burstAim = { x: tg.x, y: tg.y }; b.burstT = 0.45;
+    part(mx, my, 0, 0, 0.45, "#ff3020", 8, 0, "flash"); popup(mx, my + 12, "!", "#ff3020");
+  }
   b.burstT -= dt;
   if (b.burstT > 0) return;
   b.burst--; b.burstT = 0.11;
-  const a = Math.atan2(tg.y - my, tg.x - mx) + rand(-0.08, 0.08);
+  const a = Math.atan2(b.burstAim.y - my, b.burstAim.x - mx) + rand(-0.05, 0.05);
   addB({ kind: "eb", team: "e", x: mx, y: my, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, life: 3 });
   muzzle(mx, my); sfx.enemyShot();
 }
-function lob(kind, x0, y0, tx, T, gr) { addB({ kind, team: "e", x: x0, y: y0, vx: (tx - x0) / T, vy: (GROUND - y0 - 0.5 * gr * T * T) / T, grav: gr, life: 4 }); }
+function lob(kind, x0, y0, tx, T, gr) { addB({ kind, team: "e", x: x0, y: y0, vx: (tx - x0) / T, vy: (GROUND - y0 - 0.5 * gr * T * T) / T, grav: gr, life: 4, mark: tx }); }
 // Thick pixel line (no anti-aliasing)
 function pline(c, x0, y0, x1, y1, w, color) {
   c.fillStyle = color;

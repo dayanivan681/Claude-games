@@ -142,10 +142,9 @@ for (const id of ["g_pistol", "g_H", "g_R", "g_F", "g_S", "g_rifle"]) {
   }
 }
 defSprite("shield", ["LLLL", "LZZz", "LZZz", "LZZz", "LZZz", "LZZz", "LZZz", "LzzZ", "LZZz", "LZZz", "LZZz", "LZZz", "LZZz", "LZZz", "LZZz", "LZZz", "LZZz", "LZZz", "LZZz", "zzzz"], 0, 19);
+// Canopy with risers that run down to the shoulders (anchor bottom middle = harness)
 defSprite("chute", [
-  "......QQQQQQQQQQQQ......", "...QQQQRRQQQQQQRRQQQQ...", "..QQQQRRRQQQQQQRRRQQQQ..", ".QQQQQRRRQQQQQQRRRQQQQQ.",
-  "qqqqqqqqqqqqqqqqqqqqqqqq", ".q.......q....q.......q.", "..q......q....q......q..", "...q.....q....q.....q...",
-  "....q....q....q....q....", ".....q...q....q...q.....", "......q..q....q..q......", ".......q.q....q.q......."], 12, 11);
+  "........QQQQQQQQQQ........", ".....QQQQRRQQQQRRQQQQ.....", "...QQQQQRRRQQQQRRRQQQQQ...", ".QQQQQQRRRQQQQQQRRRQQQQQQ.", "QQQQQQRRRRQQQQQQRRRRQQQQQQ", "qqqqqqqqqqqqqqqqqqqqqqqqqq", "..q.....q........q.....q..", "..q.....q........q.....q..", "...q.....q.......q....q...", "....q....q.......q....q...", "....q....q.......q...q....", ".....q...q.......q...q....", "......q...q.....q...q.....", ".......q..q.....q...q.....", ".......q..q.....q..q......", "........q.q.....q..q......", ".........q.q....q.q.......", ".........q.q....q.q.......", "..........qq....qq........"], 13, 18);
 
 // POW tied up, sitting (anchor bottom middle)
 defSprite("pow_tied", [
@@ -308,7 +307,7 @@ function composeSoldier(o) {
   const tx = 0, ty = hipY + 1 + bob;                       // torso belt
   const torso = o.torso || "t_rebel", head = o.head || "h_rebel";
   const sh = [2, ty + 6];                                   // shoulder
-  if (o.chute) compPart("chute", "fx", 1, ty + 22);
+  if (o.chute) compPart("chute", "fx", 0, ty + 7);
   compPart(legs, pal, 0, 0);
   compPart(torso, pal, tx, ty);
   if (o.arm === "bazooka") compPart("g_bazooka", "fx", sh[0], sh[1] + 2);

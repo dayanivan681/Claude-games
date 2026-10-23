@@ -163,7 +163,7 @@ function checkAchievements() {
     if (save.achievements[a.id] || !a.check(save.stats)) continue;
     save.achievements[a.id] = true;
     addCoins(a.reward);
-    toast(`★ ${a.name}  +${a.reward}¤`, "#ffd34d");
+    toast(`★ ${a.name}  +${a.reward} ¤`, "#ffd34d");
     if (typeof sfx !== "undefined") sfx.achieve();
   }
 }
@@ -220,7 +220,7 @@ function checkDaily() {
       bonus = 25 * Math.min(d.streak, 7);
     }
     addCoins(def.reward + bonus);
-    toast(`DAILY DONE: ${def.text(task.n)}  +${def.reward + bonus}¤`, "#8ae06a");
+    toast(`DAILY DONE: ${def.text(task.n)}  +${def.reward + bonus} ¤`, "#8ae06a");
     if (typeof sfx !== "undefined") sfx.achieve();
   }
   checkAchievements();

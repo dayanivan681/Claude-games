@@ -120,6 +120,7 @@ function explode(x, y, R, dmg, team, size = 1, src = "G") {
 }
 
 // ---------- Boxes ----------
+const ROLL_T = 0.36;
 const pBox = () => ({ x: P.x - 4, y: P.y, w: 8, h: P.crouch ? 13 : 24 });
 const tankBox = () => ({ x: tank.x - 20, y: tank.y, w: 40, h: 30 });
 const powBox = p => ({ x: p.x - 5, y: p.y, w: 10, h: 16 });
@@ -169,7 +170,7 @@ function updateCoins(dt) {
 
 // ---------- Player damage, death, respawn ----------
 function hurtPlayer() {
-  if (!game || game.phase === "clear" || P.dead || P.inv > 0) return;
+  if (!game || game.phase === "clear" || P.dead || P.inv > 0 || P.rollT > 0) return;
   if (P.inTank) { damageTank(); return; }
   P.hp--; game.hits++;
   hurtFlash = 0.25; hitstop = 0.06; addShake(3); vibrate(60); hapticTap(true);
@@ -256,11 +257,17 @@ function updatePlayer(dt) {
   if (P.inTank) return driveTank(dt);
   P.crouch = input.down && P.onGround;
   const dir = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-  if (dir) P.face = dir;
+  // Dodge roll: pull down while running. Short burst of speed and no damage while rolling.
+  const downEdge = input.down && !P.wasDown; P.wasDown = input.down;
+  P.rollT = Math.max(0, (P.rollT || 0) - dt); P.rollCD = Math.max(0, (P.rollCD || 0) - dt);
+  if (downEdge && dir && P.onGround && P.rollCD <= 0) { P.rollT = ROLL_T; P.rollCD = 0.75; P.rollDir = dir; sfx.jump(); dust(P.x, P.y, 4); }
+  if (P.rollT > 0) P.crouch = true;
+  else if (dir) P.face = dir;
   const speed = P.crouch ? 36 : 92 * (1 + heroPerk("speed"));
   P.vx = approach(P.vx, 0, 400 * dt);
-  movePlayerX((dir * speed + P.vx) * dt);
-  if (input.jumpPressed && P.onGround) {
+  if (P.rollT > 0) { movePlayerX(P.rollDir * 200 * dt); if (chance(0.5)) dust(P.x, P.y, 1); }
+  else movePlayerX((dir * speed + P.vx) * dt);
+  if (input.jumpPressed && P.onGround && P.rollT <= 0) {
     if (input.down && onRoof()) { P.dropT = 0.3; P.onGround = false; P.vy = -40; }
     else { P.vy = 300; P.onGround = false; sfx.jump(); dust(P.x, P.y, 3); }
   }
@@ -287,7 +294,7 @@ function updatePlayer(dt) {
   P.aim = aim;
   if (auto && tg && !dir && !tg.front && tg.behind && P.turnT <= 0) { P.face = -P.face; P.turnT = 0.35; }
   const autoShot = auto && tg && ((aim === "f" && tg.front) || (aim === "u" && (tg.up || input.up)) || aim === "d");
-  if ((input.fire || autoShot) && P.fireCD <= 0) shoot();
+  if ((input.fire || autoShot) && P.fireCD <= 0 && P.rollT <= 0) shoot();
   if (input.bombPressed) throwGrenade();
 
   if (tank && tank.state === "parked" && P.enterCD <= 0 && Math.abs(P.x - tank.x) < 14 && P.y < tank.y + 34) {
@@ -654,8 +661,9 @@ function updateCamera(dt) {
   let maxCam = game.len - W;
   if (game.lock) maxCam = Math.min(maxCam, game.lock.x);
   if (game.locks.length) maxCam = Math.min(maxCam, game.locks[0].x);
-  const lead = P.face * 18;
-  const want = clamp(focus - W * 0.4 + lead, camX, maxCam);
+  // Keep the hero near the left third so enemies show up early, well ahead of the right thumb.
+  const lead = P.face * 24;
+  const want = clamp(focus - W * 0.3 + lead, camX, maxCam);
   if (want > camX + 0.01 && !P.dead) { camX += Math.min(want - camX, 170 * dt); game.idleCam = 0; }
   else game.idleCam += dt;
 }

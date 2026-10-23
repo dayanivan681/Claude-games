@@ -15,7 +15,7 @@ const FONT_EXTRA = {
   "∞": ["........", "........", ".XX.XX..", "X..X..X.", "X..X..X.", ".XX.XX..", "........", "........"],
   "·": ["........", "........", "........", "..XX....", "..XX....", "........", "........", "........"],
   "×": ["........", "X....X..", ".X..X...", "..XX....", "..XX....", ".X..X...", "X....X..", "........"],
-  "¤": ["..XXX...", ".XXXXX..", "XXX.XXX.", "XX.X.XX.", "XXX.XXX.", ".XXXXX..", "..XXX...", "........"],
+  "¤": ["........", "..XXX...", ".XXXXX..", "XXX.XXX.", "XXX.XXX.", ".XXXXX..", "..XXX...", "........"],   // coin (solid, so it never reads as a 0)
   "▶": ["X.......", "XXX.....", "XXXXX...", "XXXXXXX.", "XXXXX...", "XXX.....", "X.......", "........"],
   "✓": ["........", "......X.", ".....XX.", "X...XX..", "XX.XX...", ".XXX....", "..X.....", "........"],
   "🔒": ["..XXX...", ".X...X..", ".X...X..", "XXXXXXX.", "XXX.XXX.", "XXX.XXX.", "XXXXXXX.", "........"],
@@ -74,7 +74,7 @@ function text(s, x, y, color = "#fff", o = {}) {
   if (o.outline) {
     const oc = o.outlineColor || "#000";
     for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1], [1, 1]]) drawGlyphs(ctx, chars, x + dx * scale, y + dy * scale, oc, scale);
-  } else if (o.shadow !== false) drawGlyphs(ctx, chars, x + scale, y + scale, o.shadowColor || "#000", scale);
+  } else if (o.shadow !== false) drawGlyphs(ctx, chars, x + scale, y + scale, o.shadowColor || "rgba(0,0,0,0.5)", scale);
   drawGlyphs(ctx, chars, x, y, color, scale);
   ctx.globalAlpha = a;
   return w;
