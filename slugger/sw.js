@@ -1,6 +1,7 @@
 // Offline cache: network first (always the latest build when online), cached copy when offline.
-const CACHE = 'slugger-v1';
-const ASSETS = ['./', './index.html', './manifest.webmanifest', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-512-maskable.png'];
+const CACHE = 'slugger-v2';
+const ASSETS = ['./', './index.html', './manifest.webmanifest', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-512-maskable.png',
+  ...['core', 'font', 'save', 'audio', 'render', 'sprites', 'world', 'enemies', 'bosses', 'levels', 'input', 'ui', 'main'].map(f => `./js/${f}.js`)];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => Promise.allSettled(ASSETS.map(a => c.add(a)))).then(() => self.skipWaiting()));
