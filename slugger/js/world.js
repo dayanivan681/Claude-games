@@ -654,8 +654,9 @@ function updateCamera(dt) {
   let maxCam = game.len - W;
   if (game.lock) maxCam = Math.min(maxCam, game.lock.x);
   if (game.locks.length) maxCam = Math.min(maxCam, game.locks[0].x);
-  const lead = P.face * 18;
-  const want = clamp(focus - W * 0.4 + lead, camX, maxCam);
+  // Keep the hero near the left third so enemies show up early, well ahead of the right thumb.
+  const lead = P.face * 24;
+  const want = clamp(focus - W * 0.3 + lead, camX, maxCam);
   if (want > camX + 0.01 && !P.dead) { camX += Math.min(want - camX, 170 * dt); game.idleCam = 0; }
   else game.idleCam += dt;
 }

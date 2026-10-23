@@ -21,7 +21,7 @@ function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 3);
   const cw = window.innerWidth, ch = window.innerHeight;
   const devW = Math.max(1, Math.round(cw * DPR)), devH = Math.max(1, Math.round(ch * DPR));
-  let k = Math.max(1, Math.floor(devH / 200));
+  let k = Math.max(1, Math.floor(devH / 240)); // ~250-300 px tall: a wider view keeps enemies clear of the thumbs
   while (k > 1 && devW / k < 400) k--;
   while (devH / k > 300 && devW / (k + 1) >= 300) k++;
   K = k; W = Math.floor(devW / k); H = Math.floor(devH / k);
