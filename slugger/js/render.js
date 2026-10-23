@@ -33,6 +33,7 @@ function resize() {
   PT = DPR / K;
   const s = measureSafe();
   SAFE.t = Math.ceil(s.t * PT); SAFE.r = Math.ceil(s.r * PT); SAFE.b = Math.ceil(s.b * PT); SAFE.l = Math.ceil(s.l * PT);
+  VPAD = matchMedia("(pointer: coarse)").matches ? Math.round(62 * PT + SAFE.b * 0.5) : 0;
   invalidateLayout();
   skyCache = null;
   if (game && layers && (layers.h !== H || layers.c0w !== W)) { buildLayers(game.theme, game.len); layers.c0w = W; }
@@ -73,16 +74,17 @@ function drawLayers() {
 }
 function drawGround(th) {
   const gy = H - GROUND;
-  g.fillStyle = th.ground; g.fillRect(0, gy, W, GROUND);
+  g.fillStyle = th.ground; g.fillRect(0, gy, W, GROUND + VPAD);
   g.fillStyle = th.groundTop; g.fillRect(0, gy, W, 3);
   g.fillStyle = th.dirt;
   for (let wx = Math.floor(camX / 10) * 10; wx < camX + W + 10; wx += 10) {
     const h1 = hash(wx), h2 = hash(wx + 7);
-    if (h1 < 0.6) g.fillRect(sx(wx + h1 * 9), gy + 5 + Math.round(h2 * 26), 2 + Math.round(h2 * 2), 1);
+    if (h1 < 0.6) g.fillRect(sx(wx + h1 * 9), gy + 5 + Math.round(h2 * (26 + VPAD)), 2 + Math.round(h2 * 2), 1);
+    if (VPAD && h1 > 0.75) g.fillRect(sx(wx + h2 * 9), gy + GROUND + Math.round(h1 * VPAD) - 4, 3, 1);
     if (h2 < 0.3) g.fillRect(sx(wx + h2 * 9), gy + 3, 1, 1);
   }
   if (th.id === "city") { g.fillStyle = "#c8c050"; for (let wx = Math.floor(camX / 40) * 40; wx < camX + W + 40; wx += 40) g.fillRect(sx(wx), gy + 16, 18, 2); }
-  if (th.id === "harbor") { g.fillStyle = shade(th.ground, -0.25); for (let wx = Math.floor(camX / 14) * 14; wx < camX + W + 14; wx += 14) g.fillRect(sx(wx), gy + 3, 1, GROUND); }
+  if (th.id === "harbor") { g.fillStyle = shade(th.ground, -0.25); for (let wx = Math.floor(camX / 14) * 14; wx < camX + W + 14; wx += 14) g.fillRect(sx(wx), gy + 3, 1, GROUND + VPAD); }
   g.fillStyle = "rgba(20,12,8,0.45)";
   for (const d of decals) { const x = sx(d.x); if (x > -30 && x < W + 30) { g.fillRect(x - d.w / 2, gy, d.w, 2); g.fillRect(x - d.w / 3, gy + 2, d.w * 2 / 3, 1); } }
 }
@@ -360,9 +362,10 @@ function drawParts() {
 const lightCv = document.createElement("canvas"), lg = lightCv.getContext("2d");
 function drawLighting(th) {
   if (!th.night) return;
-  if (lightCv.width !== W || lightCv.height !== H) { lightCv.width = W; lightCv.height = H; }
-  lg.globalCompositeOperation = "source-over"; lg.clearRect(0, 0, W, H);
-  lg.fillStyle = `rgba(4,6,22,${th.night})`; lg.fillRect(0, 0, W, H);
+  const LH = H + VPAD;
+  if (lightCv.width !== W || lightCv.height !== LH) { lightCv.width = W; lightCv.height = LH; }
+  lg.globalCompositeOperation = "source-over"; lg.clearRect(0, 0, W, LH);
+  lg.fillStyle = `rgba(4,6,22,${th.night})`; lg.fillRect(0, 0, W, LH);
   lg.globalCompositeOperation = "destination-out";
   const hole = (x, y, r, a = 1) => { const gr = lg.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(0,0,0,${a})`); gr.addColorStop(1, "rgba(0,0,0,0)"); lg.fillStyle = gr; lg.fillRect(x - r, y - r, r * 2, r * 2); };
   if (P && !P.dead) {
@@ -394,7 +397,7 @@ function drawWeather(th, dt) {
     else if (w === "ash") { if (f.p > 3) continue; f.y += 10 * dt; f.x += Math.sin(realClock + f.p) * 6 * dt; g.fillStyle = f.p < 1 ? "#ff8a3a" : "#8a7a74"; g.fillRect(Math.round(f.x), Math.round(f.y), 1, 1); }
     else if (w === "spray") { if (f.p > 1.2) continue; f.x -= 20 * dt; f.y += Math.sin(realClock * 2 + f.p) * 4 * dt; g.fillStyle = "rgba(255,255,255,0.5)"; g.fillRect(Math.round(f.x), Math.round(f.y), 1, 1); }
     else { if (f.p > 1.5) continue; f.x -= 30 * dt * f.s; f.y += Math.sin(realClock + f.p) * 3 * dt; g.fillStyle = "rgba(255,230,180,0.6)"; g.fillRect(Math.round(f.x), Math.round(f.y), 1, 1); }
-    if (f.y > H) { f.y = -4; f.x = rand(0, W); }
+    if (f.y > H + VPAD) { f.y = -4; f.x = rand(0, W); }
     if (f.x < -4) f.x += W + 8; if (f.x > W + 4) f.x -= W + 8;
   }
 }
@@ -404,6 +407,7 @@ function drawWorld(dt) {
   const th = game.theme;
   g.save();
   if (shake > 0) g.translate(Math.round(rand(-shake, shake)), Math.round(rand(-shake, shake)));
+  g.translate(0, -VPAD);
   drawSky(th); drawLayers(); drawGround(th);
   for (const p of props) drawProp(p);
   for (const p of plats) drawPlat(p);
