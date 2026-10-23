@@ -13,7 +13,7 @@ Run-and-gun en pixel art estilo Metal Slug, para jugar en horizontal.
 
 Instalar: abre `https://<usuario>.github.io/Claude-games/slugger/` en Safari → Compartir → **Agregar a inicio**.
 
-Controles: joystick a la izquierda (arriba apunta, abajo se agacha) y botones FUEGO / SALTO / BOMBA. Teclado: flechas, J dispara, K salta, L granada, P pausa, M silencio.
+El juego está en inglés. Controles: joystick a la izquierda (arriba apunta, abajo se agacha) y botones FIRE / JUMP / BOMB. Teclado: flechas, J dispara, K salta, L granada, P pausa, M silencio.
 
 ## Bomblast (`bomberman/`)
 

@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="es">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Slugger</title>
-<meta name="description" content="Run-and-gun arcade estilo Metal Slug: armas, rehenes, tanque y jefes.">
+<meta name="description" content="Metal Slug-style run-and-gun arcade: weapons, hostages, a tank and bosses.">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -56,8 +56,8 @@ canvas { display: block; touch-action: none; image-rendering: pixelated; }
 </style>
 </head>
 <body>
-<canvas id="game" aria-label="Slugger, juego de acción lateral estilo arcade"></canvas>
-<div id="rotate"><div><b>SLUGGER</b><br><br><span>Gira el teléfono en horizontal para jugar.</span></div></div>
+<canvas id="game" aria-label="Slugger, side-scrolling arcade shooter"></canvas>
+<div id="rotate"><div><b>SLUGGER</b><br><br><span>Rotate your phone to landscape to play.</span></div></div>
 
 <script>window.SLUGGER_APP = true;</script>
 <script>
@@ -197,12 +197,12 @@ function musicTick() {
 
 // ---------- Themes ----------
 const THEMES = [
-  { name: "DESIERTO", sky: ["#f08a4b", "#ffd9a0"], sun: "#fff1c4", far: "#d2935e", far2: "#b9774a", mid: "#9c6644", midWin: "#4e2c1e",
-    near: "#5d7a32", trunk: "#7a5232", ground: "#c99c5c", groundTop: "#e6bf7d", dirt: "#a87c46", deco: "palm", weather: "dust", wall: "#b8804e", wallD: "#7a4a2a", wallTop: "#e6bf7d", boss: "#8a7a44", bossName: "TORTUGA DE HIERRO" },
-  { name: "SELVA", sky: ["#4f9c94", "#cfe8b0"], sun: "#fffbe0", far: "#6a9a72", far2: "#527e5c", mid: "#3e6442", midWin: "#24402a",
-    near: "#2c5426", trunk: "#4a3520", ground: "#6b5a34", groundTop: "#7ea43c", dirt: "#54452a", deco: "jungle", weather: "leaves", wall: "#7d7c64", wallD: "#4a4a3a", wallTop: "#8aa83a", boss: "#566a3e", bossName: "MANTIS BLINDADA" },
-  { name: "NIEVE", sky: ["#141b38", "#4d6898"], sun: "#e8eeff", far: "#7f90b8", far2: "#62729a", mid: "#46527a", midWin: "#ffd36a",
-    near: "#203242", trunk: "#3a2a24", ground: "#d4dcea", groundTop: "#ffffff", dirt: "#9aa8c0", deco: "pine", weather: "snow", wall: "#6a4a3a", wallD: "#3e2a20", wallTop: "#ffffff", boss: "#5f7080", bossName: "OSO POLAR MK-II" },
+  { name: "DESERT", sky: ["#f08a4b", "#ffd9a0"], sun: "#fff1c4", far: "#d2935e", far2: "#b9774a", mid: "#9c6644", midWin: "#4e2c1e",
+    near: "#5d7a32", trunk: "#7a5232", ground: "#c99c5c", groundTop: "#e6bf7d", dirt: "#a87c46", deco: "palm", weather: "dust", wall: "#b8804e", wallD: "#7a4a2a", wallTop: "#e6bf7d", boss: "#8a7a44", bossName: "IRON TORTOISE" },
+  { name: "JUNGLE", sky: ["#4f9c94", "#cfe8b0"], sun: "#fffbe0", far: "#6a9a72", far2: "#527e5c", mid: "#3e6442", midWin: "#24402a",
+    near: "#2c5426", trunk: "#4a3520", ground: "#6b5a34", groundTop: "#7ea43c", dirt: "#54452a", deco: "jungle", weather: "leaves", wall: "#7d7c64", wallD: "#4a4a3a", wallTop: "#8aa83a", boss: "#566a3e", bossName: "ARMORED MANTIS" },
+  { name: "SNOW", sky: ["#141b38", "#4d6898"], sun: "#e8eeff", far: "#7f90b8", far2: "#62729a", mid: "#46527a", midWin: "#ffd36a",
+    near: "#203242", trunk: "#3a2a24", ground: "#d4dcea", groundTop: "#ffffff", dirt: "#9aa8c0", deco: "pine", weather: "snow", wall: "#6a4a3a", wallD: "#3e2a20", wallTop: "#ffffff", boss: "#5f7080", bossName: "POLAR BEAR MK-II" },
 ];
 
 // ---------- Palettes ----------
@@ -212,10 +212,10 @@ const PAL_POW = { skin: "#f0c49a", hair: "#6a4628", hat: "#6a4628", hatD: "#6a46
 const PAL_W = Object.fromEntries(Object.keys(PAL_P).map(k => [k, "#ffffff"]));
 const PAL_BURN = Object.fromEntries(Object.keys(PAL_P).map(k => [k, "#1c1210"]));
 const HEROES = [
-  { name: "RAYO", id: "pistol", perk: "PISTOLA DOBLE", pal: PAL_P, hat: "band" },
-  { name: "TANIA", id: "ammo", perk: "MUNICIÓN +50%", pal: { ...PAL_P, skin: "#e8b080", hair: "#2a1a14", hat: "#3a8a3a", hatD: "#2a6a2a", top: "#5a7a3a", topD: "#3e5a28", pants: "#7a6a4a", pantsD: "#5a4e36" }, hat: "pony" },
-  { name: "ERIKA", id: "bombs", perk: "20 GRANADAS", pal: { ...PAL_P, skin: "#f6cfa0", hair: "#f0d060", hat: "#3a5aa8", hatD: "#2a4080", top: "#d8d0b8", topD: "#aaa290", pants: "#4a6a3a", pantsD: "#344c28" }, hat: "cap" },
-  { name: "FITO", id: "speed", perk: "MÁS RÁPIDO", pal: { ...PAL_P, hair: "#3a2414", hat: "#c8a45a", hatD: "#94743a", top: "#8a6a3a", topD: "#64482a", pants: "#3a4a6a", pantsD: "#2a364e" }, hat: "cap", glasses: true },
+  { name: "RAYO", id: "pistol", perk: "DOUBLE PISTOL", pal: PAL_P, hat: "band" },
+  { name: "TANIA", id: "ammo", perk: "+50% AMMO", pal: { ...PAL_P, skin: "#e8b080", hair: "#2a1a14", hat: "#3a8a3a", hatD: "#2a6a2a", top: "#5a7a3a", topD: "#3e5a28", pants: "#7a6a4a", pantsD: "#5a4e36" }, hat: "pony" },
+  { name: "ERIKA", id: "bombs", perk: "20 GRENADES", pal: { ...PAL_P, skin: "#f6cfa0", hair: "#f0d060", hat: "#3a5aa8", hatD: "#2a4080", top: "#d8d0b8", topD: "#aaa290", pants: "#4a6a3a", pantsD: "#344c28" }, hat: "cap" },
+  { name: "FITO", id: "speed", perk: "FASTER", pal: { ...PAL_P, hair: "#3a2414", hat: "#c8a45a", hatD: "#94743a", top: "#8a6a3a", topD: "#64482a", pants: "#3a4a6a", pantsD: "#2a364e" }, hat: "cap", glasses: true },
 ];
 let heroIdx = 0;
 try { heroIdx = clamp(+localStorage.getItem("slugger.hero") || 0, 0, 3); } catch {}
@@ -225,7 +225,7 @@ const CARD = i => ({ x: 26 + i * 98, y: 40, w: 88, h: 118 });
 
 // ---------- Weapons ----------
 const WEAPONS = {
-  P: { name: "PISTOLA", cd: 0.17, ammo: Infinity },
+  P: { name: "PISTOL", cd: 0.17, ammo: Infinity },
   H: { name: "HEAVY MACHINE GUN", cd: 0.065, ammo: 200, voice: "Heavy machine gun!" },
   R: { name: "ROCKET LAUNCHER", cd: 0.42, ammo: 30, voice: "Rocket launcher!" },
   F: { name: "FLAME SHOT", cd: 0.38, ammo: 30, voice: "Flame shot!" },
@@ -295,7 +295,7 @@ function setupMission() {
   locks = [{ x: 1080, waves: makeWaves(0) }, { x: 2280, waves: makeWaves(1) }];
   P = mkPlayer(60);
   timeLeft = 60; timeAcc = 0;
-  banner = { title: `MISIÓN ${mission}`, sub: theme.name + (loop ? `  ·  NIVEL ${loop + 1}` : ""), t: 0, dur: 3.2 };
+  banner = { title: `MISSION ${mission}`, sub: theme.name + (loop ? `  ·  LEVEL ${loop + 1}` : ""), t: 0, dur: 3.2 };
   say(`Mission ${mission}. Start!`);
 }
 
@@ -338,9 +338,9 @@ function startGame() {
 const KEYMAP = { ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "right", ArrowUp: "up", KeyW: "up", ArrowDown: "down", KeyS: "down",
   KeyJ: "fire", KeyZ: "fire", KeyK: "jump", KeyX: "jump", Space: "jump", KeyL: "gren", KeyC: "gren" };
 const BTN = {
-  fire: { x: W - 44, y: H - 46, r: 25, label: "FUEGO" },
-  jump: { x: W - 100, y: H - 24, r: 19, label: "SALTO" },
-  gren: { x: W - 98, y: H - 76, r: 16, label: "BOMBA" },
+  fire: { x: W - 44, y: H - 46, r: 25, label: "FIRE" },
+  jump: { x: W - 100, y: H - 24, r: 19, label: "JUMP" },
+  gren: { x: W - 98, y: H - 76, r: 16, label: "BOMB" },
 };
 const keys = new Set();
 const btnPointers = new Map();
@@ -495,7 +495,7 @@ function damageEnemy(e, dmg, kind, fromX) {
   if (e.dead) return false;
   if (e.type === "shield" && e.shield > 0 && kind === "bullet" && Math.sign(fromX - e.x) === e.face) {
     e.shield -= dmg; sfx.clink(); sparks(e.x + e.face * 8, e.y + 12, 3, "#ffffff", 90);
-    if (e.shield <= 0) { debris(e.x + e.face * 8, e.y + 12, 6, "#9aa4ae"); popup(e.x, e.y + 26, "¡ESCUDO ROTO!", "#7ad0ff"); }
+    if (e.shield <= 0) { debris(e.x + e.face * 8, e.y + 12, 6, "#9aa4ae"); popup(e.x, e.y + 26, "SHIELD DOWN!", "#7ad0ff"); }
     return true;
   }
   if (e.state === "idle") { e.state = "alert"; e.alertT = 0.25; }
@@ -620,7 +620,7 @@ function updatePlayer(dt) {
 
   if (tank && tank.state === "parked" && P.enterCD <= 0 && Math.abs(P.x - tank.x) < 14 && P.y < tank.y + 34) {
     P.inTank = true; tank.state = "driven"; tank.face = P.face; tank.flash = 0;
-    sfx.pick(); announce("¡SLUG LISTO!"); say("Slug!");
+    sfx.pick(); announce("SLUG READY!"); say("Slug!");
   }
 }
 
@@ -696,7 +696,7 @@ function ejectTank(destroyed) {
   if (!tank) return;
   P.inTank = false; P.x = tank.x; P.y = tank.y + 30; P.vy = 260; P.onGround = false;
   P.inv = Math.max(P.inv, destroyed ? 1.4 : 0.3); P.enterCD = 1;
-  if (destroyed) { tank.state = "doomed"; tank.t = 1.1; announce("¡EL SLUG VA A EXPLOTAR!"); }
+  if (destroyed) { tank.state = "doomed"; tank.t = 1.1; announce("THE SLUG IS GOING TO BLOW!"); }
   else tank.state = "parked";
 }
 function driveTank(dt) {
@@ -763,8 +763,8 @@ function updateLocks(dt) {
     if (lock.pending.length) {
       for (const s of lock.pending) s.delay -= dt;
       for (const s of lock.pending.filter(s => s.delay <= 0)) {
-        if (s.type === "truck") { mkEnemy("truck", camX + W + 40, { wave: true }); announce("¡CAMIÓN ENEMIGO!"); }
-        else if (s.type === "heli") { const h = mkEnemy("heli", camX + W + 40, { wave: true }); h.face = -1; announce("¡HELICÓPTERO ENEMIGO!"); }
+        if (s.type === "truck") { mkEnemy("truck", camX + W + 40, { wave: true }); announce("ENEMY TRUCK!"); }
+        else if (s.type === "heli") { const h = mkEnemy("heli", camX + W + 40, { wave: true }); h.face = -1; announce("ENEMY CHOPPER!"); }
         else if (s.para) mkEnemy(s.type, camX + rand(70, W - 60), { y: H + 10, para: true, wave: true });
         else mkEnemy(s.type, s.side === "r" ? camX + W + 12 : camX - 12, { wave: true });
       }
@@ -908,7 +908,7 @@ function spawnBoss() {
     face: -1, dir: -1, mode: "walk", modeT: 2.5, walkT: 0, bombs: 0, bombT: 0, drop: 6 };
   if (kind === "walker") { boss.x = camX + W - 100; boss.y = H + 60; boss.cdC = 2.5; }
   if (kind === "bomber") { boss.x = camX + W + 90; boss.y = 148; boss.cdC = 2; boss.cdM = 4; boss.cdS = 2.5; }
-  banner = { title: "¡PELIGRO!", sub: theme.bossName, t: 0, dur: 2.6, red: true };
+  banner = { title: "DANGER!", sub: theme.bossName, t: 0, dur: 2.6, red: true };
   say("Danger!");
 }
 function updateBoss(dt) {
@@ -960,7 +960,7 @@ function updateBoss(dt) {
   b.cdS -= dt * spd;
   if (b.cdS <= 0) {
     b.cdS = 7;
-    if (enemies.length < 4) { mkEnemy(pickType(), b.x + 30, { y: GROUND + 86, vy: 150, vx: -70 }); announce("¡REFUERZOS!"); }
+    if (enemies.length < 4) { mkEnemy(pickType(), b.x + 30, { y: GROUND + 86, vy: 150, vx: -70 }); announce("REINFORCEMENTS!"); }
   }
 }
 function bossBurst(b, dt, mx, my, tg) {
@@ -987,7 +987,7 @@ function updateWalker(b, dt, tg, spd, p2) {
     b.face = dx < 0 ? -1 : 1;
     if (Math.abs(dx) > 70) { b.x += b.face * 30 * spd * dt; b.walkT += dt * spd; }
     b.cdC -= dt * spd; b.modeT -= dt * spd;
-    if (b.cdC <= 0) { b.mode = "charge"; b.modeT = 0.75; b.cdC = 3.6; tone("sawtooth", 200, 900, 0.7, 0.08); announce("¡AGÁCHATE!"); }
+    if (b.cdC <= 0) { b.mode = "charge"; b.modeT = 0.75; b.cdC = 3.6; tone("sawtooth", 200, 900, 0.7, 0.08); announce("DUCK!"); }
     else if (b.modeT <= 0) { b.mode = "crouch"; b.modeT = 0.45; }
   } else if (b.mode === "charge") {
     b.modeT -= dt;
@@ -1042,7 +1042,7 @@ function updateBomber(b, dt, tg, spd, p2) {
   if (b.cdM <= 0) {
     b.cdM = 5.5;
     for (const d of [-1, 1]) addB({ kind: "emissile", team: "e", x: b.x + d * 30, y: b.y - 10, vx: d * 50, vy: -50, life: 4.5 });
-    sfx.rocket(); announce("¡MISILES! DISPÁRALES");
+    sfx.rocket(); announce("MISSILES! SHOOT THEM DOWN");
   }
   b.cdS -= dt * spd;
   if (b.cdS <= 0) { b.cdS = 3; b.burst = p2 ? 6 : 4; b.burstT = 0; }
@@ -1055,7 +1055,7 @@ function missionComplete() {
   state = "complete"; stateT = 0;
   const bonus = missionPows * 1000;
   score += bonus;
-  banner = { title: "¡MISIÓN CUMPLIDA!", sub: `PRISIONEROS ${missionPows} × 1000 = ${bonus}`, t: 0, dur: 5.4 };
+  banner = { title: "MISSION COMPLETE!", sub: `PRISONERS ${missionPows} × 1000 = ${bonus}`, t: 0, dur: 5.4 };
   say("Mission complete!");
 }
 
@@ -1159,7 +1159,7 @@ function updatePows(dt) {
       const d = P.x - p.x;
       p.face = d >= 0 ? 1 : -1;
       if (Math.abs(d) > 14 && p.t < 3) p.x += p.face * 60 * dt;
-      else { p.state = "salute"; p.t = 0; dropItem(p.x + p.face * 6, p.y + 10, p.item); popup(p.x, p.y + 26, "¡GRACIAS!", "#fff"); sfx.thanks(); }
+      else { p.state = "salute"; p.t = 0; dropItem(p.x + p.face * 6, p.y + 10, p.item); popup(p.x, p.y + 26, "THANK YOU!", "#fff"); sfx.thanks(); }
     } else if (p.state === "salute") {
       if (p.t > 0.8) { p.state = "run"; p.t = 0; p.face = -1; }
     } else if (p.state === "run") {
@@ -1189,8 +1189,8 @@ function pickup(kind) {
     else { P.weapon = kind; P.ammo = amt; }
     announce(WEAPONS[kind].name); say(WEAPONS[kind].voice);
   } else if (kind === "B") {
-    if (P.inTank && tank) { tank.shells += 10; announce("+10 PROYECTILES"); }
-    else { P.bombs += 10; announce("+10 GRANADAS"); }
+    if (P.inTank && tank) { tank.shells += 10; announce("+10 SHELLS"); }
+    else { P.bombs += 10; announce("+10 GRENADES"); }
   } else { score += 500; popup(P.x, P.y + 26, "500", "#ffd34d"); }
 }
 
@@ -1930,17 +1930,17 @@ function drawHUD() {
   ctx.strokeStyle = gold; ctx.lineWidth = 1; ctx.strokeRect(7.5, 25.5, 83, 20);
   ctx.beginPath(); ctx.moveTo(52.5, 26); ctx.lineTo(52.5, 45); ctx.stroke();
   const inTank = P && P.inTank && tank;
-  T(inTank ? "VULCAN" : "ARMAS", 30, 31, 5, gold, "center");
-  T(inTank ? "CAÑÓN" : "BOMBAS", 72, 31, 5, gold, "center");
+  T(inTank ? "VULCAN" : "ARMS", 30, 31, 5, gold, "center");
+  T(inTank ? "CANNON" : "BOMBS", 72, 31, 5, gold, "center");
   const arms = inTank || P.weapon === "P" ? "∞" : String(P.ammo);
   T(arms, 30, 40, arms === "∞" ? 9 : 7, "#fff", "center");
   T(String(inTank ? tank.shells : P.bombs), 72, 40, 7, "#fff", "center");
   if (P && P.weapon !== "P" && !inTank) T(P.weapon, 96, 36, 8, ITEM_COLORS[P.weapon]);
   // time
-  T("TIEMPO", W / 2, 7, 5, gold, "center");
+  T("TIME", W / 2, 7, 5, gold, "center");
   T(String(Math.max(timeLeft, 0)).padStart(2, "0"), W / 2, 19, 13, timeLeft <= 10 && Math.floor(clock * 4) % 2 ? "#ff5a3a" : "#fff", "center");
   // lives & POWs
-  T(`MISIÓN ${mission}`, W - 56, 8, 5, gold, "right");
+  T(`MISSION ${mission}`, W - 56, 8, 5, gold, "right");
   T(`=${Math.max(lives, 0)}`, W - 56, 19, 8, "#fff", "right");
   ctx.fillStyle = hero.pal.skin; ctx.fillRect(W - 96, 15, 6, 6); ctx.fillStyle = hero.pal.hat; ctx.fillRect(W - 96, 14, 6, 2);
   T(`${hero.name}  POW ${powSaved}`, W - 8, 30, 5, "#e8e0c8", "right");
@@ -1963,7 +1963,7 @@ function drawHUD() {
   }
   // GO arrow
   if ((goT > 0 || (idleCam > 4 && !lock && !boss && state === "play")) && Math.floor(clock * 3) % 2) {
-    T("¡VAMOS!", W - 54, H / 2 - 20, 9, gold, "center");
+    T("GO!", W - 54, H / 2 - 20, 9, gold, "center");
     ctx.fillStyle = gold; ctx.strokeStyle = "#000"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(W - 66, H / 2 - 8); ctx.lineTo(W - 46, H / 2 - 8); ctx.lineTo(W - 46, H / 2 - 14); ctx.lineTo(W - 32, H / 2 - 2); ctx.lineTo(W - 46, H / 2 + 10); ctx.lineTo(W - 46, H / 2 + 4); ctx.lineTo(W - 66, H / 2 + 4); ctx.closePath();
     ctx.stroke(); ctx.fill();
@@ -2012,18 +2012,18 @@ function drawOverlay() {
     ctx.lineJoin = "round"; ctx.lineWidth = 7; ctx.strokeStyle = "#000"; ctx.strokeText("SLUGGER", W / 2, 54);
     ctx.lineWidth = 3; ctx.strokeStyle = "#5a2a0a"; ctx.strokeText("SLUGGER", W / 2, 54);
     ctx.fillStyle = grd; ctx.fillText("SLUGGER", W / 2, 54);
-    T("OPERACIÓN TORMENTA DE ARENA", W / 2, 80, 6, "#fff", "center");
-    if (Math.floor(clock * 2.5) % 2) T(touchUI ? "TOCA PARA EMPEZAR" : "PULSA ENTER PARA EMPEZAR", W / 2, 112, 9, gold, "center");
-    T(`RÉCORD ${String(highScore).padStart(8, "0")}`, W / 2, 132, 6, "#e8e0c8", "center");
-    T("Rescata prisioneros · Recoge armas H R F S · Sube al SLUG", W / 2, 152, 5, "#cfc3b0", "center");
-    T(touchUI ? "Joystick: mover · arriba apunta · abajo agacharse" : "← → mover · ↑ apuntar · ↓ agacharse · J disparar · K saltar · L granada", W / 2, 164, 5, "#cfc3b0", "center");
-    T("Cuchillo: dispara pegado a un enemigo · Abajo + salto: baja de un techo", W / 2, 176, 5, "#cfc3b0", "center");
-    if (window.SLUGGER_APP && !isInstalled()) T(/iPhone|iPad|iPod/.test(navigator.userAgent) ? "INSTALA: Compartir → Agregar a inicio" : "INSTALA: menú del navegador → Instalar app", W / 2, 191, 5, "#ffd34d", "center");
+    T("OPERATION SANDSTORM", W / 2, 80, 6, "#fff", "center");
+    if (Math.floor(clock * 2.5) % 2) T(touchUI ? "TAP TO START" : "PRESS ENTER TO START", W / 2, 112, 9, gold, "center");
+    T(`HI-SCORE ${String(highScore).padStart(8, "0")}`, W / 2, 132, 6, "#e8e0c8", "center");
+    T("Rescue prisoners · Grab weapons H R F S · Hop in the SLUG", W / 2, 152, 5, "#cfc3b0", "center");
+    T(touchUI ? "Joystick: move · up aims · down crouches" : "← → move · ↑ aim · ↓ crouch · J fire · K jump · L grenade", W / 2, 164, 5, "#cfc3b0", "center");
+    T("Knife: fire up close · Down + jump: drop off a roof", W / 2, 176, 5, "#cfc3b0", "center");
+    if (window.SLUGGER_APP && !isInstalled()) T(/iPhone|iPad|iPod/.test(navigator.userAgent) ? "INSTALL: Share → Add to Home Screen" : "INSTALL: browser menu → Install app", W / 2, 191, 5, "#ffd34d", "center");
     drawMute();
     return;
   }
   if (state === "select") {
-    T("ELIGE TU SOLDADO", W / 2, 22, 10, gold, "center");
+    T("CHOOSE YOUR SOLDIER", W / 2, 22, 10, gold, "center");
     for (let i = 0; i < 4; i++) {
       const c = CARD(i), sel = i === heroIdx, h = HEROES[i], cx = c.x + c.w / 2;
       ctx.strokeStyle = sel ? gold : "rgba(255,255,255,0.3)"; ctx.lineWidth = sel ? 2 : 1;
@@ -2031,24 +2031,24 @@ function drawOverlay() {
       T(h.name, cx, c.y + c.h - 26, 8, sel ? gold : "#fff", "center");
       T(h.perk, cx, c.y + c.h - 11, 4.5, "#cfc3b0", "center");
     }
-    if (Math.floor(clock * 2.5) % 2) T(touchUI ? "TOCA UN SOLDADO" : "← →  ELEGIR   ·   ENTER  JUGAR", W / 2, 180, 7, "#fff", "center");
+    if (Math.floor(clock * 2.5) % 2) T(touchUI ? "TAP A SOLDIER" : "← →  CHOOSE   ·   ENTER  PLAY", W / 2, 180, 7, "#fff", "center");
     drawMute();
     return;
   }
   if (state === "continue") {
     ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, W, H);
-    T("¿CONTINUAR?", W / 2, H / 2 - 36, 16, gold, "center");
+    T("CONTINUE?", W / 2, H / 2 - 36, 16, gold, "center");
     T(String(Math.max(0, Math.ceil(contT))), W / 2, H / 2 + 4, 30, "#fff", "center");
-    if (Math.floor(clock * 3) % 2) T(touchUI ? "TOCA PARA SEGUIR" : "PULSA UNA TECLA", W / 2, H / 2 + 40, 8, "#fff", "center");
-    T(`PUNTOS ${score}`, W / 2, H / 2 + 60, 6, "#e8e0c8", "center");
+    if (Math.floor(clock * 3) % 2) T(touchUI ? "TAP TO CONTINUE" : "PRESS ANY KEY", W / 2, H / 2 + 40, 8, "#fff", "center");
+    T(`SCORE ${score}`, W / 2, H / 2 + 60, 6, "#e8e0c8", "center");
     return;
   }
   if (state === "over") {
     ctx.fillStyle = "rgba(0,0,0,0.65)"; ctx.fillRect(0, 0, W, H);
     T("GAME OVER", W / 2, H / 2 - 30, 22, "#ff4a3a", "center");
-    T(`PUNTOS ${score}`, W / 2, H / 2 + 6, 9, "#fff", "center");
-    T(`RÉCORD ${highScore}   ·   POW ${powSaved}`, W / 2, H / 2 + 24, 6, "#e8e0c8", "center");
-    if (stateT > 1 && Math.floor(clock * 2.5) % 2) T(touchUI ? "TOCA PARA VOLVER" : "PULSA UNA TECLA", W / 2, H / 2 + 48, 8, gold, "center");
+    T(`SCORE ${score}`, W / 2, H / 2 + 6, 9, "#fff", "center");
+    T(`HI-SCORE ${highScore}   ·   POW ${powSaved}`, W / 2, H / 2 + 24, 6, "#e8e0c8", "center");
+    if (stateT > 1 && Math.floor(clock * 2.5) % 2) T(touchUI ? "TAP TO RETURN" : "PRESS ANY KEY", W / 2, H / 2 + 48, 8, gold, "center");
   }
 }
 
@@ -2065,8 +2065,8 @@ function render(dt) {
   drawOverlay();
   if (paused) {
     ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, W, H);
-    T("PAUSA", W / 2, H / 2 - 18, 18, "#ffd34d", "center");
-    T(touchUI ? "TOCA PARA SEGUIR" : "P / ENTER PARA SEGUIR", W / 2, H / 2 + 14, 8, "#fff", "center");
+    T("PAUSED", W / 2, H / 2 - 18, 18, "#ffd34d", "center");
+    T(touchUI ? "TAP TO RESUME" : "P / ENTER TO RESUME", W / 2, H / 2 + 14, 8, "#fff", "center");
     drawMute();
   }
 }
