@@ -57,6 +57,7 @@ function initHaptics() {
 }
 function hapticTap(strong = false) {
   if (!save.settings.haptics) return;
+  if (NATIVE) return nativeHaptic(strong ? "medium" : "light");
   try {
     if (navigator.vibrate) navigator.vibrate(strong ? 35 : 10);
     else if (hapticLabel) hapticLabel.click();

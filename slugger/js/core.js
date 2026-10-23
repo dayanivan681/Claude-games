@@ -5,6 +5,9 @@
 // integer upscale factor K, device pixel ratio, safe-area insets (internal px) and px-per-point.
 let W = 450, H = 234, K = 5, DPR = 1, PT = 0.6;
 const SAFE = { l: 0, r: 0, t: 0, b: 0 };
+// Inside the iOS app (slugger-ios) the WKWebView exposes native bridges; on the web these are absent.
+const NATIVE = !!window.webkit?.messageHandlers?.haptic;
+function nativeHaptic(kind) { try { window.webkit.messageHandlers.haptic.postMessage(kind); } catch {} }
 
 const GROUND = 34;          // world y of the ground surface (world y grows upward from the bottom edge)
 const GRAV = -820;

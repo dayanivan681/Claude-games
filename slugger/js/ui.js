@@ -203,7 +203,7 @@ function drawTitle() {
   if (window.SLUGGER_APP && !isInstalled()) text(/iPhone|iPad|iPod/.test(navigator.userAgent) ? "INSTALL: SHARE → ADD TO HOME SCREEN" : "INSTALL: BROWSER MENU → INSTALL APP", W / 2, H - SAFE.b - 12, UIC.dim, { align: "center" });
   coinsLabel(W - SAFE.r - 8, SAFE.t + 8, save.coins);
 }
-const isInstalled = () => matchMedia("(display-mode: fullscreen)").matches || matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+const isInstalled = () => NATIVE || matchMedia("(display-mode: fullscreen)").matches || matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 
 // ---------- Main menu ----------
 function drawMain() {
