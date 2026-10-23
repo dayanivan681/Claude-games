@@ -76,7 +76,8 @@ function coinsLabel(x, y, n, align = "right") {
 }
 function bar(x, y, w, h, frac, col, bg = "#140c0e") { g.fillStyle = "#000"; g.fillRect(x - 1, y - 1, w + 2, h + 2); g.fillStyle = bg; g.fillRect(x, y, w, h); g.fillStyle = col; g.fillRect(x, y, Math.round(w * clamp(frac, 0, 1)), h); }
 function starsRow(x, y, stars, scale = 1) { stars.forEach((s, i) => text(s ? "★" : "☆", x + i * 9 * scale, y, s ? UIC.gold : "#5a4a46", { scale, shadow: true })); }
-function title(s, y = SAFE.t + 6) { text(s, W / 2, y, UIC.gold, { align: "center", scale: 2, outline: true }); }
+// A menu toast takes the title's place while it shows, so the two never overlap.
+function title(s, y = SAFE.t + 6) { if (toastShown && state !== "play" && state !== "results") return; text(s, W / 2, y, UIC.gold, { align: "center", scale: 2, outline: true }); }
 function backButton() { button("back", SAFE.l + 6, SAFE.t + 6, 54, 20, "← BACK", () => backFromScreen()); }
 function topCoins() { coinsLabel(W - SAFE.r - 8, SAFE.t + 12, save.coins); }
 function dim(a = 0.55) { g.fillStyle = `rgba(10,6,8,${a})`; g.fillRect(0, 0, W, H); }
@@ -228,7 +229,7 @@ function drawMain() {
     const lines = wrapText(def.text(t.n), pw - 12);
     text(lines[0], px + 6, y, t.done ? UIC.dim : UIC.ink);
     bar(px + 6, y + 11, pw - 46, 4, prog / t.n, t.done ? UIC.green : UIC.gold);
-    text(t.done ? "✓" : `${def.reward}¤`, px + pw - 6, y + 9, t.done ? UIC.green : UIC.gold, { align: "right" });
+    text(t.done ? "✓" : `${def.reward} ¤`, px + pw - 6, y + 9, t.done ? UIC.green : UIC.gold, { align: "right" });
   });
   // bottom row
   const items = [["armory", "ARMORY"], ["soldiers", "SOLDIERS"], ["awards", "AWARDS"], ["records", "RECORDS"], ["settings", "SETTINGS"]];
@@ -261,7 +262,8 @@ function drawMap() {
     const sz = 32;
     button("m" + id, n.x - sz / 2, n.y - sz / 2, sz, sz, locked ? "🔒" : String(id), () => { briefId = id; screen = "brief"; screenT = 0; uiFocus = -1; }, { enabled: !locked, scale: 2, fill: locked ? "#1a1416" : "#3a2420", border: rec?.done ? UIC.gold : UIC.line });
     const nl = n.m.name.split(" ");
-    nl.forEach((w, k) => text(w, n.x, n.y + 20 + k * 9, locked ? "#6a5a56" : UIC.ink, { align: "center" }));
+    g.fillStyle = "rgba(20,14,16,0.45)"; g.fillRect(n.x - Math.max(...nl.map(s => textW(s))) / 2 - 3, n.y + 18, Math.max(...nl.map(s => textW(s))) + 6, nl.length * 9 + 2);
+    nl.forEach((w, k) => text(w, n.x, n.y + 20 + k * 9, locked ? "#8a7a72" : UIC.ink, { align: "center" }));
     if (!locked) starsRow(n.x - 13, n.y + 21 + nl.length * 9, rec?.stars || [false, false, false]);
     if (rec?.rank) text(rec.rank, n.x + 14, n.y - 26, UIC.orange, { outline: true });
   }
@@ -302,7 +304,7 @@ function drawArmory() {
     lines.slice(0, 2).forEach((l, j) => text(l, x + 6, y + 17 + j * 10, UIC.ink));
     if (cost !== null) text(`NEXT: ${a.short(lvl + 1)}`.slice(0, Math.floor((cw - 72) / 8)), x + 6, y + ch - 12, UIC.dim);
     const can = cost !== null && save.coins >= cost;
-    button("buy" + a.id, x + cw - 66, y + ch - 26, 60, 20, cost === null ? "MAX" : `${cost}¤`, () => { if (buyArmory(a.id)) { sfx.buy(); toast(`${a.name} LV ${save.armory[a.id]}`, UIC.green); } else sfx.deny(); }, { enabled: cost !== null, fill: can ? "#2a4a1a" : UIC.bg2, sound: false });
+    button("buy" + a.id, x + cw - 66, y + ch - 26, 60, 20, cost === null ? "MAX" : `${cost} ¤`, () => { if (buyArmory(a.id)) { sfx.buy(); toast(`${a.name} LV ${save.armory[a.id]}`, UIC.green); } else sfx.deny(); }, { enabled: cost !== null, fill: can ? "#2a4a1a" : UIC.bg2, sound: false });
   });
 }
 
@@ -331,7 +333,7 @@ function drawSoldiers() {
       if (!unlockedC && sel) { h.costume = [3, 2, 1, 0].find(k => COSTUME_LEVELS[k] <= h.level) ?? 0; }
     } else {
       wrapText(`CLEAR MISSION ${info.unlockMission} OR BUY`, cw - 8).forEach((l, j) => text(l, x + cw / 2, y + 110 + j * 10, UIC.dim, { align: "center" }));
-      button("unl" + i, x + 4, y + ch - 24, cw - 8, 20, `${info.cost}¤`, () => { if (buyHero(i)) { sfx.buy(); toast(`${info.name} JOINED THE SQUAD!`, UIC.blue); } else sfx.deny(); }, { enabled: save.coins >= info.cost, sound: false });
+      button("unl" + i, x + 4, y + ch - 24, cw - 8, 20, `${info.cost} ¤`, () => { if (buyHero(i)) { sfx.buy(); toast(`${info.name} JOINED THE SQUAD!`, UIC.blue); } else sfx.deny(); }, { enabled: save.coins >= info.cost, sound: false });
     }
   });
 }
@@ -352,7 +354,7 @@ function drawAwards() {
     text(got ? "★" : "☆", x + 4, y + 7, got ? UIC.gold : "#5a4a46");
     text(a.name, x + 15, y + 3, got ? UIC.gold : UIC.ink);
     text(a.desc.slice(0, Math.floor((cw - 50) / 8)), x + 15, y + 12, UIC.dim);
-    text(`${a.reward}¤`, x + cw - 8, y + 3, got ? UIC.dim : UIC.gold, { align: "right" });
+    text(`${a.reward} ¤`, x + cw - 8, y + 3, got ? UIC.dim : UIC.gold, { align: "right" });
   });
   g.restore();
 }
@@ -662,7 +664,7 @@ function drawFailed() {
   if (!game) { state = "menu"; screen = "map"; return; }
   drawWorld(0); dim(0.7);
   title("MISSION FAILED", Math.round(H * 0.16));
-  text(`YOU KEEP THE ${game.coins}¤ YOU FOUND`, W / 2, Math.round(H * 0.16) + 24, UIC.gold, { align: "center" });
+  text(`YOU KEEP THE ${game.coins} ¤ YOU FOUND`, W / 2, Math.round(H * 0.16) + 24, UIC.gold, { align: "center" });
   const tip = TIPS[Math.floor(game.time) % TIPS.length];
   wrapText("TIP: " + tip, W - 60).forEach((l, i) => text(l, W / 2, Math.round(H * 0.16) + 40 + i * 10, UIC.blue, { align: "center" }));
   const w = 170, x = Math.round(W / 2 - w / 2);
@@ -679,7 +681,8 @@ function drawToasts(dt) {
   const t = toastShown; t.t += dt;
   const k = t.t < 0.25 ? easeOut(t.t / 0.25) : t.t > 2.6 ? 1 - easeOut((t.t - 2.6) / 0.3) : 1;
   const w = Math.min(W - 20, textW(t.msg) + 16), x = Math.round(W / 2 - w / 2);
-  const y = state === "results" ? Math.round(H - SAFE.b - 52 + (1 - k) * 30) : Math.round(SAFE.t + 4 - (1 - k) * 30) + (state === "play" ? 46 : 2);
+  // in play: under the HUD; on results and menus: near the bottom so it never covers a screen title
+  const y = state === "results" ? Math.round(H - SAFE.b - 52 + (1 - k) * 30) : Math.round(SAFE.t + 6 - (1 - k) * 30) + (state === "play" ? 44 : 0);
   frame(x, y, w, 16, "rgba(20,14,16,0.92)", t.color);
   text(t.msg, W / 2, y + 4, t.color, { align: "center" });
   if (t.t > 2.9) toastShown = null;

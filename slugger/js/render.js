@@ -211,6 +211,12 @@ function drawPlayer() {
     return;
   }
   if (P.inv > 0 && Math.floor(clock * 20) % 2) return;
+  if (P.rollT > 0) {
+    // tumble around the body centre (7 px above the feet)
+    const r = Math.floor((1 - P.rollT / ROLL_T) * 4) % 4, off = [[0, 0], [-7, -7], [0, -14], [7, -7]][r];
+    drawSoldier({ pal: heroPal(), head: look.head, torso: "t_hero", pose: "crouch", arm: "none" }, x + off[0] * P.face, y + off[1], P.face, { rot: r });
+    return;
+  }
   const pose = playerPose(), gun = P.weapon === "P" ? "pistol" : P.weapon;
   let arm = P.aim;
   if (P.knifeT > 0) arm = "knife"; else if (P.throwT > 0) arm = "throw";
@@ -399,7 +405,11 @@ function drawWorld(dt) {
   drawPlayer();
   if (tank && tank.state === "driven") drawTankEntity(tank);
   for (const e of enemies) if (e.type === "heli") drawEnemy(e);
-  for (const b of bullets) drawBullet(b);
+  for (const b of bullets) {
+    // landing marker for lobbed shells, so you know where to step away from
+    if (b.mark !== undefined && !b.dead && Math.floor(clock * 8) % 2) { const mx = sx(b.mark), my = H - GROUND; g.fillStyle = "#ff3020"; for (let i = -3; i <= 3; i++) { g.fillRect(mx + i, my - 1 + Math.abs(i) - 3, 1, 1); g.fillRect(mx + i, my - 1 - Math.abs(i) + 3, 1, 1); } }
+    drawBullet(b);
+  }
   for (const b of blasts) drawBlast(b);
   for (const b of booms) drawBoom(b);
   drawParts();
