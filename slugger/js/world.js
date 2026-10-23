@@ -6,7 +6,7 @@ let game = null, P = null, tank = null, boss = null;
 let enemies = [], bullets = [], items = [], coins = [], pows = [], crates = [], barrels = [], covers = [];
 let plats = [], walls = [], props = [], flags = [], hints = [], placed = [];
 let parts = [], booms = [], corpses = [], popups = [], blasts = [], beams = [], decals = [];
-let camX = 0, shake = 0, hitstop = 0, slowT = 0, hurtFlash = 0;
+let camX = 0, shake = 0, hitstop = 0, slowT = 0, hurtFlash = 0, whiteFlash = 0;
 let banner = null, announceMsg = null;
 let progressDirty = false;
 
@@ -102,7 +102,7 @@ function explode(x, y, R, dmg, team, size = 1, src = "G") {
   boom(x, y, size); sfx.boom(size > 1.6); addShake(1.5 + size * 1.6);
   smoke(x, y + 6, 2 + Math.round(size * 2), 4); sparks(x, y + 4, 6 + size * 3, "#ffd34d", 170);
   if (y <= GROUND + 6 && decals.length < 50) decals.push({ x, w: 10 + size * 8 });
-  if (size > 1.5) vibrate(40);
+  if (size > 1.5) { vibrate(40); whiteFlash = Math.max(whiteFlash, 0.07); }
   if (team === "p") {
     for (const e of enemies) {
       if (e.dead) continue;
@@ -142,6 +142,14 @@ function onKill(src, vehicle = false) {
   game.kills++;
   game.combo = game.comboT > 0 ? game.combo + 1 : 1; game.comboT = 2.6;
   game.bestCombo = Math.max(game.bestCombo, game.combo);
+  // Multi-kill: several kills within a blink pay a bonus and get a callout
+  game.multi = clock - (game.lastKillAt ?? -9) < 0.35 ? (game.multi || 1) + 1 : 1; game.lastKillAt = clock;
+  if (game.multi >= 2) {
+    const call = ["", "", "DOUBLE KILL!", "TRIPLE KILL!", "MULTI KILL!"][game.multi] || "MASSACRE!";
+    popups = popups.filter(p => !p.multi);
+    popups.push({ x: P.x, y: P.y + 40, text: call, c: game.multi >= 4 ? "#ff5a4a" : "#ffd34d", t: 0, multi: true });
+    gainCoins(game.multi, P.x, P.y + 34); if (game.multi === 3) sfx.levelUp();
+  }
   if (game.combo >= 5 && game.combo % 10 === 0) { gainCoins(game.combo / 2, P.x, P.y + 30); announce(`COMBO x${game.combo}!`, "#ff9a4a"); sfx.levelUp(); }
   stat("kills"); stat("kills_" + src); if (vehicle) stat("vehicles");
   statMax("bestCombo", game.combo); dailyMax("combo", game.combo);
@@ -677,7 +685,7 @@ function updateFx(dt) {
   }
   corpses = corpses.filter(c => !c.done);
   shake = Math.max(0, shake - dt * 14);
-  hurtFlash = Math.max(0, hurtFlash - dt);
+  hurtFlash = Math.max(0, hurtFlash - dt); whiteFlash = Math.max(0, whiteFlash - dt);
   if (announceMsg) { announceMsg.t += dt; if (announceMsg.t > 1.8) announceMsg = null; }
   if (banner) { banner.t += dt; if (banner.t > banner.dur) banner = null; }
 }
