@@ -17,8 +17,9 @@ const ENEMY = {
   mgnest: { hp: 12, score: 600, coins: 6, vehicle: true },
   drone: { hp: 1.5, score: 250, coins: 3, vehicle: true },
 };
-const hpScale = () => 1 + game.diff * 0.15;
-const fireRate = e => (1 + game.diff * 0.12) * (e.elite ? 1.4 : 1);
+// Gentler late-game curve: mission 6 enemies have 1.6x health and fire 1.4x as often as mission 1's.
+const hpScale = () => 1 + game.diff * 0.12;
+const fireRate = e => (1 + game.diff * 0.08) * (e.elite ? 1.35 : 1);
 function pickType(diff = game.diff) {
   const r = Math.random();
   if (diff < 1) return r < 0.45 ? "rifle" : r < 0.7 ? "knife" : r < 0.85 ? "grenadier" : "bazooka";
