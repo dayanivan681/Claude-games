@@ -19,7 +19,9 @@ const basePal = { S: "#f3c48f", s: "#d39560", H: "#5a3418", h: "#3a1e0c", A: "#d
 // Heroes: base look + 3 costumes unlocked by level
 const HERO_LOOKS = [
   { head: "h_rayo", costumes: ["STANDARD", "DESERT", "URBAN", "GOLD"], pals: [
-    {}, { C: "#d8c08a", c: "#a88e5a", D: "#ecd8a8", P: "#a08050", p: "#7a5e38" },
+    // standard: dark sneaking suit and bandana, stubble (the Blender model in art/hero.py)
+    { S: "#e6b088", s: "#a87a5e", H: "#4a2e1c", h: "#2e1a0e", A: "#2e3548", a: "#1c2130", C: "#4f5a6e", c: "#363e4e", D: "#6c7892",
+      P: "#4a5468", p: "#343c4c", B: "#201e1e", b: "#3c3836", K: "#2c2824", N: "#3e4436", n: "#2a2e24" }, { C: "#d8c08a", c: "#a88e5a", D: "#ecd8a8", P: "#a08050", p: "#7a5e38" },
     { C: "#7a7f88", c: "#555a62", D: "#9aa0aa", P: "#3a3f48", p: "#262a32", A: "#2a2a2a", a: "#141414" },
     { C: "#e8b830", c: "#b08418", D: "#ffe070", P: "#8a6a20", p: "#644c14", A: "#ffffff", a: "#c8c8c8" }] },
   { head: "h_tania", costumes: ["STANDARD", "NAVY", "CRIMSON", "GOLD"], pals: [

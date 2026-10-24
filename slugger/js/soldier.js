@@ -104,7 +104,9 @@ function gripFor(sk, aim, recoil, gun) {
   return [s[0] + 9 - k, s[1] - 1];
 }
 // Muzzle in world px relative to the feet (x forward); shoot() spawns bullets here
-function muzzleOf(pose, t, aim, gun) {
+function muzzleOf(pose, t, aim, gun, head) {
+  const art = typeof HERO_ART !== "undefined" && head === HERO_ART.head && heroFrame(`U_${gun}_${aim}`);
+  if (art && art.muzzle) { const sk = skeleton(pose, t, 0); return [(sk.hip[0] + sk.lean + art.muzzle[0]) / HD, (sk.hip[1] + art.muzzle[1]) / HD]; }
   const sk = skeleton(pose, t, 0), gp = gripFor(sk, aim, false, gun), m = (GUNS[gun] || GUNS.pistol).m, r = rot(aim, m[0], m[1]);
   return [(gp[0] + r[0]) / HD, (gp[1] + r[1]) / HD];
 }
@@ -148,7 +150,62 @@ function drawHead(id, pal, hx, hy, panic) {
 }
 
 // ---- full soldier ----
+// ---- the hero drawn from Blender renders (js/hero_art.js, made by art/hero.py) ----
+// Frames are palette-indexed (part, tone, far side), so costumes recolour them like the code-drawn
+// soldiers. Legs and upper body are separate layers, Metal Slug style: the upper body rides the hip.
+let heroFrames = null;
+function heroFrame(name) {
+  if (typeof HERO_ART === "undefined") return null;
+  if (!heroFrames) {
+    heroFrames = {};
+    const bin = atob(HERO_ART.rle), bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    for (const [n, f] of Object.entries(HERO_ART.frames)) {
+      const [w, h, ox, oy, off, len] = f, px = new Uint8Array(w * h);
+      for (let i = off, j = 0; i < off + len; i += 2) { px.fill(bytes[i], j, j + bytes[i + 1]); j += bytes[i + 1]; }
+      heroFrames[n] = { w, h, ox, oy, px, muzzle: f.length > 6 ? [f[6], f[7]] : null };
+    }
+  }
+  return heroFrames[name] || null;
+}
+function heroUpperName(o) {
+  const arm = o.arm || "none";
+  if (arm === "f" || arm === "u" || arm === "d") return `U_${o.gun || "pistol"}_${arm}${o.recoil ? "r" : ""}`;
+  if (arm === "knife" || arm === "throw") return "U_" + arm;
+  if (arm === "flail") return "U_flail" + (Math.floor((o.t || 0) * 10) % 2);
+  return arm === "none" || arm === "idle" ? "U_idle" : null;
+}
+function heroLowerName(pose, t) {
+  if (pose === "run") return "L_run" + Math.floor(t * 12 * 1.5) % 12;
+  return pose === "stand" || pose === "jump" || pose === "fall" || pose === "crouch" ? "L_" + pose : null;
+}
+function renderHeroArt(o) {
+  if (typeof HERO_ART === "undefined" || o.head !== HERO_ART.head || o.chute) return null;
+  const pose = o.pose || "stand", t = o.t || 0;
+  const lo = heroFrame(heroLowerName(pose, t)), up = heroFrame(heroUpperName(o));
+  if (!lo || !up) return null;
+  const pal = PALS[o.pal] || {}, parts = HERO_ART.parts, ramps = [];
+  const rampOf = (pid, far) => {
+    const k = pid * 2 + far;
+    return ramps[k] || (ramps[k] = ramp(parts[pid][1] || pal[parts[pid][0]] || basePal[parts[pid][0]], far ? -0.18 : 0));
+  };
+  const paint = (f, x0, y0) => {
+    for (let r = 0; r < f.h; r++) for (let q = 0; q < f.w; q++) {
+      const c = f.px[r * f.w + q]; if (!c) continue;
+      const v = c - 1, x = x0 + q, y = y0 + r;
+      if (x >= 0 && y >= 0 && x < SW && y < SH) hdPix[y * SW + x] = rampOf((v >> 1) >> 2, v & 1)[(v >> 1) & 3];
+    }
+  };
+  hdPix.fill(0);
+  const bob = o.bob ? (Math.sin(t * 4) > 0.6 ? 1 : 0) : 0, sk = skeleton(pose, t, bob);
+  paint(lo, SCX - lo.ox, SBY + 1 - lo.oy);
+  paint(up, SCX + Math.round(sk.hip[0] + sk.lean) - up.ox, SBY + 1 - Math.round(sk.hip[1]) - up.oy);
+  return outlinedCanvas();
+}
+
 function renderSoldier(o) {
+  const art = renderHeroArt(o);
+  if (art) return art;
   hdPix.fill(0);
   const pal = PALS[o.pal] || PALS.rebel_desert, pose = o.pose || "stand", t = o.t || 0;
   const bob = o.bob ? (Math.sin(t * 4) > 0.6 ? 1 : 0) : 0;
@@ -208,7 +265,9 @@ function renderSoldier(o) {
   else if (arm === "hold" || arm === "shield") limb(s, [s[0] + 8, s[1] - 4], shirt);
   else if (arm === "tied") { limb(s, [s[0] - 4, s[1] - 9], shirt); box(s[0] - 7, s[1] - 10, s[0] - 2, s[1] - 9, ramp("#c8a45a")); }
   if (arm === "shield") { box(14 + (o.poke ? 6 : 0), 2, 22 + (o.poke ? 6 : 0), 42, ramp("#7a7a82")); box(16 + (o.poke ? 6 : 0), 20, 20 + (o.poke ? 6 : 0), 24, ramp("#ffd34d")); }
-  // 1px outline around the whole silhouette
+  return outlinedCanvas();
+}
+function outlinedCanvas() {   // 1px outline around the whole silhouette in hdPix, copied to a new canvas
   const OUT = pack(OUTLINE);
   for (let y = 0; y < SH; y++) for (let x = 0; x < SW; x++) {
     const i = y * SW + x;
