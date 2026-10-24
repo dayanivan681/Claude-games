@@ -33,7 +33,7 @@ function resize() {
   PT = DPR / K;
   const s = measureSafe();
   SAFE.t = Math.ceil(s.t * PT); SAFE.r = Math.ceil(s.r * PT); SAFE.b = Math.ceil(s.b * PT); SAFE.l = Math.ceil(s.l * PT);
-  VPAD = matchMedia("(pointer: coarse)").matches ? Math.round(62 * PT + SAFE.b * 0.5) : 0;
+  VPAD_TOUCH = matchMedia("(pointer: coarse)").matches ? Math.round(62 * PT + SAFE.b * 0.5) : 0;
   invalidateLayout();
   skyCache = null;
   if (game && layers && (layers.h !== H || layers.c0w !== W)) { buildLayers(game.theme, game.len); layers.c0w = W; }
@@ -44,7 +44,9 @@ function present() {
   ctx.imageSmoothingEnabled = false;
   if (OX || OY) { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, canvas.width, canvas.height); }
   ctx.drawImage(buf, 0, 0, W, H, OX, OY, W * K, H * K);
+  drawControlsHD(ctx);
 }
+let presentMs = 0;   // dev metric
 
 // ---------- Sky, layers, ground ----------
 let skyCache = null;
@@ -87,7 +89,7 @@ function drawGround(th) {
   if (th.id === "harbor") { g.fillStyle = shade(th.ground, -0.25); for (let wx = Math.floor(camX / 14) * 14; wx < camX + W + 14; wx += 14) g.fillRect(sx(wx), gy + 3, 1, GROUND + VPAD); }
   for (const d of decals) {
     const x = sx(d.x); if (x < -30 || x > W + 30) continue;
-    if (d.blood) { g.fillStyle = "rgba(110,6,6,0.85)"; g.fillRect(x - (d.w >> 1), gy, d.w, 1); if (d.w > 3) { g.fillStyle = "rgba(80,4,4,0.7)"; g.fillRect(x - (d.w >> 2), gy + 1, d.w >> 1, 1); } continue; }
+    if (d.blood) { g.fillStyle = "#9a0a0a"; g.fillRect(x - (d.w >> 1), gy, d.w, 2); if (d.w > 4) { g.fillStyle = "#6a0606"; g.fillRect(x - (d.w >> 2), gy + 2, d.w >> 1, 1); } continue; }
     g.fillStyle = "rgba(20,12,8,0.45)";
     { g.fillRect(x - d.w / 2, gy, d.w, 2); g.fillRect(x - d.w / 3, gy + 2, d.w * 2 / 3, 1); } }
 }
@@ -255,7 +257,7 @@ function drawCorpse(c) {
   }
   if (c.kind === "fly") { drawSoldier({ ...o, pose: "jump" }, x, y, c.face, { rot: c.rot }); return; }
   // blood pool spreading under the body
-  if (save.settings.gore && c.t > 0.3) { const w = Math.min(16, Math.round((c.t - 0.3) * 12)); g.fillStyle = "rgba(100,6,6,0.85)"; g.fillRect(x - (w >> 1) - 2, y, w, 1); if (w > 6) g.fillRect(x - (w >> 2) - 2, y + 1, w >> 1, 1); }
+  if (save.settings.gore && c.t > 0.2) { const w = Math.min(26, Math.round((c.t - 0.2) * 16)); g.fillStyle = "#8a0808"; g.fillRect(x - (w >> 1) - 2, y - 1, w, 2); if (w > 8) { g.fillStyle = "#b01010"; g.fillRect(x - (w >> 2) - 2, y - 1, w >> 1, 1); g.fillStyle = "#6a0606"; g.fillRect(x - (w >> 2) - 2, y + 1, w >> 1, 1); } }
   if (c.t < 0.15) drawSoldier(o, x, y, c.face, { mode: "flash" });
   else drawSoldier({ ...o, arm: "idle" }, x + 1, y - 5, c.face, { rot: 3 });
 }
@@ -305,6 +307,7 @@ function drawBullet(b) {
     case "tshell": g.fillStyle = "#8a9098"; g.fillRect(x - 3, y - 2, 6, 3); g.fillStyle = "#e8c03a"; g.fillRect(x + (b.vx > 0 ? 2 : -3), y - 2, 1, 3); break;
     case "eb":
       if (b.sniper) { g.fillStyle = "#ff3a3a"; const a = Math.atan2(-b.vy, b.vx); for (let i = 0; i < 6; i++) g.fillRect(Math.round(x - Math.cos(a) * i), Math.round(y + Math.sin(a) * i), 1, 1); }
+      else { const a = Math.atan2(-b.vy, b.vx); g.globalAlpha = 0.45; g.fillStyle = "#ff7a3a"; for (let i = 2; i < 7; i++) g.fillRect(Math.round(x - Math.cos(a) * i), Math.round(y + Math.sin(a) * i), 1, 1); g.globalAlpha = 1; }   // tracer tail
       pcirc(g, x, y, 2, "#ff5a3a"); g.fillStyle = "#fff0c0"; g.fillRect(x - 1, y - 1, 2, 2); break;
     case "ebomb": g.fillStyle = "#2a2a2a"; g.fillRect(x - 2, y - 3, 4, 6); g.fillStyle = "#c83a2a"; g.fillRect(x - 2, y - 4, 4, 1); break;
     case "eshell": pcirc(g, x, y, 3.5, "#2a2a2a"); pcirc(g, x, y, 1.5, Math.floor(clock * 20) % 2 ? "#ff5a3a" : "#ffd34d"); break;
@@ -355,7 +358,13 @@ function drawParts() {
   for (const p of parts) {
     const a = p.life / p.max;
     if (p.kind === "smoke") { g.globalAlpha = 0.55 * a; pcirc(g, sx(p.x), sy(p.y), p.s * (1 + (1 - a) * 1.6), p.c); }
-    else if (p.kind === "blood" || p.kind === "gib") { g.globalAlpha = 1; g.fillStyle = p.c; g.fillRect(sx(p.x), sy(p.y), p.s, p.s); }
+    else if (p.kind === "blood") { g.globalAlpha = 1; g.fillStyle = p.c; g.fillRect(sx(p.x), sy(p.y), p.s, p.s); }
+    else if (p.kind === "gib") {
+      g.globalAlpha = Math.min(1, p.life); const w = p.s, h = p.h || p.s, x = sx(p.x) - (w >> 1), y = sy(p.y) - h;
+      g.fillStyle = "#1a0a08"; g.fillRect(x - 1, y - 1, w + 2, h + 2);   // outline like the sprites
+      g.fillStyle = p.c; g.fillRect(x, y, w, h);
+      if (p.c2) { g.fillStyle = p.c2; g.fillRect(x, y + h - 1, w, 1); }   // bloody end
+    }
     else if (p.kind === "flash") { g.globalAlpha = 1; const x = sx(p.x), y = sy(p.y), s = p.s >> 1; g.fillStyle = p.c; g.fillRect(x - s, y - 1, s * 2, 2); g.fillRect(x - 1, y - s, 2, s * 2); g.fillStyle = "#fff"; g.fillRect(x - 1, y - 1, 2, 2); }
     else { g.globalAlpha = Math.min(1, a * 2); g.fillStyle = p.c; g.fillRect(sx(p.x) - (p.s >> 1), sy(p.y) - (p.s >> 1), p.s, p.s); }
   }

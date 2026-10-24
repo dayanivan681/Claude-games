@@ -45,7 +45,7 @@ function mkPlayer(x, y = GROUND) {
 function startMission(id, checkpoint = null) {
   resetWorld();
   const m = MISSIONS[id - 1];
-  game = { mode: "mission", id, m, theme: THEMES[m.theme], hard: save.hard, diff: id - 1 + (save.hard ? 2 : 0),
+  game = { mode: "mission", id, m, theme: THEMES[m.theme], hard: save.hard, diff: id - 1 + (save.hard ? 2 : 0), diffBase: id - 1 + (save.hard ? 2 : 0),
     time: checkpoint?.time || 0, score: checkpoint?.score || 0, kills: checkpoint?.kills || 0, pows: checkpoint?.pows || 0, powsTotal: 0,
     coins: checkpoint?.coins || 0, deaths: checkpoint?.deaths || 0, hits: checkpoint?.hits || 0, combo: 0, comboT: 0, bestCombo: 0,
     lives: 3, checkpoint, phase: "intro", phaseT: 0, len: 0, locks: [], lock: null, bossDone: false, goT: 0, idleCam: 0,
@@ -86,17 +86,32 @@ function sparks(x, y, n, c, sp) { for (let i = 0; i < n; i++) { const a = rand(0
 function smoke(x, y, n, s = 4) { for (let i = 0; i < n; i++) part(x + rand(-5, 5), y + rand(-4, 6), rand(-12, 12), rand(10, 32), rand(0.6, 1.2), pick(["#5a5550", "#6e6862", "#47423e"]), s, 0, "smoke"); }
 function debris(x, y, n, c) { for (let i = 0; i < n; i++) part(x, y, rand(-90, 90), rand(60, 200), rand(0.5, 0.9), c, ri(2, 3), GRAV * 0.8, "deb"); }
 // Blood and gore (Settings > BLOOD & GORE). Drops fall with gravity and leave splats on the ground.
-const BLOOD = ["#a01010", "#7a0a0a", "#c01818"];
-function blood(x, y, n, dir = 0, sp = 90) {
+const BLOOD = ["#d01414", "#a00c0c", "#e82020", "#7a0808"];
+function blood(x, y, n, dir = 0, sp = 110) {
   if (!save.settings.gore) return;
-  for (let i = 0; i < n; i++) part(x, y, dir * rand(20, sp) + rand(-30, 30), rand(10, 110), rand(0.5, 0.9), pick(BLOOD), chance(0.3) ? 2 : 1, GRAV * 0.7, "blood");
+  for (let i = 0; i < n; i++) part(x, y, dir * rand(30, sp) + rand(-40, 40), rand(20, 150), rand(0.6, 1), pick(BLOOD), chance(0.5) ? 3 : 2, GRAV * 0.7, "blood");
+  for (let i = 0; i < Math.ceil(n / 4); i++) part(x + rand(-2, 2), y + rand(-2, 2), dir * rand(10, 30), rand(0, 12), rand(0.25, 0.4), "#c01010", 3, 0, "smoke");   // red mist
+}
+// Explosion kills blow the soldier apart: head, limbs, torso and bone chunks that bounce and stay a while.
+function dismember(e) {
+  if (!save.settings.gore) return false;
+  const pal = PALS[e.pal] || {}, skin = pal.S || "#e2b080", cloth = pal.C || "#7f8c46", pants = pal.P || "#6b7738", helm = pal.A || "#66733a";
+  const piece = (c, w, h, vx, vy) => { if (parts.length < 600) parts.push({ x: e.x, y: e.y + 14, vx, vy, life: 7, max: 7, c, s: w, h, g: GRAV * 0.85, kind: "gib", c2: "#c01010" }); };
+  piece(helm, 4, 4, rand(-60, 60), rand(220, 300));                  // head
+  piece(cloth, 5, 6, rand(-50, 50), rand(150, 210));                 // torso
+  for (let i = 0; i < 2; i++) piece(cloth, 2, 5, rand(-130, 130), rand(150, 260));   // arms
+  for (let i = 0; i < 2; i++) piece(pants, 2, 6, rand(-110, 110), rand(120, 220));   // legs
+  for (let i = 0; i < 3; i++) piece(i ? "#7a0a0a" : "#f0e8d8", 2, 2, rand(-150, 150), rand(120, 280));   // bone and flesh bits
+  piece(skin, 2, 2, rand(-90, 90), rand(200, 280));
+  blood(e.x, e.y + 14, 22, 0, 160);
+  return true;
 }
 function gibs(x, y, n) {
   if (!save.settings.gore) return;
-  for (let i = 0; i < n; i++) part(x, y, rand(-110, 110), rand(80, 240), rand(0.9, 1.4), pick(["#8a1010", "#c89070", "#5a0808", "#a01010"]), ri(2, 3), GRAV * 0.8, "gib");
-  blood(x, y, n + 4, 0, 120);
+  for (let i = 0; i < n; i++) part(x, y, rand(-110, 110), rand(80, 240), rand(0.9, 1.4), pick(["#a01010", "#c89070", "#5a0808", "#d01414"]), ri(2, 3), GRAV * 0.8, "gib");
+  blood(x, y, n + 6, 0, 140);
 }
-function splat(x, w) { if (decals.length > 140) decals.shift(); decals.push({ x, w, blood: true }); }
+function splat(x, w) { if (decals.length > 160) decals.shift(); decals.push({ x, w, blood: true }); }
 function dust(x, y, n) { for (let i = 0; i < n; i++) part(x + rand(-4, 4), y + 1, rand(-30, 30), rand(5, 25), rand(0.25, 0.45), game?.theme.dust || "#d8c8a0", 2, 0, "smoke"); }
 function muzzle(x, y, big = false) { part(x, y, 0, 0, 0.06, "#fff3a0", big ? 9 : 6, 0, "flash"); light(x, y, big ? 50 : 30, 0.07); }
 function popup(x, y, txt, c = "#fff") { popups.push({ x, y, text: txt, c, t: 0 }); }
@@ -134,7 +149,8 @@ function explode(x, y, R, dmg, team, size = 1, src = "G") {
 
 // ---------- Boxes ----------
 const ROLL_T = 0.36;
-const pBox = () => ({ x: P.x - 4, y: P.y, w: 8, h: P.crouch ? 13 : 24 });
+// Hurtbox is a little smaller than the sprite, so a skilful dodge that grazes the hero still counts.
+const pBox = () => ({ x: P.x - 3, y: P.y, w: 6, h: P.crouch ? 12 : 22 });
 const tankBox = () => ({ x: tank.x - 20, y: tank.y, w: 40, h: 30 });
 const powBox = p => ({ x: p.x - 5, y: p.y, w: 10, h: 16 });
 function targetPos() {
@@ -306,7 +322,8 @@ function updatePlayer(dt) {
     if (P.y <= f) { P.y = f; P.vy = 0; P.onGround = true; }
   }
   if (!P.onGround) P.airT += dt;
-  else { if (!wasGround && P.airT > 0.3) { sfx.land(); dust(P.x, P.y, 4); } P.airT = 0; }
+  else { if (!wasGround && P.airT > 0.3) { sfx.land(); dust(P.x, P.y, 4); P.landT = 0.09; } P.airT = 0; }
+  P.landT = Math.max(0, (P.landT || 0) - dt);
   const [lo, hi] = playerBounds();
   P.x = clamp(P.x, lo, hi);
   P.moving = dir !== 0 && P.onGround;
@@ -344,7 +361,8 @@ function addB(o) {
   if (b.team === "p" && (b.kind === "b" || b.kind === "hb")) b.ox = Math.sign(b.vx) * 14;
   bullets.push(b);
 }
-function playerPose() { return !P.onGround ? (P.vy > 0 ? "jump" : "fall") : P.crouch ? "crouch" : P.moving ? "run" : "stand"; }
+// (a short crouch on landing gives jumps some weight)
+function playerPose() { return !P.onGround ? (P.vy > 0 ? "jump" : "fall") : P.crouch || P.landT > 0 ? "crouch" : P.moving ? "run" : "stand"; }
 
 function shoot() {
   const k = P.aim === "f" ? knifeTarget() : null;
@@ -673,8 +691,11 @@ function updateFx(dt) {
   for (const p of parts) {
     p.life -= dt; p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt;
     if (p.kind === "deb" && p.y < GROUND) { p.y = GROUND; p.vy = -p.vy * 0.35; p.vx *= 0.6; }
-    else if (p.kind === "blood" && p.y < GROUND) { p.life = 0; if (chance(0.5)) splat(p.x, ri(2, 5)); }
-    else if (p.kind === "gib" && p.y < GROUND) { p.y = GROUND; if (!p.landed) { p.landed = true; splat(p.x, ri(3, 7)); p.life = Math.max(p.life, 4); } p.vy = -p.vy * 0.25; p.vx *= 0.5; }
+    else if (p.kind === "blood" && p.y < GROUND) { p.life = 0; if (chance(0.7)) splat(p.x, ri(3, 8)); }
+    else if (p.kind === "gib") {
+      if (chance(0.3) && !p.landed) part(p.x, p.y, 0, 0, 0.5, "#b01010", 2, GRAV * 0.5, "blood");   // blood trail in the air
+      if (p.y < GROUND) { p.y = GROUND; if (!p.landed) { p.landed = true; splat(p.x, ri(5, 10)); p.life = Math.max(p.life, 6); } p.vy = -p.vy * 0.25; p.vx *= 0.5; }
+    }
   }
   parts = parts.filter(p => p.life > 0);
   for (const b of booms) b.t += dt;
@@ -712,6 +733,7 @@ function updateFx(dt) {
 // ---------- Camera, spawns, locks, triggers ----------
 function updateCamera(dt) {
   if (game.mode === "survival") return;
+  game.diff = game.diffBase + Math.min(1, camX / game.len) * 0.8;   // each mission gets harder as you push on
   const focus = P.inTank && tank ? tank.x : P.x;
   let maxCam = game.len - W;
   if (game.lock) maxCam = Math.min(maxCam, game.lock.x);

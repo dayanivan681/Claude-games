@@ -15,6 +15,7 @@ function loop(t) {
   const dt = lastT ? Math.min((t - lastT) / 1000, 0.1) : 0;
   lastT = t; realClock += dt;
   readInput();
+  VPAD = touchUI ? VPAD_TOUCH : 0;
   if (state === "play") {
     if (input.pausePressed && game && game.phase !== "failed") setPaused(!paused);
     if (!paused) {

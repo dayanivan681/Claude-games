@@ -21,8 +21,8 @@ const KEYMAP = { ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "ri
 // All buttons sit low, in a row on the ground strip under the action (see VPAD); the primary
 // button is the big one nearest the right thumb's resting spot. The layout editor still moves them.
 const DEFAULT_LAYOUT = {
-  auto: { jump: { dx: 64, dy: 50, r: 37 }, fire: { dx: 146, dy: 44, r: 26 }, bomb: { dx: 214, dy: 48, r: 23 } },
-  classic: { fire: { dx: 64, dy: 50, r: 37 }, jump: { dx: 146, dy: 44, r: 28 }, bomb: { dx: 214, dy: 48, r: 23 } },
+  auto: { jump: { dx: 58, dy: 48, r: 36 }, fire: { dx: 138, dy: 40, r: 27 }, bomb: { dx: 208, dy: 36, r: 23 } },
+  classic: { fire: { dx: 58, dy: 48, r: 36 }, jump: { dx: 138, dy: 40, r: 28 }, bomb: { dx: 208, dy: 36, r: 23 } },
 };
 const BTN_LABEL = { jump: "JUMP", bomb: "BOMB", fire: "FIRE" };
 function layoutKey() { return autoFireOn() ? "auto" : "classic"; }
@@ -37,7 +37,7 @@ function controlLayout() {
       y: H - SAFE.b - dy * PT, r: d.r * PT * sz, dx, dy, primary: d.r >= 36,
     };
   }
-  const st = user.stick || { dx: 84, dy: 54 };
+  const st = user.stick || { dx: 84, dy: 52 };
   const stickBase = { x: left ? W - SAFE.r - st.dx * PT : SAFE.l + st.dx * PT, y: H - SAFE.b - st.dy * PT, r: 42 * PT * sz, knob: 19 * PT * sz, travel: 32 * PT * sz, dx: st.dx, dy: st.dy };
   const ps = 40 * PT;
   const pause = { x: W - SAFE.r - ps - 4, y: SAFE.t + 4, w: ps, h: ps };
@@ -160,6 +160,10 @@ window.addEventListener("keydown", e => {
 });
 window.addEventListener("keyup", e => { const k = KEYMAP[e.code]; if (k) keys.delete(k); });
 window.addEventListener("blur", releaseAllTouches);
+// Backbone, DualSense, Xbox and other MFi controllers use the standard Gamepad mapping:
+// A jump · X / R1 / R2 fire · B / Y grenade · L1 / L2 roll · Menu pause · left stick or d-pad move and aim
+window.addEventListener("gamepadconnected", e => { toast("CONTROLLER CONNECTED", "#8ae06a"); hapticTap(true); });
+window.addEventListener("gamepaddisconnected", () => { toast("CONTROLLER DISCONNECTED", "#ff9a4a"); if (isTouch) touchUI = true; });
 
 // ---------- Per-frame merge ----------
 function pollGamepad() {
@@ -169,8 +173,9 @@ function pollGamepad() {
   if (gp) {
     const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0, bt = i => !!gp.buttons[i]?.pressed;
     cur.left = ax < -0.4 || bt(14); cur.right = ax > 0.4 || bt(15); cur.up = ay < -0.55 || bt(12); cur.down = ay > 0.6 || bt(13);
-    cur.a = bt(0); cur.b = bt(1); cur.x = bt(2); cur.y = bt(3); cur.start = bt(9); cur.rb = bt(5) || bt(7); cur.lb = bt(4) || bt(6);
-    touchUI = touchUI && !gp;
+    cur.a = bt(0); cur.b = bt(1); cur.x = bt(2); cur.y = bt(3); cur.start = bt(9) || bt(8); cur.rb = bt(5) || bt(7); cur.lb = bt(4) || bt(6);
+    // switch to controller mode (hide touch controls) only once the controller is actually used
+    if (gp.buttons.some(b => b?.pressed) || gp.axes.some(v => Math.abs(v) > 0.5)) touchUI = false;
   }
   for (const k of Object.keys(padEdge)) padEdge[k] = cur[k] && !padPrev[k];
   padPrev = cur;
@@ -203,7 +208,7 @@ function readInput() {
   pulseJump = false; pulseBomb = false; pulsePause = false;
   if (!inPlayControls() && pad) {
     if (padEdge.up) uiKey("up"); if (padEdge.down) uiKey("down"); if (padEdge.left) uiKey("left"); if (padEdge.right) uiKey("right");
-    if (padEdge.a) uiKey("ok"); if (padEdge.b) uiKey("back"); if (padEdge.start) uiKey(state === "play" ? "back" : "ok");
+    if (padEdge.a) uiKey("ok"); if (padEdge.b) uiKey("back"); if (padEdge.start && state !== "play") uiKey("ok");
   }
 }
 function clearInputEdges() { pulseJump = pulseBomb = pulsePause = false; input.jumpPressed = input.bombPressed = input.rollPressed = false; }

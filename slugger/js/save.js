@@ -48,7 +48,8 @@ function importSave(code) {
   } catch { return false; }
 }
 function resetSave() { const s = save.settings; save = defaultSave(); save.settings = s; persist(); }
-const autoFireOn = () => save.settings.autoFire ?? isTouch;
+// Auto-fire defaults on for touch play and off once a game controller is in use (fire is on X / R2 there).
+const autoFireOn = () => save.settings.autoFire ?? (isTouch && touchUI);
 
 // ---------- Armory ----------
 const ARMORY = [

@@ -69,7 +69,7 @@ function damageEnemy(e, dmg, kind, fromX, src = "P") {
   }
   if (e.state === "idle") { e.state = "alert"; e.alertT = 0.25; }
   e.hp -= dmg; e.flash = 0.08;
-  if ((e.soldier || e.type === "jugg") && dmg > 0 && kind !== "flame") blood(e.x, e.y + (e.crouch ? 10 : 15), kind === "laser" ? 1 : 3, Math.sign(e.x - fromX) || 1);
+  if ((e.soldier || e.type === "jugg") && dmg > 0 && kind !== "flame") blood(e.x, e.y + (e.crouch ? 10 : 15), kind === "laser" ? 3 : 8, Math.sign(e.x - fromX) || 1);
   if (e.soldier && dmg > 0) { e.hitT = 0.1; if (!e.plat) e.x += Math.sign(e.x - fromX || 1) * 2; }
   if (e.hp <= 0) killEnemy(e, kind, src);
   return true;
@@ -100,10 +100,13 @@ function killEnemy(e, kind, src = "P") {
   }
   if (e.type === "mortar") { explode(e.x + 10, e.y + 6, 22, 4, "p", 1.2, src); }
   if (chance(0.75)) sfx.scream();
-  if (kind === "boom") gibs(e.x, e.y + 12, 7); else if (kind !== "flame") blood(e.x, e.y + 14, 6, Math.sign(e.x - P.x) || 1, 110);
-  const ck = kind === "boom" ? "fly" : kind === "flame" ? "burn" : "fall";
+  if (kind === "boom" && e.type !== "jugg" && dismember(e)) { if (chance(e.elite ? 0.35 : 0.05)) dropItem(e.x, e.y + 10, randItem()); return; }
+  if (kind !== "flame") blood(e.x, e.y + 14, kind === "cut" ? 24 : 16, Math.sign(e.x - P.x) || 1, 150);
+  // shotgun blasts and point-blank heavy fire knock the body off its feet
+  const knock = kind === "shot" || (src === "H" && Math.abs(e.x - P.x) < 60);
+  const ck = kind === "boom" || knock ? "fly" : kind === "flame" ? "burn" : "fall";
   corpses.push({ kind: ck, x: e.x, y: e.y, floor: e.plat ? e.plat.y : GROUND, vx: (ck === "fly" ? -e.face * rand(40, 90) : -e.face * 30),
-    vy: ck === "fly" ? rand(160, 240) : 0, t: 0, face: e.face, rot: 0, pal: e.pal, head: e.type === "sniper" ? "h_beret" : e.type === "jugg" ? "h_jugg" : "h_rebel", torso: e.type === "jugg" ? "t_jugg" : "t_rebel" });
+    vy: ck === "fly" ? (knock ? rand(90, 130) : rand(160, 240)) : 0, t: 0, face: e.face, rot: 0, pal: e.pal, head: e.type === "sniper" ? "h_beret" : e.type === "jugg" ? "h_jugg" : "h_rebel", torso: e.type === "jugg" ? "t_jugg" : "t_rebel" });
   if (chance(e.elite ? 0.35 : 0.05)) dropItem(e.x, e.y + 10, randItem());
 }
 
@@ -236,7 +239,7 @@ function rifleAI(e, dt, tg, dx, ad, dir, walk, vis) {
     e.atCover = true;
     // hide, then pop up to shoot
     e.popT = (e.popT || 0) - dt;
-    if (e.popT <= 0 && e.cd <= 0 && vis) { e.popT = 0.75; e.aimT = 0.35; e.coverHide = false; e.crouch = false; }
+    if (e.popT <= 0 && e.cd <= 0 && vis) { e.popT = 0.85; e.aimT = 0.45; e.coverHide = false; e.crouch = false; }
     if (e.popT > 0) {
       if (e.aimT > 0) { e.aimT -= dt; if (e.aimT <= 0) { e.cd = rand(1.4, 2.2); fireRifle(e, tg, dir, 17); } }
     } else { e.coverHide = true; e.crouch = true; }
@@ -246,13 +249,13 @@ function rifleAI(e, dt, tg, dx, ad, dir, walk, vis) {
   if (e.aimT > 0) { e.aimT -= dt; if (e.aimT <= 0) { e.cd = rand(1.7, 2.7); fireRifle(e, tg, dir, e.plat ? 17 : shotH()); } return; }
   if (!e.moving && e.cd < 0.6 && !e.plat && e.crouchPick === undefined) e.crouchPick = chance(0.35);
   e.crouch = !e.moving && !!e.crouchPick;
-  if (e.cd <= 0 && ad < 240 && vis) { e.aimT = 0.3; e.crouchPick = undefined; }
+  if (e.cd <= 0 && ad < 240 && vis) { e.aimT = 0.42; e.crouchPick = undefined; }   // aim glint first: a read-and-dodge window
 }
 function fireRifle(e, tg, dir, h) {
   const oy = e.y + h, mx = e.x + dir * 12;
   let vy = 0;
   if (e.plat || Math.abs(tg.y - e.y) > 30) { const T = Math.max(Math.abs(tg.x - mx) / 150, 0.2); vy = clamp((tg.y - oy) / T, -100, 60); }
-  addB({ kind: "eb", team: "e", x: mx, y: oy, vx: dir * 150, vy, life: 3 });
+  addB({ kind: "eb", team: "e", x: mx, y: oy, vx: dir * 150 * (1 + game.diff * 0.04), vy, life: 3 });
   muzzle(mx, oy); sfx.enemyShot();
 }
 
@@ -387,9 +390,9 @@ function drawEnemy(e) {
     case "jugg": o.arm = "minigun"; break;
   }
   drawSoldier(o, x, y, e.face, { mode });
-  if ((e.type === "rifle" || e.type === "bazooka") && e.aimT > 0 && Math.floor(clock * 20) % 2) {
-    const mx = x + e.face * 13, my = H - Math.round(e.y) - (e.type === "bazooka" ? 13 : e.crouch ? 12 : 18);
-    g.fillStyle = "#ffffff"; g.fillRect(mx - 1, my, 3, 1); g.fillRect(mx, my - 1, 1, 3);
+  if ((e.type === "rifle" || e.type === "bazooka") && e.aimT > 0) {   // muzzle glint: they are about to fire
+    const mx = x + e.face * 13, my = H - Math.round(e.y) - (e.type === "bazooka" ? 13 : e.crouch ? 12 : 18), on = Math.floor(clock * 16) % 2;
+    g.fillStyle = on ? "#ffffff" : "#ff5a2a"; g.fillRect(mx - 2, my, 5, 1); g.fillRect(mx, my - 2, 1, 5);
   }
   if (e.type === "sniper" && e.aimT > 0 && e.lock) {
     const mx = e.x + e.face * 12, my = e.y + 12, tx = e.lock.x, ty = e.lock.y;
