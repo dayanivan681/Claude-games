@@ -239,6 +239,11 @@ function drawPlayer() {
   }
   if (P.inv > 0 && Math.floor(clock * 20) % 2) return;
   if (P.rollT > 0) {
+    const prog = 1 - P.rollT / ROLL_T;
+    if (typeof HERO_ART !== "undefined" && look.head === HERO_ART.head) {   // rendered full-body roll
+      drawSoldier({ pal: heroPal(), head: look.head, torso: "t_hero", pose: "roll", t: prog }, x, y, P.face);
+      return;
+    }
     // tumble around the body centre (7 px above the feet)
     const r = Math.floor((1 - P.rollT / ROLL_T) * 4) % 4, off = [[0, 0], [-7, -7], [0, -14], [7, -7]][r];
     drawSoldier({ pal: heroPal(), head: look.head, torso: "t_hero", pose: "crouch", arm: "none" }, x + off[0] * P.face, y + off[1], P.face, { rot: r });
