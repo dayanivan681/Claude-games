@@ -18,11 +18,11 @@ const KEYMAP = { ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "ri
   KeyJ: "fire", KeyZ: "fire", KeyK: "jump", KeyX: "jump", Space: "jump", KeyL: "bomb", KeyC: "bomb", ShiftLeft: "roll", ShiftRight: "roll" };
 
 // ---------- Layout ----------
-// All buttons sit low, in a row on the ground strip under the action (see VPAD); the primary
-// button is the big one nearest the right thumb's resting spot. The layout editor still moves them.
+// All buttons sit low, in an even row of equal-size buttons on the ground strip under the action
+// (see VPAD); the primary one is nearest the right thumb's resting spot. The layout editor still moves them.
 const DEFAULT_LAYOUT = {
-  auto: { jump: { dx: 58, dy: 48, r: 36 }, fire: { dx: 138, dy: 40, r: 27 }, bomb: { dx: 208, dy: 36, r: 23 } },
-  classic: { fire: { dx: 58, dy: 48, r: 36 }, jump: { dx: 138, dy: 40, r: 28 }, bomb: { dx: 208, dy: 36, r: 23 } },
+  auto: { jump: { dx: 52, dy: 44, r: 32 }, fire: { dx: 128, dy: 44, r: 32 }, bomb: { dx: 204, dy: 44, r: 32 } },
+  classic: { fire: { dx: 52, dy: 44, r: 32 }, jump: { dx: 128, dy: 44, r: 32 }, bomb: { dx: 204, dy: 44, r: 32 } },
 };
 const BTN_LABEL = { jump: "JUMP", bomb: "BOMB", fire: "FIRE" };
 function layoutKey() { return autoFireOn() ? "auto" : "classic"; }
@@ -34,7 +34,7 @@ function controlLayout() {
     const dx = u.dx ?? d.dx, dy = u.dy ?? d.dy;
     buttons[name] = {
       x: left ? SAFE.l + dx * PT : W - SAFE.r - dx * PT,
-      y: H - SAFE.b - dy * PT, r: d.r * PT * sz, dx, dy, primary: d.r >= 36,
+      y: H - SAFE.b - dy * PT, r: d.r * PT * sz, dx, dy,
     };
   }
   const st = user.stick || { dx: 84, dy: 52 };
@@ -45,7 +45,8 @@ function controlLayout() {
 }
 let layoutCache = null;
 function layout() { return layoutCache || (layoutCache = controlLayout()); }
-function invalidateLayout() { layoutCache = null; }
+let layoutGen = 0;
+function invalidateLayout() { layoutCache = null; layoutGen++; }
 
 // ---------- Haptics ----------
 let hapticLabel = null;
@@ -71,6 +72,8 @@ function toInternal(e) {
   const r = canvas.getBoundingClientRect();
   return { x: (e.clientX - r.left) / r.width * W, y: (e.clientY - r.top) / r.height * H };
 }
+// interface pointers use the interface grid (finer than the world grid during a mission, see withUIScale)
+function uiPointer(fn, p, id) { const u = uiScale(); withUIScale(() => fn({ x: p.x * u, y: p.y * u }, id)); }
 function inPlayControls() { return state === "play" && !paused && game && game.phase !== "failed"; }
 function btnAt(p) {
   const L = layout();
@@ -96,7 +99,7 @@ canvas.addEventListener("pointerdown", e => {
   if (e.pointerType === "touch") touchUI = true;
   const p = toInternal(e);
   canvas.setPointerCapture?.(e.pointerId);
-  if (!inPlayControls()) { uiPointerDown(p, e.pointerId); return; }
+  if (!inPlayControls()) { uiPointer(uiPointerDown, p, e.pointerId); return; }
   const L = layout();
   if (p.x >= L.pause.x - 6 && p.y <= L.pause.y + L.pause.h + 6) { pulsePause = true; return; }
   const stickZone = L.left ? p.x > W * 0.55 : p.x < W * 0.45;
@@ -110,7 +113,7 @@ canvas.addEventListener("pointerdown", e => {
 });
 canvas.addEventListener("pointermove", e => {
   const p = toInternal(e);
-  if (!inPlayControls()) { uiPointerMove(p, e.pointerId); return; }
+  if (!inPlayControls()) { uiPointer(uiPointerMove, p, e.pointerId); return; }
   if (stick && stick.id === e.pointerId) {
     stick.x = p.x; stick.y = p.y;
     const L = layout(), dx = stick.x - stick.ox, dy = stick.y - stick.oy, d = Math.hypot(dx, dy), max = L.stick.travel * 1.35;
@@ -132,7 +135,7 @@ canvas.addEventListener("pointermove", e => {
 function releasePointer(e) {
   if (stick && stick.id === e.pointerId) stick = null;
   btnTouch.delete(e.pointerId);
-  if (!inPlayControls()) uiPointerUp(toInternal(e), e.pointerId);
+  if (!inPlayControls()) uiPointer(uiPointerUp, toInternal(e), e.pointerId);
 }
 canvas.addEventListener("pointerup", releasePointer);
 canvas.addEventListener("pointercancel", e => { if (stick && stick.id === e.pointerId) stick = null; btnTouch.delete(e.pointerId); uiPointerCancel(e.pointerId); });

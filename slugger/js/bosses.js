@@ -241,7 +241,7 @@ const BOSSES = {
 
   // ---- Mission 3: bomber. Bomb carpets, homing missiles you can shoot down, paratroopers.
   bomber: { name: "POLAR BEAR MK-II", hp: 130,
-    init(b) { b.x = camX + W + 90; b.y = 148; b.dir = -1; b.cdC = 2; b.cdM = 4; b.cdS = 2.5; b.bombs = 0; b.bombT = 0; b.drop = 6; },
+    init(b) { b.x = camX + W + 90; b.y = skyY(148); b.dir = -1; b.cdC = 2; b.cdM = 4; b.cdS = 2.5; b.bombs = 0; b.bombT = 0; b.drop = 6; },
     blockX: b => b.x,
     area: b => ({ x: b.x - 56, y: b.y - 12, w: 112, h: 26 }),
     dying(b, dt) { b.y = Math.max(GROUND + 14, b.y - 30 * dt); b.x += b.dir * 25 * dt; if (chance(0.5)) smoke(b.x, b.y, 1, 5); },
@@ -251,7 +251,7 @@ const BOSSES = {
       b.x += b.dir * 46 * spd * dt;
       if (b.x < camX + 70) b.dir = 1;
       if (b.x > camX + W - 70) b.dir = -1;
-      b.face = b.dir; b.y = 148 + Math.sin(b.t * 1.6) * 6;
+      b.face = b.dir; b.y = skyY(148) + Math.sin(b.t * 1.6) * 6;
       b.cdC -= dt * spd;
       if (b.cdC <= 0) { b.cdC = 4.2; b.bombs = 3 + b.phase * 2; b.bombT = 0; }
       if (b.bombs > 0) { b.bombT -= dt; if (b.bombT <= 0) { b.bombs--; b.bombT = 0.22; addB({ kind: "ebomb", team: "e", x: b.x, y: b.y - 12, vx: b.dir * 40, vy: -10, grav: GRAV * 0.6, life: 4 }); tone("triangle", 900, 300, 0.25, 0.05); } }
@@ -286,7 +286,7 @@ const BOSSES = {
 
   // ---- Mission 4: night gunship. Searchlight that calls rockets on you, chaingun barrages on a marked zone.
   gunship: { name: "NIGHT HAWK", hp: 150,
-    init(b) { b.x = camX + W + 80; b.y = 140; b.light = camX + W * 0.5; b.lockT = 0; b.cdR = 2; b.cdG = 5; b.zone = null; b.drop = 8; },
+    init(b) { b.x = camX + W + 80; b.y = skyY(140); b.light = camX + W * 0.5; b.lockT = 0; b.cdR = 2; b.cdG = 5; b.zone = null; b.drop = 8; },
     blockX: b => b.x,
     area: b => ({ x: b.x - 44, y: b.y - 14, w: 88, h: 30 }),
     dying(b, dt) { b.y = Math.max(GROUND + 14, b.y - 40 * dt); b.x += b.face * 20 * dt; if (chance(0.5)) smoke(b.x, b.y, 1, 5); },
@@ -295,7 +295,7 @@ const BOSSES = {
       if (b.enter) { b.x -= 80 * dt; if (b.x < camX + W - 90) b.enter = false; return; }
       const want = clamp(tg.x + Math.sin(b.t * 0.5) * 90, camX + 60, camX + W - 60);
       b.x += clamp(want - b.x, -40 * dt * spd, 40 * dt * spd);
-      b.y = 138 + Math.sin(b.t * 1.3) * 6; b.face = tg.x < b.x ? -1 : 1;
+      b.y = skyY(138) + Math.sin(b.t * 1.3) * 6; b.face = tg.x < b.x ? -1 : 1;
       b.light += clamp(tg.x - b.light, -50 * spd * dt, 50 * spd * dt);
       const lit = Math.abs(tg.x - b.light) < 14;
       b.lockT = lit ? b.lockT + dt : Math.max(0, b.lockT - dt * 0.5);

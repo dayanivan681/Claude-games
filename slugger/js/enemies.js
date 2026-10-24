@@ -3,13 +3,13 @@
 // bikers, trucks, helicopters, machine-gun nests and the armored juggernaut. Every dangerous attack is telegraphed.
 
 const ENEMY = {
-  rifle: { hp: 1, score: 100, coins: 1, soldier: true },
-  knife: { hp: 1, score: 100, coins: 1, soldier: true },
-  grenadier: { hp: 1, score: 150, coins: 2, soldier: true },
-  bazooka: { hp: 2, score: 200, coins: 2, soldier: true },
-  shield: { hp: 2, score: 300, coins: 3, soldier: true },
-  sniper: { hp: 2, score: 300, coins: 3, soldier: true },
-  mortar: { hp: 3, score: 300, coins: 3, soldier: true },
+  rifle: { hp: 2, score: 100, coins: 1, soldier: true },
+  knife: { hp: 2, score: 100, coins: 1, soldier: true },
+  grenadier: { hp: 2, score: 150, coins: 2, soldier: true },
+  bazooka: { hp: 3, score: 200, coins: 2, soldier: true },
+  shield: { hp: 3, score: 300, coins: 3, soldier: true },
+  sniper: { hp: 3, score: 300, coins: 3, soldier: true },
+  mortar: { hp: 4, score: 300, coins: 3, soldier: true },
   biker: { hp: 3, score: 400, coins: 4, vehicle: true },
   heli: { hp: 12, score: 1000, coins: 10, vehicle: true },
   truck: { hp: 22, score: 800, coins: 10, vehicle: true },
@@ -36,8 +36,8 @@ function mkEnemy(type, x, o = {}) {
     wave: !!o.wave, idleKind: o.idle ? pick(["chat", "chat", "sleep"]) : null, t: 0, plat: o.plat || null,
     pal: type === "jugg" ? `jugg_${th}` : (o.elite || type === "sniper" ? `elite_${th}` : `rebel_${th}`) };
   e.maxHp = e.hp;
-  if (type === "drone") { e.baseY = e.y = GROUND + rand(62, 100); e.mode = "hover"; e.cd = rand(1.4, 2.4); e.offX = rand(-14, 14); }   // hovers almost overhead: aim up to shoot it
-  if (type === "heli") { e.y = 150; e.baseY = 150 + rand(-8, 8); e.cd = 2; }
+  if (type === "drone") { e.baseY = e.y = skyY(GROUND + rand(62, 100)); e.mode = "hover"; e.cd = rand(1.4, 2.4); e.offX = rand(-14, 14); }   // hovers almost overhead: aim up to shoot it
+  if (type === "heli") { e.baseY = skyY(150) + rand(-8, 4); e.y = e.baseY; e.cd = 2; }
   if (type === "truck") { e.stopX = camX + W - 74; e.unload = 3 + Math.min(game.diff, 3); e.unT = 0.6; }
   if (type === "biker") { e.warn = 0.8; e.face = -1; e.hitDone = false; sfx.engine(); }
   if (type === "mortar") e.cd = rand(1.5, 2.5);

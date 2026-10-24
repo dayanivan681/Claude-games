@@ -33,11 +33,11 @@ function setupMenuScene() {
 let menuScene = null;
 function beginMission(id, fromCheckpoint = null) {
   initAudio();
-  state = "play"; paused = false; musicPaused = false; screen = "pause";
+  state = "play"; paused = false; musicPaused = false; screen = "pause"; syncZoom();
   startMission(id, fromCheckpoint);
   releaseAllTouches(); clearInputEdges();
 }
-function beginSurvival() { initAudio(); state = "play"; paused = false; musicPaused = false; screen = "pause"; startSurvival(); releaseAllTouches(); clearInputEdges(); }
+function beginSurvival() { initAudio(); state = "play"; paused = false; musicPaused = false; screen = "pause"; syncZoom(); startSurvival(); releaseAllTouches(); clearInputEdges(); }
 function setPaused(v) {
   if (state !== "play") return;
   paused = v; musicPaused = v; screen = "pause"; uiFocus = -1;
@@ -152,7 +152,24 @@ function uiKey(k) {
 }
 
 // ---------- Main per-frame UI ----------
-function drawUI(dt) {
+// In a mission the logical grid is coarse (big soldiers), so the interface is drawn on the finer
+// buffer grid instead: same on-screen size as in the menus, and nothing overflows. Pointer input
+// for the interface goes through the same mapping.
+function uiScale() { return ZOOM && F === 2 ? 2 : 1; }
+function withUIScale(fn, transform) {
+  const u = uiScale();
+  if (u === 1) return fn();
+  const sv = { W, H, PT, l: SAFE.l, r: SAFE.r, t: SAFE.t, b: SAFE.b, lc: layoutCache, gen: layoutGen };
+  W *= u; H *= u; PT *= u; SAFE.l *= u; SAFE.r *= u; SAFE.t *= u; SAFE.b *= u; layoutCache = null;
+  if (transform) g.setTransform(F / u, 0, 0, F / u, 0, 0);
+  try { return fn(); } finally {
+    W = sv.W; H = sv.H; PT = sv.PT; SAFE.l = sv.l; SAFE.r = sv.r; SAFE.t = sv.t; SAFE.b = sv.b;
+    layoutCache = layoutGen === sv.gen ? sv.lc : null;
+    if (transform) g.setTransform(F, 0, 0, F, 0, 0);
+  }
+}
+function drawUI(dt) { withUIScale(() => drawUIInner(dt), true); }
+function drawUIInner(dt) {
   uiHitsPrev = uiHits; uiHits = [];
   screenT += dt;
   if (state === "title") drawTitle();
@@ -731,7 +748,7 @@ const TIPS = ["CROUCH UNDER HIGH SHOTS, JUMP OVER LOW ONES", "GRENADES CLEAR ENE
   "SHOOT DOWN HOMING MISSILES BEFORE THEY HIT YOU", "BOSSES HAVE GLOWING WEAK POINTS: x2 DAMAGE", "A RED LASER MEANS A SNIPER IS AIMING AT YOU", "WATCH FOR THE RED MARKER: A MORTAR SHELL IS COMING"];
 function drawFailed() {
   if (!game) { state = "menu"; screen = "map"; return; }
-  drawWorld(0); dim(0.7);
+  dim(0.7);   // the world under it is drawn (frozen) by the main loop
   title("MISSION FAILED", Math.round(H * 0.16));
   text(`YOU KEEP THE ${game.coins} ¤ YOU FOUND`, W / 2, Math.round(H * 0.16) + 24, UIC.gold, { align: "center" });
   const tip = TIPS[Math.floor(game.time) % TIPS.length];
@@ -751,7 +768,7 @@ function drawToasts(dt) {
   const k = t.t < 0.25 ? easeOut(t.t / 0.25) : t.t > 2.6 ? 1 - easeOut((t.t - 2.6) / 0.3) : 1;
   const w = Math.min(W - 20, textW(t.msg) + 16), x = Math.round(W / 2 - w / 2);
   // in play: under the HUD; on results and menus: near the bottom so it never covers a screen title
-  const y = state === "results" ? Math.round(H - SAFE.b - 52 + (1 - k) * 30) : Math.round(SAFE.t + 6 - (1 - k) * 30) + (state === "play" ? 44 : 0);
+  const y = state === "results" ? Math.round(H - SAFE.b - 52 + (1 - k) * 30) : Math.round(SAFE.t + 6 - (1 - k) * 30) + (state === "play" ? 58 : 0);   // clear of the combo meter and boss bar
   frame(x, y, w, 16, "rgba(20,14,16,0.92)", t.color);
   text(t.msg, W / 2, y + 4, t.color, { align: "center" });
   if (t.t > 2.9) toastShown = null;

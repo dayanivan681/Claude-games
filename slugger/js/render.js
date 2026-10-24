@@ -17,33 +17,53 @@ function measureSafe() {
   probe.remove();
   return r;
 }
+let ZOOM = false;
+function syncZoom() {
+  const z = state === "play" || state === "failed";
+  if (z !== ZOOM) { ZOOM = z; resize(); }
+}
 function resize() {
   DPR = Math.min(window.devicePixelRatio || 1, 3);
   const cw = window.innerWidth, ch = window.innerHeight;
   const devW = Math.max(1, Math.round(cw * DPR)), devH = Math.max(1, Math.round(ch * DPR));
-  let k = Math.max(1, Math.floor(devH / 240)); // ~250-300 px tall: a wider view keeps enemies clear of the thumbs
-  while (k > 1 && devW / k < 400) k--;
-  while (devH / k > 300 && devW / (k + 1) >= 300) k++;
-  K = k; W = Math.floor(devW / k); H = Math.floor(devH / k);
+  let k;
+  if (ZOOM) {   // in a mission: ~200 px tall view so soldiers read big (Metal Slug framing)
+    k = Math.max(1, Math.round(devH / 150));
+    while (k > 1 && devW / k < 300) k--;
+    if (k % 2 && k >= 3) {   // prefer an even scale so the 2x detail layer stays crisp
+      if (devW / (k + 1) >= 300 && devH / (k + 1) >= 136) k++;
+      else if (devH / (k - 1) <= 200) k--;
+    }
+  } else {      // menus: roomier ~250-300 px grid for the cards and lists
+    k = Math.max(1, Math.floor(devH / 240));
+    while (k > 1 && devW / k < 400) k--;
+    while (devH / k > 300 && devW / (k + 1) >= 300) k++;
+    if (k % 2 && k >= 3 && devH / (k - 1) <= 340) k--;
+  }
+  K = k; F = K % 2 === 0 ? 2 : 1; W = Math.floor(devW / k); H = Math.floor(devH / k);
   canvas.width = devW; canvas.height = devH;
   canvas.style.width = cw + "px"; canvas.style.height = ch + "px";
   OX = Math.floor((devW - W * K) / 2); OY = Math.floor((devH - H * K) / 2);
-  buf.width = W; buf.height = H;
+  buf.width = W * F; buf.height = H * F;
   g.imageSmoothingEnabled = false;
   PT = DPR / K;
   const s = measureSafe();
   SAFE.t = Math.ceil(s.t * PT); SAFE.r = Math.ceil(s.r * PT); SAFE.b = Math.ceil(s.b * PT); SAFE.l = Math.ceil(s.l * PT);
-  VPAD_TOUCH = matchMedia("(pointer: coarse)").matches ? Math.round(62 * PT + SAFE.b * 0.5) : 0;
+  // lift the ground line just above the touch buttons' tops (dy 44 + r 32 points), no more
+  VPAD_TOUCH = matchMedia("(pointer: coarse)").matches ? Math.max(0, Math.round(80 * PT + SAFE.b) - GROUND) : 0;
   invalidateLayout();
   skyCache = null;
-  if (game && layers && (layers.h !== H || layers.c0w !== W)) { buildLayers(game.theme, game.len); layers.c0w = W; }
+  if (layers && (layers.h !== H || layers.c0w !== W)) {
+    if (ZOOM && game) buildLayers(game.theme, game.len); else if (menuScene) buildLayers(menuScene, 2600);
+    layers.c0w = W;
+  }
   initWeather();
 }
 function present() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.imageSmoothingEnabled = false;
   if (OX || OY) { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, canvas.width, canvas.height); }
-  ctx.drawImage(buf, 0, 0, W, H, OX, OY, W * K, H * K);
+  ctx.drawImage(buf, 0, 0, W * F, H * F, OX, OY, W * K, H * K);
   drawControlsHD(ctx);
 }
 let presentMs = 0;   // dev metric
@@ -233,7 +253,7 @@ function drawPow(p) {
   const x = sx(p.x), y = H - Math.round(p.y) - 1;
   if (x < -30 || x > W + 30) return;
   if (p.state === "tied") {
-    compBegin(); compPart("pow_tied", "pow", 0, (Math.sin(clock * 5 + p.t) > 0.7 ? 1 : 0)); compBlit(x, y, p.face);
+    drawSoldier({ pal: "pow", head: "h_pow", torso: "t_pow", pose: "sit", arm: "tied", t: clock + p.t, bob: true }, x, y, p.face);
     if (Math.floor(realClock * 2 + p.x) % 4 === 0) text("HELP!", x - 18, y - 30, "#ffffff", { outline: true });
     return;
   }

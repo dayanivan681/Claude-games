@@ -14,6 +14,7 @@ function boot() {
 function loop(t) {
   const dt = lastT ? Math.min((t - lastT) / 1000, 0.1) : 0;
   lastT = t; realClock += dt;
+  syncZoom();
   readInput();
   VPAD = touchUI ? VPAD_TOUCH : 0;
   if (state === "play") {
@@ -28,7 +29,8 @@ function loop(t) {
       save.stats.playTime += dt;
     }
   }
-  if ((state === "play" || state === "failed") && game) drawWorld(paused ? 0 : dt);
+  g.setTransform(F, 0, 0, F, 0, 0);
+  if ((state === "play" || state === "failed") && game) drawWorld(paused || state === "failed" ? 0 : dt);
   drawUI(dt);
   present();
   musicTick();

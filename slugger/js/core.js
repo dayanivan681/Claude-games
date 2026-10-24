@@ -4,10 +4,15 @@
 // Viewport: internal pixel resolution (variable width/height so pixels stay square and crisp),
 // integer upscale factor K, device pixel ratio, safe-area insets (internal px) and px-per-point.
 let W = 450, H = 234, K = 5, DPR = 1, PT = 0.6;
+// F = buffer pixels per world pixel. With F = 2 the soldiers draw at double detail (see soldier.js)
+// while the world, physics and UI keep their logical pixel grid.
+let F = 1;
 const SAFE = { l: 0, r: 0, t: 0, b: 0 };
 // On touch screens the world is drawn VPAD px higher, over a strip of ground, so the hero and the
 // enemies fight above the thumbs instead of under them.
-let VPAD = 0, VPAD_TOUCH = 0;   // VPAD drops to 0 while a game controller is in use
+let VPAD = 0, VPAD_TOUCH = 0;
+// Highest altitude an air unit should fly at so it stays in view below the HUD (the mission view is short).
+function skyY(y) { return Math.min(y, H - VPAD_TOUCH - 44); }   // VPAD drops to 0 while a game controller is in use
 // Inside the iOS app (slugger-ios) the WKWebView exposes native bridges; on the web these are absent.
 const NATIVE = !!window.webkit?.messageHandlers?.haptic;
 function nativeHaptic(kind) { try { window.webkit.messageHandlers.haptic.postMessage(kind); } catch {} }

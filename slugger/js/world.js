@@ -11,8 +11,8 @@ let banner = null, announceMsg = null;
 let progressDirty = false;
 
 const WEAPONS = {
-  P: { name: "PISTOL", cd: 0.17, ammo: Infinity },
-  H: { name: "HEAVY MACHINE GUN", cd: 0.065, ammo: 200, voice: "Heavy machine gun!" },
+  P: { name: "PISTOL", cd: 0.24, ammo: Infinity },
+  H: { name: "HEAVY MACHINE GUN", cd: 0.085, ammo: 200, voice: "Heavy machine gun!" },
   R: { name: "ROCKET LAUNCHER", cd: 0.42, ammo: 30, voice: "Rocket launcher!" },
   F: { name: "FLAME SHOT", cd: 0.38, ammo: 30, voice: "Flame shot!" },
   S: { name: "SHOTGUN", cd: 0.6, ammo: 30, voice: "Shotgun!" },
@@ -301,9 +301,9 @@ function updatePlayer(dt) {
   if ((downEdge && dir || input.rollPressed) && P.onGround && P.rollCD <= 0) { P.rollT = ROLL_T; P.rollCD = 0.75; P.rollDir = dir || P.face; sfx.jump(); dust(P.x, P.y, 4); hapticTap(true); }
   if (P.rollT > 0) P.crouch = true;
   else if (dir) P.face = dir;
-  const speed = P.crouch ? 36 : 92 * (1 + heroPerk("speed"));
+  const speed = P.crouch ? 30 : 66 * (1 + heroPerk("speed"));   // unhurried pace: the scenery and enemies get read
   P.vx = approach(P.vx, 0, 400 * dt);
-  if (P.rollT > 0) { movePlayerX(P.rollDir * 200 * dt); if (chance(0.5)) dust(P.x, P.y, 1); }
+  if (P.rollT > 0) { movePlayerX(P.rollDir * 170 * dt); if (chance(0.5)) dust(P.x, P.y, 1); }
   else movePlayerX((dir * speed + P.vx) * dt);
   // Forgiving jumps: a press up to 0.13 s before landing still counts (buffer), and so does one
   // up to 0.1 s after running off an edge (coyote time).
@@ -376,7 +376,7 @@ function shoot() {
   const ox = P.x + mx * P.face, oy = P.y + my;
   const mul = dmgMul();
   switch (P.weapon) {
-    case "P": addB({ kind: "b", team: "p", x: ox, y: oy, vx: dx * 340, vy: dy * 340, life: 2.2, dmg: mul * (1 + heroPerk("pistol")), src: "P" }); sfx.pistol(); break;
+    case "P": addB({ kind: "b", team: "p", x: ox, y: oy, vx: dx * 300, vy: dy * 300, life: 2.2, dmg: mul * (1 + heroPerk("pistol")), src: "P" }); sfx.pistol(); break;
     case "H": {
       const j = rand(-0.07, 0.07), sp = 390;
       const vx = dx ? dx * sp * Math.cos(j) : sp * Math.sin(j), vy = dy ? dy * sp * Math.cos(j) : sp * Math.sin(j);

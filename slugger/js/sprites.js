@@ -289,15 +289,6 @@ function legsFor(pose, t) {
 }
 // Shoulder point (local) for a pose
 function shoulderOf(pose, t, bob = 0) { const hipY = SPR[legsFor(pose, t)].hipY; return [2, hipY + 7 + bob]; }
-// Muzzle point (local) for a soldier pose: aim f|u|d, gun id suffix
-function muzzleOf(pose, t, aim, gun) {
-  const [shx, shy] = shoulderOf(pose, t);
-  const arm = SPR[aim === "u" ? "a_u" : aim === "d" ? "a_d" : "a_f"];
-  const hx = shx + arm.grip[0] - arm.ax, hy = shy - (arm.grip[1] - arm.ay);
-  const gs = SPR["g_" + gun + (aim === "u" ? "_u" : aim === "d" ? "_d" : "")];
-  if (!gs) return [hx + 6, hy];
-  return [hx + gs.muzzle[0] - gs.ax, hy - (gs.muzzle[1] - gs.ay)];
-}
 
 // Assemble a soldier. o: pal, head, torso, pose, t, arm (f|u|d|throw|knife|flail|salute|idle|bazooka|shield|none), gun, chute
 function composeSoldier(o) {
@@ -330,7 +321,7 @@ function composeSoldier(o) {
   else if (arm === "minigun") { compPart("g_minigun", "fx", sh[0] + 2, sh[1] - 1); compPart("a_f", pal, sh[0], sh[1]); }
   if (arm === "shield") compPart("shield", "fx", 7 + (o.poke ? 3 : 0), 1);
 }
-function drawSoldier(o, sx, sy, face, blit = {}) { composeSoldier(o); compBlit(sx, sy, face, blit); }
+// drawSoldier / muzzleOf live in soldier.js (HD skeleton soldiers)
 
 // ---------- Procedural big sprites (vehicles, bosses) with outline ----------
 const procPool = new Map();
