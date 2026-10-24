@@ -127,6 +127,9 @@ def legs(m, sk):
         ang = math.atan2(knee[1] - hip[1], knee[0] - hip[0])
         m.box((mid[0] - 2.2, y - 4.3, mid[1] - 2.0), (mid[0] + 2.2, y - 2.6, mid[1] + 2.0), PANTS_D, far, about=mid, ang=ang + math.pi / 2)   # cargo pocket
         m.sphere(X(knee, y - 0.6), 3.4, PANTS_D, far, scale=(1, 1, 0.9))          # knee pad
+        if not far:                                                                 # thigh holster
+            m.box((mid[0] - 1.6, y - 5.4, mid[1] - 3.2), (mid[0] + 2.8, y - 3.4, mid[1] + 2.4), BELT, bevel=0.5, about=mid, ang=ang + math.pi / 2)
+            m.box((mid[0] - 0.4, y - 6.0, mid[1] + 1.2), (mid[0] + 1.6, y - 4.8, mid[1] + 3.4), G_DARK, bevel=0.2, about=mid, ang=ang + math.pi / 2)
         fx, fy = foot
         m.box((fx - 3.8, y - 3.4, fy + 1.4), (fx + 6.4, y + 3.4, fy + 5.2), BOOT, far, bevel=1.2)   # boot
         m.box((fx - 4.0, y - 3.6, fy + 0.0), (fx + 6.8, y + 3.6, fy + 1.5), SOLE, far, bevel=0.4)    # sole
@@ -134,50 +137,57 @@ def legs(m, sk):
         m.box((fx + 1.0, y - 3.7, fy + 2.4), (fx + 4.8, y - 3.3, fy + 2.9), BOOT_L, far, bevel=0)    # lace
 
 def torso(m):
+    # sneaking-suit look: broad shoulders, ribbed suit, tactical harness with chest pouches, small back pouch
     hip = HIP
-    m.capsule(X((hip[0], hip[1] + 2.5)), X((SH_N[0] - 0.5, SH_N[1] - 1.5)), 7.2, SHIRT, squash=0.82, r2=7.6)
-    m.capsule(X((hip[0] + 2.5, hip[1] + 6)), X((SH_N[0] + 2.8, SH_N[1] - 3)), 3.4, SHIRT_L, squash=0.7)   # chest panel
-    m.box((2.6, -5.9, 24.0), (6.4, -4.4, 27.6), SHIRT_D)                                                     # pocket
-    m.box((2.8, -6.1, 26.9), (6.6, -4.6, 28.2), SHIRT_D, bevel=0.2)                                          # pocket flap
-    # bandolier with brass rounds
-    a, b = (-4.0, 31.5), (6.5, 21.0)
-    m.capsule(X(a, -5.8), X(b, -5.8), 1.25, SHIRT_D)
-    for k in range(1, 6):
-        t = k / 6; p = (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
-        m.box((p[0] - 0.7, -7.2, p[1] - 0.9), (p[0] + 0.7, -6.4, p[1] + 1.3), BRASS, bevel=0.15)
-    m.cyl(X((hip[0], hip[1] - 0.6)), X((hip[0], hip[1] + 2.4)), 7.5, 7.5, BELT, squash=0.86, seg=20)       # belt
-    m.box((5.6, -5.0, hip[1] - 0.4), (8.0, -2.0, hip[1] + 2.2), BRASS, bevel=0.3)                            # buckle
-    m.box((-6.0, -6.6, hip[1] - 2.0), (-2.0, -5.0, hip[1] + 1.8), BELT, bevel=0.4)                           # belt pouch
-    # backpack
-    m.box((-13.0, -4.5, 21.0), (-5.5, 4.5, 34.0), PACK, bevel=1.6)
-    m.box((-14.0, -3.8, 22.0), (-11.0, 3.8, 28.0), PACK_D, bevel=0.8)
-    m.cyl((-12.5, -3.5, 34.5), (-12.5, 3.5, 34.5), 2.0, 2.0, PACK_D)                                          # bedroll
-    m.capsule(X((-1.5, 32.5), -5.0), X((-4.5, 22.5), -5.0), 0.9, PACK_D)                                       # strap
+    m.capsule(X((hip[0], hip[1] + 2.5)), X((SH_N[0] - 0.5, SH_N[1] - 1.5)), 7.0, SHIRT, squash=0.82, r2=8.0)
+    m.capsule(X((hip[0] + 2.5, hip[1] + 6)), X((SH_N[0] + 2.8, SH_N[1] - 3)), 3.4, SHIRT_L, squash=0.7)    # chest muscle sheen
+    for z in (23.0, 26.0):                                                                                   # suit ribs
+        m.box((-5.5, -6.4, z), (5.0, -5.6, z + 0.6), SHIRT_D, bevel=0)
+    m.cyl(X((SH_N[0] - 2.5, SH_N[1] - 1.0)), X((SH_N[0] - 2.0, SH_N[1] + 1.2)), 4.6, 4.0, SHIRT_D, squash=0.85)   # turtleneck
+    # harness: shoulder straps down the front, chest pouches, a radio on the strap
+    m.capsule(X((SH_N[0] + 1.5, SH_N[1] - 0.5), -5.8), X((hip[0] + 4.5, hip[1] + 2.5), -5.8), 0.9, BELT)
+    m.capsule(X((SH_N[0] - 3.5, SH_N[1] - 0.5), -5.6), X((hip[0] - 3.0, hip[1] + 2.5), -5.6), 0.9, BELT)
+    m.capsule(X((SH_N[0] - 3.5, 27.5), -6.0), X((SH_N[0] + 2.0, 27.5), -6.0), 0.8, BELT)
+    m.box((1.8, -7.6, 22.2), (5.2, -5.2, 26.0), BELT, bevel=0.5)                                              # pouch
+    m.box((-2.6, -7.4, 22.4), (0.8, -5.2, 25.8), BELT, bevel=0.5)                                             # pouch
+    m.box((1.9, -7.8, 25.2), (5.1, -6.8, 26.0), BOOT_L, bevel=0.1)                                            # flap
+    m.box((-3.6, -8.0, 29.0), (-1.4, -6.4, 32.4), G_DARK, bevel=0.3)                                          # radio
+    m.cyl((-3.0, -7.2, 32.4), (-3.4, -7.2, 35.0), 0.35, 0.3, G_DARK, seg=6)                                   # antenna
+    m.cyl(X((hip[0], hip[1] - 0.6)), X((hip[0], hip[1] + 2.4)), 7.5, 7.5, BELT, squash=0.86, seg=20)        # belt
+    m.box((5.6, -5.0, hip[1] - 0.4), (8.0, -2.0, hip[1] + 2.2), G_MID, bevel=0.3)                             # buckle
+    m.box((-6.0, -6.6, hip[1] - 2.0), (-2.0, -5.0, hip[1] + 1.8), BELT, bevel=0.4)                            # belt pouch
+    # small back pouch instead of a big pack
+    m.box((-11.0, -3.5, 22.0), (-6.0, 3.5, 30.0), PACK, bevel=1.2)
+    m.box((-11.6, -2.8, 24.0), (-9.6, 2.8, 28.5), PACK_D, bevel=0.5)
 
 def head(m, panic=False):
     hx, hy = HEAD
-    m.capsule(X((hx - 1.8, hy - 9)), X((hx - 0.6, hy - 5)), 3.0, SKIN)                                         # neck
-    m.cyl(X((hx - 2.4, hy - 9.4)), X((hx - 2.0, hy - 7.6)), 4.4, 3.8, SHIRT_D, squash=0.85)                   # collar
+    m.capsule(X((hx - 1.8, hy - 9)), X((hx - 0.6, hy - 5)), 3.2, SKIN)                                         # neck
     m.sphere(X((hx, hy)), 8.2, SKIN, scale=(1.0, 0.92, 1.0))                                                   # skull
-    m.sphere(X((hx + 2.6, hy - 3.2)), 5.6, SKIN, scale=(1.05, 0.95, 0.9))                                      # jaw
-    m.sphere(X((hx + 8.6, hy - 1.4), -0.5), 1.7, SKIN, scale=(1.1, 1, 1.2))                                    # nose
+    m.sphere(X((hx + 2.8, hy - 3.4)), 5.7, SKIN, scale=(1.05, 0.95, 0.9))                                      # square jaw
+    m.sphere(X((hx + 3.2, hy - 4.9)), 5.6, SKIN_D, scale=(1.04, 1.0, 0.66))                                    # stubble
+    m.sphere(X((hx + 8.7, hy - 1.2), -0.5), 1.7, SKIN, scale=(1.15, 1, 1.25))                                  # nose
     m.sphere(X((hx - 2.8, hy - 0.8), -7.0), 2.1, SKIN_D, scale=(0.8, 0.6, 1.1))                                # ear
-    # eye: white + pupil, brow
-    m.sphere((hx + 5.4, -5.6, hy + 0.3), 1.9, WHITE, scale=(0.85, 0.5, 1.0))
-    m.sphere((hx + 6.4, -6.2, hy + 0.1), 1.0, PUPIL, scale=(0.9, 0.5, 1.2))
-    m.box((hx + 3.4, -7.0, hy + 2.5), (hx + 8.0, -5.4, hy + 3.5), HAIR, bevel=0.2)
+    # narrowed eye under a heavy, angled brow
+    m.sphere((hx + 5.5, -5.6, hy + 0.2), 1.8, WHITE, scale=(0.9, 0.5, 0.75))
+    m.sphere((hx + 6.5, -6.2, hy + 0.1), 1.0, PUPIL, scale=(0.9, 0.5, 1.0))
+    m.box((hx + 3.2, -7.0, hy + 1.6), (hx + 8.4, -5.4, hy + 3.0), HAIR, bevel=0.2, about=(hx + 5.8, hy + 2.3), ang=-0.18)
     if panic: m.box((hx + 4.2, -6.6, hy - 6.2), (hx + 7.4, -4.8, hy - 3.6), PUPIL, bevel=0.3)
-    else: m.box((hx + 4.6, -6.4, hy - 5.0), (hx + 7.4, -4.6, hy - 4.4), LIP, bevel=0)
-    # hair: swept back with spikes poking out above the bandana
-    m.sphere(X((hx - 1.4, hy + 2.2)), 8.0, HAIR, scale=(1.0, 0.98, 0.95))
-    for (ax, az, tx, tz, r) in ((-4, 7, -8, 12.5, 2.4), (0, 8, -2.5, 13.5, 2.4), (3.5, 7, 3.5, 12.0, 2.0), (-7, 4, -12, 7.5, 2.2), (-8, 0, -11.5, 1.5, 2.0)):
-        m.cyl(X((hx + ax, hy + az)), X((hx + tx, hy + tz)), r, 0.4, HAIR)
-    m.sphere(X((hx - 3.0, hy - 3.6), 0.0), 4.6, HAIR, scale=(1, 0.95, 1.0))                                    # back of the head
-    # red bandana knotted at the back, tails flying
-    m.cyl(X((hx - 0.6, hy + 2.6)), X((hx + 0.2, hy + 5.4)), 8.55, 8.35, GEAR, squash=0.95, seg=24)
-    m.sphere(X((hx - 8.2, hy + 3.6), 0.5), 1.8, GEAR)
-    m.capsule(X((hx - 8.6, hy + 3.4), 0.5), X((hx - 14.5, hy + 0.4), 0.9), 1.3, GEAR, r2=0.9, squash=0.6)
-    m.capsule(X((hx - 8.6, hy + 3.0), 1.0), X((hx - 13.0, hy - 2.6), 1.4), 1.1, GEAR, r2=0.8, squash=0.6)
+    else: m.box((hx + 4.8, -6.6, hy - 5.0), (hx + 7.6, -4.8, hy - 4.4), LIP, bevel=0)
+    # messy swept hair, longer at the back
+    m.sphere(X((hx - 1.4, hy + 2.4)), 8.0, HAIR, scale=(1.0, 0.98, 0.92))
+    for (ax, az, tx, tz, r) in ((-2, 7.5, -6, 10.5, 2.2), (2, 8, 0.5, 10.8, 2.0), (5, 6.5, 7.5, 8.0, 1.8), (-6, 5, -10, 6.5, 2.0)):
+        m.cyl(X((hx + ax, hy + az)), X((hx + tx, hy + tz)), r, 0.6, HAIR)
+    m.sphere(X((hx - 3.4, hy - 3.0), 0.0), 5.0, HAIR, scale=(1, 0.95, 1.15))                                   # back of the head
+    m.capsule(X((hx - 6.0, hy - 2.0), 0.0), X((hx - 7.0, hy - 7.5), 0.0), 2.6, HAIR, r2=1.6)                    # hair down the nape
+    m.sphere(X((hx + 4.0, hy + 4.4), -0.5), 2.2, HAIR, scale=(1.3, 0.9, 0.7))                                  # fringe over the brow
+    # dark bandana knotted at the back, long tails flying
+    m.cyl(X((hx - 0.6, hy + 2.6)), X((hx + 0.2, hy + 5.2)), 8.55, 8.35, GEAR, squash=0.95, seg=24)
+    m.sphere(X((hx - 8.2, hy + 3.6), 0.5), 1.9, GEAR)
+    m.capsule(X((hx - 8.6, hy + 3.4), 0.5), X((hx - 15.5, hy + 0.8), 0.9), 1.3, GEAR, r2=0.9, squash=0.6)
+    m.capsule(X((hx - 15.5, hy + 0.8), 0.9), X((hx - 21.0, hy - 1.6), 1.2), 0.9, GEAR, r2=0.6, squash=0.6)
+    m.capsule(X((hx - 8.6, hy + 3.0), 1.0), X((hx - 14.0, hy - 3.0), 1.4), 1.1, GEAR, r2=0.8, squash=0.6)
+    m.capsule(X((hx - 14.0, hy - 3.0), 1.4), X((hx - 18.0, hy - 7.0), 1.6), 0.8, GEAR, r2=0.5, squash=0.6)
 
 def arm(m, sh, hand, far, sleeve=SHIRT, down=True, glove=True):
     y = YF if far else YN
@@ -389,8 +399,8 @@ def main():
     if "--preview" in sys.argv: preview(frames, sys.argv[sys.argv.index("--preview") + 1])
 
 # ---------- preview sheet (Rayo's base palette, 4x) for checking the art without the game ----------
-BASE = dict(S="#f3c48f", s="#d39560", H="#5a3418", h="#3a1e0c", A="#d8282c", a="#941418", C="#c9a45a", c="#937238", D="#e2c47e",
-            P="#3d5ca8", p="#2b4380", B="#3a2414", b="#6a4a30", K="#5a3a1a", N="#6d6a3a", n="#4a4826")
+BASE = dict(S="#e6b088", s="#a87a5e", H="#4a2e1c", h="#2e1a0e", A="#2e3548", a="#1c2130", C="#4f5a6e", c="#363e4e", D="#6c7892",
+            P="#4a5468", p="#343c4c", B="#201e1e", b="#3c3836", K="#2c2824", N="#3e4436", n="#2a2e24")
 def hexrgb(h): return [int(h[i:i + 2], 16) for i in (1, 3, 5)]
 def shade(c, k): return [v * (1 + k) if k < 0 else v + (255 - v) * k for v in c]
 def colors(code):
