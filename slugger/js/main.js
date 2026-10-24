@@ -28,6 +28,7 @@ function loop(t) {
       save.stats.playTime += dt;
     }
   }
+  g.setTransform(F, 0, 0, F, 0, 0);
   if ((state === "play" || state === "failed") && game) drawWorld(paused ? 0 : dt);
   drawUI(dt);
   present();

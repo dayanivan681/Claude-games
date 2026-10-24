@@ -24,11 +24,12 @@ function resize() {
   let k = Math.max(1, Math.floor(devH / 240)); // ~250-300 px tall: a wider view keeps enemies clear of the thumbs
   while (k > 1 && devW / k < 400) k--;
   while (devH / k > 300 && devW / (k + 1) >= 300) k++;
-  K = k; W = Math.floor(devW / k); H = Math.floor(devH / k);
+  if (k % 2 && k >= 3 && devH / (k - 1) <= 340) k--;   // prefer an even scale so the 2x detail layer stays crisp
+  K = k; F = K % 2 === 0 ? 2 : 1; W = Math.floor(devW / k); H = Math.floor(devH / k);
   canvas.width = devW; canvas.height = devH;
   canvas.style.width = cw + "px"; canvas.style.height = ch + "px";
   OX = Math.floor((devW - W * K) / 2); OY = Math.floor((devH - H * K) / 2);
-  buf.width = W; buf.height = H;
+  buf.width = W * F; buf.height = H * F;
   g.imageSmoothingEnabled = false;
   PT = DPR / K;
   const s = measureSafe();
@@ -43,7 +44,7 @@ function present() {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.imageSmoothingEnabled = false;
   if (OX || OY) { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, canvas.width, canvas.height); }
-  ctx.drawImage(buf, 0, 0, W, H, OX, OY, W * K, H * K);
+  ctx.drawImage(buf, 0, 0, W * F, H * F, OX, OY, W * K, H * K);
   drawControlsHD(ctx);
 }
 let presentMs = 0;   // dev metric
@@ -233,7 +234,7 @@ function drawPow(p) {
   const x = sx(p.x), y = H - Math.round(p.y) - 1;
   if (x < -30 || x > W + 30) return;
   if (p.state === "tied") {
-    compBegin(); compPart("pow_tied", "pow", 0, (Math.sin(clock * 5 + p.t) > 0.7 ? 1 : 0)); compBlit(x, y, p.face);
+    drawSoldier({ pal: "pow", head: "h_pow", torso: "t_pow", pose: "sit", arm: "tied", t: clock + p.t, bob: true }, x, y, p.face);
     if (Math.floor(realClock * 2 + p.x) % 4 === 0) text("HELP!", x - 18, y - 30, "#ffffff", { outline: true });
     return;
   }
