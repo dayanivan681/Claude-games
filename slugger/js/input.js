@@ -160,6 +160,10 @@ window.addEventListener("keydown", e => {
 });
 window.addEventListener("keyup", e => { const k = KEYMAP[e.code]; if (k) keys.delete(k); });
 window.addEventListener("blur", releaseAllTouches);
+// Backbone, DualSense, Xbox and other MFi controllers use the standard Gamepad mapping:
+// A jump · X / R1 / R2 fire · B / Y grenade · L1 / L2 roll · Menu pause · left stick or d-pad move and aim
+window.addEventListener("gamepadconnected", e => { toast("CONTROLLER CONNECTED", "#8ae06a"); hapticTap(true); });
+window.addEventListener("gamepaddisconnected", () => { toast("CONTROLLER DISCONNECTED", "#ff9a4a"); if (isTouch) touchUI = true; });
 
 // ---------- Per-frame merge ----------
 function pollGamepad() {
@@ -169,8 +173,9 @@ function pollGamepad() {
   if (gp) {
     const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0, bt = i => !!gp.buttons[i]?.pressed;
     cur.left = ax < -0.4 || bt(14); cur.right = ax > 0.4 || bt(15); cur.up = ay < -0.55 || bt(12); cur.down = ay > 0.6 || bt(13);
-    cur.a = bt(0); cur.b = bt(1); cur.x = bt(2); cur.y = bt(3); cur.start = bt(9); cur.rb = bt(5) || bt(7); cur.lb = bt(4) || bt(6);
-    touchUI = touchUI && !gp;
+    cur.a = bt(0); cur.b = bt(1); cur.x = bt(2); cur.y = bt(3); cur.start = bt(9) || bt(8); cur.rb = bt(5) || bt(7); cur.lb = bt(4) || bt(6);
+    // switch to controller mode (hide touch controls) only once the controller is actually used
+    if (gp.buttons.some(b => b?.pressed) || gp.axes.some(v => Math.abs(v) > 0.5)) touchUI = false;
   }
   for (const k of Object.keys(padEdge)) padEdge[k] = cur[k] && !padPrev[k];
   padPrev = cur;
@@ -203,7 +208,7 @@ function readInput() {
   pulseJump = false; pulseBomb = false; pulsePause = false;
   if (!inPlayControls() && pad) {
     if (padEdge.up) uiKey("up"); if (padEdge.down) uiKey("down"); if (padEdge.left) uiKey("left"); if (padEdge.right) uiKey("right");
-    if (padEdge.a) uiKey("ok"); if (padEdge.b) uiKey("back"); if (padEdge.start) uiKey(state === "play" ? "back" : "ok");
+    if (padEdge.a) uiKey("ok"); if (padEdge.b) uiKey("back"); if (padEdge.start && state !== "play") uiKey("ok");
   }
 }
 function clearInputEdges() { pulseJump = pulseBomb = pulsePause = false; input.jumpPressed = input.bombPressed = input.rollPressed = false; }

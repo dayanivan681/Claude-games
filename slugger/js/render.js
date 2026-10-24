@@ -33,7 +33,7 @@ function resize() {
   PT = DPR / K;
   const s = measureSafe();
   SAFE.t = Math.ceil(s.t * PT); SAFE.r = Math.ceil(s.r * PT); SAFE.b = Math.ceil(s.b * PT); SAFE.l = Math.ceil(s.l * PT);
-  VPAD = matchMedia("(pointer: coarse)").matches ? Math.round(62 * PT + SAFE.b * 0.5) : 0;
+  VPAD_TOUCH = matchMedia("(pointer: coarse)").matches ? Math.round(62 * PT + SAFE.b * 0.5) : 0;
   invalidateLayout();
   skyCache = null;
   if (game && layers && (layers.h !== H || layers.c0w !== W)) { buildLayers(game.theme, game.len); layers.c0w = W; }
@@ -44,7 +44,9 @@ function present() {
   ctx.imageSmoothingEnabled = false;
   if (OX || OY) { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, canvas.width, canvas.height); }
   ctx.drawImage(buf, 0, 0, W, H, OX, OY, W * K, H * K);
+  drawControlsHD(ctx);
 }
+let presentMs = 0;   // dev metric
 
 // ---------- Sky, layers, ground ----------
 let skyCache = null;
@@ -305,6 +307,7 @@ function drawBullet(b) {
     case "tshell": g.fillStyle = "#8a9098"; g.fillRect(x - 3, y - 2, 6, 3); g.fillStyle = "#e8c03a"; g.fillRect(x + (b.vx > 0 ? 2 : -3), y - 2, 1, 3); break;
     case "eb":
       if (b.sniper) { g.fillStyle = "#ff3a3a"; const a = Math.atan2(-b.vy, b.vx); for (let i = 0; i < 6; i++) g.fillRect(Math.round(x - Math.cos(a) * i), Math.round(y + Math.sin(a) * i), 1, 1); }
+      else { const a = Math.atan2(-b.vy, b.vx); g.globalAlpha = 0.45; g.fillStyle = "#ff7a3a"; for (let i = 2; i < 7; i++) g.fillRect(Math.round(x - Math.cos(a) * i), Math.round(y + Math.sin(a) * i), 1, 1); g.globalAlpha = 1; }   // tracer tail
       pcirc(g, x, y, 2, "#ff5a3a"); g.fillStyle = "#fff0c0"; g.fillRect(x - 1, y - 1, 2, 2); break;
     case "ebomb": g.fillStyle = "#2a2a2a"; g.fillRect(x - 2, y - 3, 4, 6); g.fillStyle = "#c83a2a"; g.fillRect(x - 2, y - 4, 4, 1); break;
     case "eshell": pcirc(g, x, y, 3.5, "#2a2a2a"); pcirc(g, x, y, 1.5, Math.floor(clock * 20) % 2 ? "#ff5a3a" : "#ffd34d"); break;

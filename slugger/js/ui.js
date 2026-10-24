@@ -464,33 +464,100 @@ function ring(x, y, r, fill, edge, alpha) {
   pcirc(g, x, y, r, edge); pcirc(g, x, y, r - 1, fill);
   g.globalAlpha = 1;
 }
+// The touch controls are drawn after the pixel buffer is upscaled, straight onto the full-resolution
+// canvas, so they look like native iOS controls (smooth glass, vector glyphs) rather than pixel art.
+let hdControls = null;
+const glassCache = new Map();
 function drawTouchControls(editing = false) {
-  if (!touchUI && !editing) return;
-  const L = layout(), a = save.settings.ctrlAlpha;
+  if (!editing && (!touchUI || !inPlayControls() || screen === "layout")) return;   // drawn on top, so never over menus
+  hdControls = { editing };
+}
+const BTN_TINT = { fire: [255, 96, 82], jump: [110, 168, 255], bomb: [150, 222, 106] };
+function drawControlsHD(c) {
+  const req = hdControls; hdControls = null;
+  if (!req) return;
+  const editing = req.editing, L = layout(), a = save.settings.ctrlAlpha, S = K;
+  const X = x => OX + x * S, Y = y => OY + y * S, d = DPR;
   const held = new Set([...btnTouch.values()].map(t => t.name));
-  const st = L.stick, base = stick && !editing ? { x: stick.ox, y: stick.oy } : st;
-  ring(base.x, base.y, st.r, "rgba(255,255,255,0.12)", "rgba(255,255,255,0.55)", stick ? a + 0.15 : a * 0.8);
+  c.save(); c.imageSmoothingEnabled = true; c.lineCap = "round"; c.lineJoin = "round";
+  // glass discs are rendered once per size/state into a cache: canvas blur shadows are slow on iOS
+  const glass = (x, y, r, tint, on, name) => {
+    const key = `${name}|${Math.round(r)}|${on}`, pad = Math.ceil(16 * d);
+    let cv = glassCache.get(key);
+    if (!cv) {
+      cv = document.createElement("canvas"); cv.width = cv.height = Math.ceil(r * 2 + pad * 2);
+      const cc = cv.getContext("2d"), m = cv.width / 2;
+      cc.lineCap = "round";
+      paintGlass(cc, m, m, r, tint, on, d);
+      if (name) icon(name, m, m - (name === "bomb" ? r * 0.08 : 0), r, cc);
+      glassCache.set(key, cv);
+      if (glassCache.size > 40) glassCache.delete(glassCache.keys().next().value);
+    }
+    c.drawImage(cv, Math.round(x - cv.width / 2), Math.round(y - cv.height / 2));
+  };
+  const paintGlass = (c, x, y, r, tint, on, d) => {
+    const [tr, tg, tb] = tint;
+    c.save();
+    c.shadowColor = "rgba(0,0,0,0.35)"; c.shadowBlur = 10 * d; c.shadowOffsetY = 3 * d;
+    const gr = c.createRadialGradient(x - r * 0.35, y - r * 0.45, r * 0.1, x, y, r);
+    gr.addColorStop(0, on ? `rgba(${tr},${tg},${tb},0.75)` : "rgba(255,255,255,0.30)");
+    gr.addColorStop(1, on ? `rgba(${tr * 0.5 | 0},${tg * 0.5 | 0},${tb * 0.5 | 0},0.70)` : "rgba(18,20,26,0.55)");
+    c.fillStyle = gr; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill();
+    c.restore();
+    c.lineWidth = 2 * d; c.strokeStyle = `rgba(${tr},${tg},${tb},${on ? 1 : 0.85})`;
+    c.beginPath(); c.arc(x, y, r - d, 0, TAU); c.stroke();
+    c.lineWidth = 1.2 * d; c.strokeStyle = "rgba(255,255,255,0.35)";
+    c.beginPath(); c.arc(x, y, r - 3.5 * d, Math.PI * 1.1, Math.PI * 1.9); c.stroke();   // top sheen
+  };
+  const icon = (name, x, y, r, c) => {
+    c.strokeStyle = c.fillStyle = "rgba(255,255,255,0.95)"; c.lineWidth = Math.max(2 * d, r * 0.12);
+    const s = r * 0.42;
+    if (name === "jump") { c.beginPath(); c.moveTo(x - s, y + s * 0.35); c.lineTo(x, y - s * 0.55); c.lineTo(x + s, y + s * 0.35); c.stroke();
+      c.globalAlpha *= 0.55; c.beginPath(); c.moveTo(x - s * 0.7, y + s * 0.95); c.lineTo(x, y + s * 0.3); c.lineTo(x + s * 0.7, y + s * 0.95); c.stroke(); c.globalAlpha /= 0.55; }
+    else if (name === "fire") { c.beginPath(); c.arc(x, y, s * 0.75, 0, TAU); c.stroke();
+      for (const [ux, uy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { c.beginPath(); c.moveTo(x + ux * s * 0.45, y + uy * s * 0.45); c.lineTo(x + ux * s * 1.15, y + uy * s * 1.15); c.stroke(); }
+      c.beginPath(); c.arc(x, y, s * 0.12, 0, TAU); c.fill(); }
+    else if (name === "bomb") { c.beginPath(); c.ellipse(x, y + s * 0.2, s * 0.62, s * 0.78, 0, 0, TAU); c.stroke();
+      c.beginPath(); c.moveTo(x - s * 0.25, y - s * 0.62); c.lineTo(x + s * 0.25, y - s * 0.62); c.stroke();
+      c.beginPath(); c.moveTo(x + s * 0.2, y - s * 0.55); c.quadraticCurveTo(x + s * 0.85, y - s * 0.7, x + s * 0.7, y + s * 0.05); c.stroke(); }
+  };
+  // joystick: appears under the thumb; at rest it shows where to put it
+  const st = L.stick, live = stick && !editing, base = live ? { x: stick.ox, y: stick.oy } : st;
+  const bx = X(base.x), by = Y(base.y), br = st.r * S;
+  c.globalAlpha = live ? Math.min(1, a + 0.2) : a * 0.85;
+  c.fillStyle = "rgba(18,20,26,0.35)"; c.beginPath(); c.arc(bx, by, br, 0, TAU); c.fill();
+  c.lineWidth = 1.5 * d; c.strokeStyle = "rgba(255,255,255,0.45)"; c.beginPath(); c.arc(bx, by, br - d, 0, TAU); c.stroke();
+  c.fillStyle = "rgba(255,255,255,0.5)";
+  for (let i = 0; i < 4; i++) { const ang = i * Math.PI / 2, cx = bx + Math.cos(ang) * br * 0.72, cy = by + Math.sin(ang) * br * 0.72, s = br * 0.09;
+    c.beginPath(); c.moveTo(cx + Math.cos(ang) * s, cy + Math.sin(ang) * s); c.lineTo(cx + Math.cos(ang + 2.3) * s, cy + Math.sin(ang + 2.3) * s); c.lineTo(cx + Math.cos(ang - 2.3) * s, cy + Math.sin(ang - 2.3) * s); c.fill(); }
   let kx = base.x, ky = base.y;
-  if (stick && !editing) { const dx = stick.x - stick.ox, dy = stick.y - stick.oy, d = Math.hypot(dx, dy) || 1, m = Math.min(d, st.travel); kx += dx / d * m; ky += dy / d * m; }
-  ring(kx, ky, st.knob, "rgba(255,255,255,0.5)", "rgba(255,255,255,0.8)", Math.min(1, a + 0.2));
-  if (stick && !editing) { if (upLatch) text("↑", base.x - 3, base.y - st.r - 10, UIC.gold); if (downLatch) text("↓", base.x - 3, base.y + st.r + 3, UIC.gold); }
-  const colors = { fire: ["#8a1a1a", "#ff6a5a"], jump: ["#1a3a7a", "#7ab0ff"], bomb: ["#3a5a1a", "#9ae06a"] };
+  if (live) { const dx = stick.x - stick.ox, dy = stick.y - stick.oy, dd = Math.hypot(dx, dy) || 1, m = Math.min(dd, st.travel); kx += dx / dd * m; ky += dy / dd * m; }
+  const kr = st.knob * S;
+  c.fillStyle = "rgba(0,0,0,0.25)"; c.beginPath(); c.arc(X(kx), Y(ky) + 2.5 * d, kr, 0, TAU); c.fill();   // soft drop shadow
+  const kg = c.createRadialGradient(X(kx) - kr * 0.3, Y(ky) - kr * 0.4, kr * 0.1, X(kx), Y(ky), kr);
+  kg.addColorStop(0, "rgba(255,255,255,0.95)"); kg.addColorStop(1, "rgba(190,196,210,0.85)");
+  c.fillStyle = kg; c.beginPath(); c.arc(X(kx), Y(ky), kr, 0, TAU); c.fill();
+  // buttons
   for (const [name, b] of Object.entries(L.buttons)) {
     const on = held.has(name) || (editing && layoutDragging?.name === name);
-    const [fill, edge] = colors[name];
-    ring(b.x, b.y, b.r, on ? edge : fill, edge, on ? Math.min(1, a + 0.3) : a);
-    let lab = BTN_LABEL[name], below = null;
-    if (name === "bomb" && game && P) { lab = P.inTank && tank ? `${tank.shells}` : `${P.bombs}`; below = "BOMB"; }
-    if (textW(lab) > b.r * 1.8) { below = lab; lab = name === "fire" ? "+" : ""; }
-    text(lab, b.x, b.y - 3, "#ffffff", { align: "center", alpha: Math.min(1, a + 0.35) });
-    // captions go above the button so they never fall off the bottom edge
-    if (below) text(below, b.x, b.y - b.r - 10, "#ffffff", { align: "center", alpha: Math.min(1, a + 0.2) });
+    const x = X(b.x), y = Y(b.y), r = b.r * S * (on ? 0.93 : 1);
+    c.globalAlpha = on ? Math.min(1, a + 0.35) : Math.min(1, a + 0.1);
+    glass(x, y, r, BTN_TINT[name], on, name);
+    if (name === "bomb" && game && P) {   // grenade count badge
+      const n = String(P.inTank && tank ? tank.shells : P.bombs), bw = Math.max(18 * d, (n.length * 7 + 10) * d), bh = 15 * d, px = x + r * 0.5, py = y - r * 0.85;
+      c.fillStyle = "rgba(20,22,28,0.9)"; c.beginPath(); c.roundRect(px - bw / 2, py - bh / 2, bw, bh, bh / 2); c.fill();
+      c.strokeStyle = "rgba(150,222,106,0.9)"; c.lineWidth = 1.2 * d; c.stroke();
+      c.fillStyle = "#fff"; c.font = `700 ${11 * d}px -apple-system, system-ui, sans-serif`; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(n, px, py + 0.5 * d);
+    }
   }
+  // pause
   if (!editing) {
-    const p = L.pause;
-    g.globalAlpha = 0.7; g.fillStyle = "#000"; g.fillRect(p.x, p.y, p.w, p.h); g.globalAlpha = 1;
-    g.fillStyle = "#ffffff"; g.fillRect(Math.round(p.x + p.w * 0.3), Math.round(p.y + p.h * 0.25), Math.max(2, Math.round(p.w * 0.14)), Math.round(p.h * 0.5)); g.fillRect(Math.round(p.x + p.w * 0.56), Math.round(p.y + p.h * 0.25), Math.max(2, Math.round(p.w * 0.14)), Math.round(p.h * 0.5));
+    const p = L.pause, x = X(p.x), y = Y(p.y), w = p.w * S, h = p.h * S;
+    c.globalAlpha = 0.9; c.fillStyle = "rgba(18,20,26,0.55)"; c.beginPath(); c.roundRect(x, y, w, h, 10 * d); c.fill();
+    c.strokeStyle = "rgba(255,255,255,0.3)"; c.lineWidth = d; c.stroke();
+    c.fillStyle = "#fff"; c.beginPath(); c.roundRect(x + w * 0.32, y + h * 0.28, w * 0.13, h * 0.44, 2 * d); c.roundRect(x + w * 0.55, y + h * 0.28, w * 0.13, h * 0.44, 2 * d); c.fill();
   }
+  c.restore();
 }
 
 // ---------- HUD ----------

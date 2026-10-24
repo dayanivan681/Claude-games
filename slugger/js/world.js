@@ -45,7 +45,7 @@ function mkPlayer(x, y = GROUND) {
 function startMission(id, checkpoint = null) {
   resetWorld();
   const m = MISSIONS[id - 1];
-  game = { mode: "mission", id, m, theme: THEMES[m.theme], hard: save.hard, diff: id - 1 + (save.hard ? 2 : 0),
+  game = { mode: "mission", id, m, theme: THEMES[m.theme], hard: save.hard, diff: id - 1 + (save.hard ? 2 : 0), diffBase: id - 1 + (save.hard ? 2 : 0),
     time: checkpoint?.time || 0, score: checkpoint?.score || 0, kills: checkpoint?.kills || 0, pows: checkpoint?.pows || 0, powsTotal: 0,
     coins: checkpoint?.coins || 0, deaths: checkpoint?.deaths || 0, hits: checkpoint?.hits || 0, combo: 0, comboT: 0, bestCombo: 0,
     lives: 3, checkpoint, phase: "intro", phaseT: 0, len: 0, locks: [], lock: null, bossDone: false, goT: 0, idleCam: 0,
@@ -149,7 +149,8 @@ function explode(x, y, R, dmg, team, size = 1, src = "G") {
 
 // ---------- Boxes ----------
 const ROLL_T = 0.36;
-const pBox = () => ({ x: P.x - 4, y: P.y, w: 8, h: P.crouch ? 13 : 24 });
+// Hurtbox is a little smaller than the sprite, so a skilful dodge that grazes the hero still counts.
+const pBox = () => ({ x: P.x - 3, y: P.y, w: 6, h: P.crouch ? 12 : 22 });
 const tankBox = () => ({ x: tank.x - 20, y: tank.y, w: 40, h: 30 });
 const powBox = p => ({ x: p.x - 5, y: p.y, w: 10, h: 16 });
 function targetPos() {
@@ -321,7 +322,8 @@ function updatePlayer(dt) {
     if (P.y <= f) { P.y = f; P.vy = 0; P.onGround = true; }
   }
   if (!P.onGround) P.airT += dt;
-  else { if (!wasGround && P.airT > 0.3) { sfx.land(); dust(P.x, P.y, 4); } P.airT = 0; }
+  else { if (!wasGround && P.airT > 0.3) { sfx.land(); dust(P.x, P.y, 4); P.landT = 0.09; } P.airT = 0; }
+  P.landT = Math.max(0, (P.landT || 0) - dt);
   const [lo, hi] = playerBounds();
   P.x = clamp(P.x, lo, hi);
   P.moving = dir !== 0 && P.onGround;
@@ -359,7 +361,8 @@ function addB(o) {
   if (b.team === "p" && (b.kind === "b" || b.kind === "hb")) b.ox = Math.sign(b.vx) * 14;
   bullets.push(b);
 }
-function playerPose() { return !P.onGround ? (P.vy > 0 ? "jump" : "fall") : P.crouch ? "crouch" : P.moving ? "run" : "stand"; }
+// (a short crouch on landing gives jumps some weight)
+function playerPose() { return !P.onGround ? (P.vy > 0 ? "jump" : "fall") : P.crouch || P.landT > 0 ? "crouch" : P.moving ? "run" : "stand"; }
 
 function shoot() {
   const k = P.aim === "f" ? knifeTarget() : null;
@@ -730,6 +733,7 @@ function updateFx(dt) {
 // ---------- Camera, spawns, locks, triggers ----------
 function updateCamera(dt) {
   if (game.mode === "survival") return;
+  game.diff = game.diffBase + Math.min(1, camX / game.len) * 0.8;   // each mission gets harder as you push on
   const focus = P.inTank && tank ? tank.x : P.x;
   let maxCam = game.len - W;
   if (game.lock) maxCam = Math.min(maxCam, game.lock.x);
