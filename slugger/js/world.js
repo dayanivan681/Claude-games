@@ -362,7 +362,12 @@ function addB(o) {
   bullets.push(b);
 }
 // (a short crouch on landing gives jumps some weight)
-function playerPose() { return !P.onGround ? (P.vy > 0 ? "jump" : "fall") : P.crouch || P.landT > 0 ? "crouch" : P.moving ? "run" : "stand"; }
+function playerPose() {
+  if (!P.onGround) return P.vy > 110 ? "jump" : P.vy > -110 ? "apex" : "fall";   // take-off, tuck at the top, reach for the ground
+  if (P.landT > 0) return "crouch";
+  if (P.crouch) return P.moving ? "cwalk" : "crouch";
+  return P.moving ? "run" : "stand";
+}
 
 function shoot() {
   const k = P.aim === "f" ? knifeTarget() : null;

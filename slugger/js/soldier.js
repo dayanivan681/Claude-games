@@ -67,8 +67,14 @@ function skeleton(pose, t, bob) {
     const foot = th => [9.5 * Math.cos(th), Math.max(0, -Math.sin(th)) * 8];
     s.near = { foot: foot(ph) }; s.far = { foot: foot(ph + Math.PI) };
     s.swing = Math.cos(ph);
-  } else if (pose === "jump") { s.hip = [0, 19]; s.near = { foot: [6, 9] }; s.far = { foot: [-6, 6] }; }
-  else if (pose === "fall") { s.hip = [0, 19]; s.near = { foot: [3, 1] }; s.far = { foot: [-6, 4] }; }
+  } else if (pose === "cwalk") {   // duck walk: deep squat, short shuffling steps (same as art/hero.py)
+    const ph = (Math.floor(t * 16) % 8) / 8 * TAU;
+    s.hip = [0, 10.5 + (1 - Math.cos(2 * ph)) * 0.5]; s.lean = 1.5;
+    const foot = (th, x0) => [x0 + 4.5 * Math.cos(th), Math.max(0, -Math.sin(th)) * 3];
+    s.near = { foot: foot(ph, 7) }; s.far = { foot: foot(ph + Math.PI, -5) };
+  } else if (pose === "jump") { s.hip = [0, 19]; s.near = { foot: [7, 7] }; s.far = { foot: [-5, 1] }; }   // take-off
+  else if (pose === "apex") { s.hip = [0, 20]; s.near = { foot: [6, 11] }; s.far = { foot: [1, 9] }; }     // knees tucked
+  else if (pose === "fall") { s.hip = [0, 19]; s.near = { foot: [4, 1.5] }; s.far = { foot: [-3, 3.5] }; } // reaching for the ground
   else if (pose === "crouch") { s.hip = [0, 10]; s.near = { foot: [9, 0] }; s.far = { knee: [-3, 1.5], foot: [-13, 1.5] }; s.lean = 1; }
   else if (pose === "sit") { s.hip = [0, 6]; s.near = { knee: [8, 11], foot: [14, 0] }; s.far = { knee: [6, 9], foot: [12, 0] }; }
   else { s.hip = [0, 19 + bob]; s.near = { foot: [4, 0] }; s.far = { foot: [-4, 0] }; }
@@ -177,30 +183,34 @@ function heroUpperName(o) {
 }
 function heroLowerName(pose, t) {
   if (pose === "run") return "L_run" + Math.floor(t * 12 * 1.5) % 12;
-  return pose === "stand" || pose === "jump" || pose === "fall" || pose === "crouch" ? "L_" + pose : null;
+  if (pose === "cwalk") return "L_cwalk" + Math.floor(t * 16) % 8;
+  return pose === "stand" || pose === "jump" || pose === "apex" || pose === "fall" || pose === "crouch" ? "L_" + pose : null;
 }
 function renderHeroArt(o) {
   if (typeof HERO_ART === "undefined" || o.head !== HERO_ART.head || o.chute) return null;
   const pose = o.pose || "stand", t = o.t || 0;
+  if (pose === "roll") {   // full-body forward roll, t = 0..1 over one turn
+    const f = heroFrame("R_roll" + Math.floor(t * 8) % 8);
+    if (!f) return null;
+    hdPix.fill(0); paintHeroFrame(f, SCX - f.ox, SBY + 1 - f.oy, PALS[o.pal] || {});
+    return outlinedCanvas();
+  }
   const lo = heroFrame(heroLowerName(pose, t)), up = heroFrame(heroUpperName(o));
   if (!lo || !up) return null;
-  const pal = PALS[o.pal] || {}, parts = HERO_ART.parts, ramps = [];
-  const rampOf = (pid, far) => {
-    const k = pid * 2 + far;
-    return ramps[k] || (ramps[k] = ramp(parts[pid][1] || pal[parts[pid][0]] || basePal[parts[pid][0]], far ? -0.18 : 0));
-  };
-  const paint = (f, x0, y0) => {
-    for (let r = 0; r < f.h; r++) for (let q = 0; q < f.w; q++) {
-      const c = f.px[r * f.w + q]; if (!c) continue;
-      const v = c - 1, x = x0 + q, y = y0 + r;
-      if (x >= 0 && y >= 0 && x < SW && y < SH) hdPix[y * SW + x] = rampOf((v >> 1) >> 2, v & 1)[(v >> 1) & 3];
-    }
-  };
+  const pal = PALS[o.pal] || {};
   hdPix.fill(0);
   const bob = o.bob ? (Math.sin(t * 4) > 0.6 ? 1 : 0) : 0, sk = skeleton(pose, t, bob);
-  paint(lo, SCX - lo.ox, SBY + 1 - lo.oy);
-  paint(up, SCX + Math.round(sk.hip[0] + sk.lean) - up.ox, SBY + 1 - Math.round(sk.hip[1]) - up.oy);
+  paintHeroFrame(lo, SCX - lo.ox, SBY + 1 - lo.oy, pal);
+  paintHeroFrame(up, SCX + Math.round(sk.hip[0] + sk.lean) - up.ox, SBY + 1 - Math.round(sk.hip[1]) - up.oy, pal);
   return outlinedCanvas();
+}
+function paintHeroFrame(f, x0, y0, pal) {   // palette-indexed frame -> hdPix (part colour, tone, far-side darkening)
+  const parts = HERO_ART.parts;
+  for (let r = 0; r < f.h; r++) for (let q = 0; q < f.w; q++) {
+    const c = f.px[r * f.w + q]; if (!c) continue;
+    const v = c - 1, x = x0 + q, y = y0 + r, pid = v >> 3, pt = parts[pid];
+    if (x >= 0 && y >= 0 && x < SW && y < SH) hdPix[y * SW + x] = ramp(pt[1] || pal[pt[0]] || basePal[pt[0]], v & 1 ? -0.18 : 0)[(v >> 1) & 3];
+  }
 }
 
 function renderSoldier(o) {
@@ -291,7 +301,7 @@ function blit2(id, palKey, lx, ly) {
 
 function soldierKey(o) {
   const pose = o.pose || "stand", t = o.t || 0;
-  const fr = pose === "run" ? Math.floor(t * 12 * 1.5) % 12 : 0;
+  const fr = pose === "run" ? Math.floor(t * 12 * 1.5) % 12 : pose === "cwalk" ? Math.floor(t * 16) % 8 : pose === "roll" ? Math.floor(t * 8) % 8 : 0;
   const arm = o.arm || "none", flail = arm === "flail" ? Math.floor(t * 10) % 2 : 0;
   const bob = o.bob ? (Math.sin(t * 4) > 0.6 ? 1 : 0) : 0;
   return `${o.pal}|${o.head}|${o.torso}|${pose}|${fr}|${arm}|${o.gun}|${o.recoil ? 1 : 0}|${bob}|${o.chute ? 1 : 0}|${o.poke ? 1 : 0}|${flail}`;

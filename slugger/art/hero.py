@@ -100,9 +100,16 @@ def skeleton(pose, fr=0):
         s["hip"] = (0, 17.5 + (1 - math.cos(2 * ph)) * 1.2); s["lean"] = 2
         foot = lambda th: (9.5 * math.cos(th), max(0, -math.sin(th)) * 8)
         s["near"] = {"foot": foot(ph)}; s["far"] = {"foot": foot(ph + math.pi)}
-    elif pose == "jump": s["hip"] = (0, 19); s["near"] = {"foot": (6, 9)}; s["far"] = {"foot": (-6, 6)}
-    elif pose == "fall": s["hip"] = (0, 19); s["near"] = {"foot": (3, 1)}; s["far"] = {"foot": (-6, 4)}
+    elif pose == "cwalk":   # duck walk: deep squat, short shuffling steps
+        ph = fr / 8 * math.tau
+        s["hip"] = (0, 10.5 + (1 - math.cos(2 * ph)) * 0.5); s["lean"] = 1.5
+        foot = lambda th, x0: (x0 + 4.5 * math.cos(th), max(0, -math.sin(th)) * 3)
+        s["near"] = {"foot": foot(ph, 7)}; s["far"] = {"foot": foot(ph + math.pi, -5)}
+    elif pose == "jump": s["hip"] = (0, 19); s["near"] = {"foot": (7, 7)}; s["far"] = {"foot": (-5, 1)}       # take-off: lead knee up, trail leg pushing
+    elif pose == "apex": s["hip"] = (0, 20); s["near"] = {"foot": (6, 11)}; s["far"] = {"foot": (1, 9)}       # top of the jump: both knees tucked
+    elif pose == "fall": s["hip"] = (0, 19); s["near"] = {"foot": (4, 1.5)}; s["far"] = {"foot": (-3, 3.5)}   # legs reach down for the landing
     elif pose == "crouch": s["hip"] = (0, 10); s["near"] = {"foot": (9, 0)}; s["far"] = {"knee": (-3, 1.5), "foot": (-13, 1.5)}; s["lean"] = 1
+    elif pose == "roll": s["hip"] = (-1, 11); s["near"] = {"foot": (5, 4)}; s["far"] = {"foot": (3, 5.5)}     # tucked ball
     else: s["hip"] = (0, 19); s["near"] = {"foot": (4, 0)}; s["far"] = {"foot": (-4, 0)}
     return s
 
@@ -249,6 +256,7 @@ def upper(m, kind, gid=None, aim="f", recoil=False, flail=0):
             f = rot(aim, 8, 0); arm(m, SH_F, (grip[0] + f[0], grip[1] + f[1]), True)
         else: arm(m, SH_F, (SH_F[0] - 1, SH_F[1] - 11), True)
     elif kind == "flail": arm(m, SH_F, (SH_F[0] - 3, SH_F[1] + 11 - flail * 2), True)
+    elif kind == "tuck": arm(m, SH_F, (SH_F[0] + 9, SH_F[1] - 7), True)
     else: arm(m, SH_F, (SH_F[0] - 1, SH_F[1] - 11), True)
     torso(m); head(m, panic=kind == "flail")
     s = SH_N
@@ -265,6 +273,7 @@ def upper(m, kind, gid=None, aim="f", recoil=False, flail=0):
         h = (s[0] - 6, s[1] + 8); arm(m, s, h, False)
         m.sphere((h[0] - 1.5, YN - 1.5, h[1] + 3.0), 2.6, OLIVE); m.box((h[0] - 2.4, YN - 2.0, h[1] + 5.0), (h[0] - 0.6, YN - 1.0, h[1] + 6.4), G_LIGHT, bevel=0)
     elif kind == "flail": arm(m, s, (s[0] + 3, s[1] + 10 + flail * 2), False)
+    elif kind == "tuck": arm(m, s, (s[0] + 8, s[1] - 8), False)
     else: arm(m, s, (s[0] + 1, s[1] - 11), False)
     return meta
 
@@ -345,11 +354,28 @@ def bake(sc):
     code = np.where(alpha, 1 + (pid * 4 + lvl) * 2 + far.astype(int), 0).astype(np.uint8)
     return code
 
-def frame(sc, build):
+ROLL_C = (1.0, 0.0)    # x of the ball's spin centre (hi px); it is kept touching the ground
+def roll(m, k):
+    """Full-body forward roll, frame k of 8: legs tucked, body curled over them, the whole ball turned."""
+    sk = skeleton("roll"); legs(m, sk)
+    n0 = len(m.bm.verts)
+    upper(m, "tuck")
+    m.bm.verts.ensure_lookup_table(); vs = [m.bm.verts[i] for i in range(n0, len(m.bm.verts))]
+    hip = Vector((sk["hip"][0], 0, sk["hip"][1]))
+    bmesh.ops.translate(m.bm, verts=vs, vec=hip - Vector((HIP[0], 0, HIP[1])))
+    bmesh.ops.rotate(m.bm, verts=vs, cent=hip, matrix=Matrix.Rotation(1.15, 3, "Y"))       # curl forward over the knees
+    allv = list(m.bm.verts)
+    lo = Vector((min(v.co.x for v in allv), 0, min(v.co.z for v in allv))); hi = Vector((max(v.co.x for v in allv), 0, max(v.co.z for v in allv)))
+    c = (lo + hi) / 2; c.x = ROLL_C[0]
+    bmesh.ops.rotate(m.bm, verts=allv, cent=c, matrix=Matrix.Rotation(k / 8 * math.tau, 3, "Y"))
+    bmesh.ops.translate(m.bm, verts=allv, vec=Vector((0, 0, -min(v.co.z for v in allv))))   # the ball rolls on the ground
+
+def frame(sc, build, ground=False):
     for ob in list(bpy.data.objects):
         if ob.type == "MESH": bpy.data.objects.remove(ob)
     m = Mesh(); meta = build(m) or {}; m.finish()
     code = bake(sc)
+    if ground: code[100:, :] = 0      # nothing sinks below the ground line (kneeling knee, squat)
     ys, xs = np.nonzero(code)
     x0, x1, y0, y1 = xs.min(), xs.max() + 1, ys.min(), ys.max() + 1
     return code[y0:y1, x0:x1], int(56 - x0), int(100 - y0), meta     # crop + origin inside the crop
@@ -366,7 +392,7 @@ def main():
     sc = setup()
     frames = {}
     def add(name, build, origin="feet"):
-        c, ox, oy, meta = frame(sc, build)
+        c, ox, oy, meta = frame(sc, build, ground=origin == "feet")
         if origin == "hip": ox, oy = ox + int(HIP[0]), oy - int(HIP[1])   # origin = canonical hip
         frames[name] = dict(w=int(c.shape[1]), h=int(c.shape[0]), ox=ox, oy=oy, data=c, **meta)
         print("frame", name, c.shape, flush=True)
@@ -374,6 +400,11 @@ def main():
         add("L_" + pose, lambda m, p=pose: legs(m, skeleton(p)))
     for f in range(12):
         add(f"L_run{f}", lambda m, f=f: legs(m, skeleton("run", f)))
+    add("L_apex", lambda m: legs(m, skeleton("apex")))
+    for f in range(8):
+        add(f"L_cwalk{f}", lambda m, f=f: legs(m, skeleton("cwalk", f)))
+    for k in range(8):
+        add(f"R_roll{k}", lambda m, k=k: roll(m, k))
     for gid in GUNS:
         for aim in ("f", "u", "d"):
             for rc in (False, True):
@@ -418,16 +449,17 @@ def compose(frames, lower, upper_, hipx, hipy):
                     yy, xx = y + r, x + q
                     if 0 <= yy < Hh and 0 <= xx < W: img[yy, xx] = colors(int(d[r, q])) + [255]
     L = frames[lower]; put(L, ox - L["ox"], oy - L["oy"])
-    U = frames[upper_]; put(U, ox + hipx - U["ox"], oy - hipy - U["oy"])
+    if upper_: U = frames[upper_]; put(U, ox + hipx - U["ox"], oy - hipy - U["oy"])
     # outline
     a = img[..., 3] > 0; o = np.zeros_like(a)
     for dy, dx in ((0, 1), (0, -1), (1, 0), (-1, 0)): o |= np.roll(np.roll(a, dy, 0), dx, 1)
     img[o & ~a] = [20, 12, 10, 255]
     return img
 def preview(frames, out):
-    combos = [("L_stand", "U_pistol_f", "stand", 0), ("L_run0", "U_H_f", "run", 0), ("L_run3", "U_H_f", "run", 3), ("L_run6", "U_R_f", "run", 6),
-              ("L_jump", "U_S_u", "jump", 0), ("L_fall", "U_L_d", "fall", 0), ("L_crouch", "U_F_f", "crouch", 0), ("L_stand", "U_throw", "stand", 0),
-              ("L_stand", "U_knife", "stand", 0), ("L_stand", "U_pistol_u", "stand", 0), ("L_jump", "U_flail0", "jump", 0), ("L_run9", "U_pistol_f", "run", 9)]
+    combos = [("L_stand", "U_pistol_f", "stand", 0), ("L_run0", "U_H_f", "run", 0), ("L_run3", "U_H_f", "run", 3), ("L_jump", "U_pistol_f", "jump", 0),
+              ("L_apex", "U_S_u", "apex", 0), ("L_fall", "U_L_d", "fall", 0), ("L_crouch", "U_F_f", "crouch", 0), ("L_cwalk0", "U_pistol_f", "cwalk", 0),
+              ("L_cwalk2", "U_pistol_f", "cwalk", 2), ("L_cwalk4", "U_pistol_f", "cwalk", 4), ("L_cwalk6", "U_pistol_f", "cwalk", 6), ("L_stand", "U_throw", "stand", 0)]
+    combos += [(f"R_roll{k}", None, "stand", 0) for k in range(0, 8, 1)][:6]
     tiles = []
     for lo, up, pose, f in combos:
         sk = skeleton(pose, f)
