@@ -1,5 +1,5 @@
 // Offline cache: network first (always the latest build when online), cached copy when offline.
-const CACHE = 'slugger-v3';
+const CACHE = 'slugger-v4';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-512-maskable.png',
   ...['core', 'font', 'save', 'audio', 'render', 'sprites', 'soldier', 'world', 'enemies', 'bosses', 'levels', 'input', 'ui', 'main'].map(f => `./js/${f}.js`)];
 
