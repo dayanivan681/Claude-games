@@ -668,7 +668,7 @@ let ctx = canvas.getContext('2d');
 const bg = document.createElement('canvas'), bctx = bg.getContext('2d');
 // dprCap: 2× is sharp on any phone; 3× would more than double the pixels every layer fills each frame.
 let dprCap = 2, W = 0, H = 0, DPR = 1, T = 24, FX = 0, FY = 0, portrait = true;
-const BUILD = 'bomblast-v45';   // this page's build: must match CACHE in sw.js
+const BUILD = 'bomblast-v46';   // this page's build: must match CACHE in sw.js
 let updateReady = false;   // live updates (see checkUpdate)
 let SA = { t: 0, r: 0, b: 0, l: 0 }, ctrl = {};
 const SPR = {}, glowCache = {};

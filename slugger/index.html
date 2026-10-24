@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Slugger</title>
+<meta name="description" content="Metal Slug-style run-and-gun arcade: weapons, hostages, a tank and bosses.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Slugger">
+<meta name="theme-color" content="#120d0a">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<style>
+/* Layout: one full-viewport canvas; the game draws its own pixel UI inside the safe areas. */
+:root { --void: #120d0a; --gold: #ffd34d; --dim: #8a7a66; color-scheme: dark; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--void); overscroll-behavior: none;
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-text-size-adjust: 100%; touch-action: none; }
+canvas { display: block; position: fixed; inset: 0; touch-action: none; image-rendering: pixelated; }
+#rotate { position: fixed; inset: 0; display: none; place-items: center; text-align: center; background: var(--void);
+  color: var(--dim); font: 600 15px/1.6 ui-monospace, Menlo, monospace; padding: 24px; z-index: 5; }
+#rotate b { color: var(--gold); font-size: 26px; letter-spacing: 0.1em; }
+@media (orientation: portrait) and (max-width: 760px) { #rotate { display: grid; } }
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="Slugger, side-scrolling arcade shooter"></canvas>
+<div id="rotate"><div><b>SLUGGER</b><br><br>Rotate your phone to landscape to play.</div></div>
+<script>window.SLUGGER_APP = true;</script>
+<script src="js/core.js"></script>
+<script src="js/font.js"></script>
+<script src="js/save.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/render.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/hero_art.js"></script>
+<script src="js/soldier.js"></script>
+<script src="js/world.js"></script>
+<script src="js/enemies.js"></script>
+<script src="js/bosses.js"></script>
+<script src="js/levels.js"></script>
+<script src="js/input.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/main.js"></script>
+<script>
+if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+</script>
+</body>
+</html>
