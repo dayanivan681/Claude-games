@@ -49,22 +49,26 @@ let layoutGen = 0;
 function invalidateLayout() { layoutCache = null; layoutGen++; }
 
 // ---------- Haptics ----------
-let hapticLabel = null;
-function initHaptics() {
+// Native app: the Taptic Engine through the bridge. Controllers with motors (DualSense, Xbox): Gamepad
+// rumble. Android: navigator.vibrate. iPhone Safari (iOS 18+): toggling a hidden switch control plays
+// the system tick; WebKit only allows it during a touch, so with a controller in the browser there is
+// no phone vibration (the Backbone has no rumble motors) and the native app is the way to get it.
+let padForRumble = null;
+function hapticTap(strong = false, ms = 0) {
+  if (!save.settings.haptics) return;
+  if (NATIVE) return nativeHaptic(ms >= 50 ? "heavy" : strong ? "medium" : "light");
   try {
-    const sw = document.createElement("input"); sw.type = "checkbox"; sw.setAttribute("switch", ""); sw.id = "hsw";
-    const lb = document.createElement("label"); lb.htmlFor = "hsw";
-    for (const el of [sw, lb]) Object.assign(el.style, { position: "fixed", left: "-100px", top: "0", opacity: "0", pointerEvents: "none", width: "1px", height: "1px" });
-    document.body.append(sw, lb); hapticLabel = lb;
+    const act = !touchUI && padForRumble && padForRumble.vibrationActuator;
+    if (act && act.playEffect) act.playEffect("dual-rumble", { duration: ms || (strong ? 60 : 25), strongMagnitude: strong ? 0.8 : 0.2, weakMagnitude: strong ? 0.5 : 0.6 }).catch(() => {});
+    if (navigator.vibrate) navigator.vibrate(ms || (strong ? 35 : 10));
+    else iosHapticTick();
   } catch {}
 }
-function hapticTap(strong = false) {
-  if (!save.settings.haptics) return;
-  if (NATIVE) return nativeHaptic(strong ? "medium" : "light");
-  try {
-    if (navigator.vibrate) navigator.vibrate(strong ? 35 : 10);
-    else if (hapticLabel) hapticLabel.click();
-  } catch {}
+function iosHapticTick() {
+  const lb = document.createElement("label"), sw = document.createElement("input");
+  lb.ariaHidden = "true"; lb.style.display = "none";
+  sw.type = "checkbox"; sw.setAttribute("switch", ""); lb.appendChild(sw);
+  document.head.appendChild(lb); lb.click(); lb.remove();
 }
 
 // ---------- Pointer routing ----------
@@ -173,6 +177,7 @@ function pollGamepad() {
   const pads = navigator.getGamepads ? navigator.getGamepads() : [];
   const gp = pads && [...pads].find(p => p && p.connected);
   const cur = { up: false, down: false, left: false, right: false, a: false, b: false, x: false, y: false, start: false, rb: false };
+  padForRumble = gp || null;
   if (gp) {
     const ax = gp.axes[0] || 0, ay = gp.axes[1] || 0, bt = i => !!gp.buttons[i]?.pressed;
     cur.left = ax < -0.4 || bt(14); cur.right = ax > 0.4 || bt(15); cur.up = ay < -0.55 || bt(12); cur.down = ay > 0.6 || bt(13);
@@ -210,6 +215,7 @@ function readInput() {
   prevJump = input.jump; prevBomb = input.bomb;
   pulseJump = false; pulseBomb = false; pulsePause = false;
   if (!inPlayControls() && pad) {
+    if (!touchUI && uiFocus < 0 && screenT > 0.06) uiFocus = defaultFocus();   // highlight something so A has a visible target
     if (padEdge.up) uiKey("up"); if (padEdge.down) uiKey("down"); if (padEdge.left) uiKey("left"); if (padEdge.right) uiKey("right");
     if (padEdge.a) uiKey("ok"); if (padEdge.b) uiKey("back"); if (padEdge.start && state !== "play") uiKey("ok");
   }

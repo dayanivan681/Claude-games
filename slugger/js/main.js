@@ -3,7 +3,7 @@
 
 let lastT = 0, acc = 0, saveTimer = 0, devSpeed = 1;
 function boot() {
-  initFont(); initHaptics(); resize();
+  initFont(); resize();
   window.addEventListener("resize", resize);
   window.addEventListener("orientationchange", () => setTimeout(resize, 200));
   document.addEventListener("visibilitychange", () => { if (document.hidden) { if (state === "play" && !paused) setPaused(true); persist(); } });

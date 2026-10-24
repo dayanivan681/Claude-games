@@ -210,7 +210,7 @@ function hurtPlayer() {
   if (!game || game.phase === "clear" || P.dead || P.inv > 0 || P.rollT > 0) return;
   if (P.inTank) { damageTank(); return; }
   P.hp--; game.hits++;
-  hurtFlash = 0.25; hitstop = 0.06; addShake(3); vibrate(60); hapticTap(true);
+  hurtFlash = 0.25; hitstop = 0.06; addShake(3); vibrate(60);
   blood(P.x, P.y + 15, 6, -P.face);
   if (P.hp <= 0) return killPlayer();
   P.inv = 1.4; sfx.hurt();

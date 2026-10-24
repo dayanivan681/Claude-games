@@ -110,7 +110,7 @@ function say(textLine) {
     speechSynthesis.cancel(); speechSynthesis.speak(u);
   } catch {}
 }
-function vibrate(ms) { if (!save.settings.haptics) return; if (NATIVE) return nativeHaptic(ms >= 50 ? "heavy" : "medium"); try { navigator.vibrate?.(ms); } catch {} }
+function vibrate(ms) { hapticTap(ms >= 40, ms); }   // big hits: same paths as hapticTap (input.js)
 
 // ---------- Music ----------
 // 32 eighth-note steps per pattern; "." is a rest. Drums: k kick, s snare, h hat, t tom.

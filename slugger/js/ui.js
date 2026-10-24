@@ -40,7 +40,7 @@ function beginMission(id, fromCheckpoint = null) {
 function beginSurvival() { initAudio(); state = "play"; paused = false; musicPaused = false; screen = "pause"; syncZoom(); startSurvival(); releaseAllTouches(); clearInputEdges(); }
 function setPaused(v) {
   if (state !== "play") return;
-  paused = v; musicPaused = v; screen = "pause"; uiFocus = -1;
+  paused = v; musicPaused = v; screen = "pause"; uiFocus = -1; screenT = 0;
   releaseAllTouches();
   if (v) persist();
 }
@@ -126,6 +126,14 @@ function uiPointerUp(p, id) {
 }
 function uiPointerCancel(id) { if (uiPress?.pid === id) uiPress = null; if (uiDrag?.pid === id) uiDrag = null; }
 function uiWheel(dy) { const a = uiHitsPrev.find(h => h.scroll); if (a) uiScroll[a.id.slice(7)] = (uiScroll[a.id.slice(7)] || 0) + dy * 0.3; }
+// controller / keyboard focus starts on the first real choice, not on the BACK button in the corner
+function defaultFocus() {
+  const list = uiHitsPrev.filter(h => h.enabled);
+  if (!list.length) return -1;
+  for (const id of ["start", "rnext", "resume", "fre", "rretry", "play"]) { const i = list.findIndex(h => h.id === id); if (i >= 0) return i; }
+  const i = list.findIndex(h => h.id !== "back");
+  return i < 0 ? 0 : i;
+}
 function uiKey(k) {
   if (state === "title") { initAudio(); sfx.ui(); openScreen("main"); return; }
   if (state === "results" && !resultsDone()) { resSkip = true; return; }
@@ -136,8 +144,8 @@ function uiKey(k) {
   }
   const list = uiHitsPrev.filter(h => h.enabled);
   if (!list.length) return;
-  if (k === "ok") { const h = list[uiFocus] || list[0]; if (h) { sfx.ui(); h.onTap(); } return; }
-  if (uiFocus < 0) { uiFocus = 0; return; }
+  if (uiFocus < 0 || uiFocus >= list.length) { uiFocus = defaultFocus(); if (k !== "ok") return; }
+  if (k === "ok") { const h = list[uiFocus]; if (h) { sfx.ui(); hapticTap(false); h.onTap(); } return; }
   const cur = list[uiFocus], cx = cur.x + cur.w / 2, cy = cur.y + cur.h / 2;
   const dir = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[k];
   let best = -1, bd = Infinity;
@@ -177,7 +185,17 @@ function drawUIInner(dt) {
   else if (state === "play") { drawHUD(); if (paused) { if (screen === "settings") { dim(0.75); drawSettings(); } else if (screen === "layout") drawLayoutEditor(); else drawPause(); } }
   else if (state === "results") { drawResults(dt); }
   else if (state === "failed") { drawFailed(); }
+  drawFocusRing();
   drawToasts(dt);
+}
+function drawFocusRing() {   // controller / keyboard focus, visible on every kind of widget
+  if (touchUI || uiFocus < 0) return;
+  const f = uiHitsPrev.filter(h => h.enabled)[uiFocus];
+  if (!f || f.scroll) return;
+  const a = 0.55 + 0.45 * Math.sin(realClock * 7);
+  g.globalAlpha = a; g.strokeStyle = UIC.gold; g.lineWidth = 1;
+  g.strokeRect(Math.round(f.x) - 1.5, Math.round(f.y) - 1.5, Math.round(f.w) + 3, Math.round(f.h) + 3);
+  g.globalAlpha = 1;
 }
 function drawMenuBackdrop(dt, dimA = 0.5) {
   if (!menuScene) setupMenuScene();
