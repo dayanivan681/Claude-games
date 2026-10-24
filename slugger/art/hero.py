@@ -3,7 +3,7 @@
 # one sample at the pixel centre, so no anti-aliasing), then bakes 4-level toon shading and interior
 # depth lines into palette-indexed frames and writes them to js/hero_art.js.
 #
-# Run from the repo root:  python3 slugger/art/hero.py  [--preview out.png]
+# Run from the repo root:  python3 slugger/art/hero.py  [--preview out.png] [--no-base]
 # Needs the bpy module (pip install bpy). Units: 1 Blender unit = 1 hi-res sprite pixel (2 per world px).
 # Axes: +X forward (the hero faces right), +Z up, -Y toward the camera (near side).
 import bpy, bmesh, math, os, sys, json, base64, struct, zlib
@@ -60,6 +60,14 @@ class Mesh:
         r2 = r if r2 is None else r2
         self.cyl(a, b, r, r2, pid, far, squash=squash)
         self.sphere(a, r, pid, far, scale=(1, squash, 1)); self.sphere(b, r2, pid, far, scale=(1, squash, 1))
+    def tris(self, co, tris, pids, fars):
+        vs = [self.bm.verts.new(c) for c in co.tolist()]
+        for (a, b, c), pid, far in zip(tris.tolist(), pids, fars):
+            try: f = self.bm.faces.new((vs[a], vs[b], vs[c]))
+            except ValueError: continue
+            f[self.pid] = pid; f[self.far] = 1.0 if far else 0.0; f.smooth = True
+        loose = [v for v in vs if not v.link_faces]
+        if loose: bmesh.ops.delete(self.bm, geom=loose, context="VERTS")
     def finish(self, name="hero"):
         me = bpy.data.meshes.new(name); self.bm.to_mesh(me); self.bm.free()
         ob = bpy.data.objects.new(name, me); bpy.context.scene.collection.objects.link(ob)
@@ -120,16 +128,137 @@ YN, YF = -7.0, 6.5        # near / far arm depth
 
 def X(p, y=0.0): return (p[0], y, p[1])
 
+# ---------- base body: Mixamo "X Bot" mesh, re-posed onto the game skeleton ----------
+# The suit shells (pelvis, thighs, shins, torso, upper arms, forearms) come from a real skinned body mesh
+# instead of capsules. Each Mixamo bone gets an affine map from its rest frame to the matching segment of
+# our 2D skeleton (length and thickness rescaled to the sprite's chunky proportions); the vertices are moved
+# with linear blend skinning. Head, hands and feet stay ours (face, gloves, boots). The .glb is a Mixamo
+# character from the three.js examples: it is fetched into TMP and never committed (Mixamo terms forbid
+# redistributing the raw files). Run with --no-base to build the old all-primitive hero.
+BASE_URL = "https://raw.githubusercontent.com/mrdoob/three.js/r170/examples/models/gltf/Xbot.glb"
+BASE_SHA = "002f8d269de68e5dce3d25195caf390d1aa359bbfaae3fcf4c8dc78ec36c3ba5"
+SEGS = ["Hips", "Spine", "Spine1", "Spine2", "Neck", "Head", "RightShoulder", "RightArm", "RightForeArm", "RightHand",
+        "LeftShoulder", "LeftArm", "LeftForeArm", "LeftHand", "RightUpLeg", "RightLeg", "RightFoot", "LeftUpLeg", "LeftLeg", "LeftFoot"]
+SEG = {n: i for i, n in enumerate(SEGS)}
+# segment -> (part id, far, half thickness in-plane, half thickness in depth); Right = near side (faces the camera)
+LOOK = {"Hips": (PANTS, False, 6.6, 7.4), "Spine": (SHIRT, False, 6.8, 5.6), "Spine1": (SHIRT, False, 7.4, 6.1), "Spine2": (SHIRT, False, 7.8, 6.6),
+        "RightShoulder": (SHIRT, False, 3.8, 3.8), "LeftShoulder": (SHIRT, True, 3.8, 3.8),
+        "RightArm": (SHIRT, False, 3.3, 3.3), "LeftArm": (SHIRT, True, 3.3, 3.3), "RightForeArm": (SKIN, False, 2.7, 2.7), "LeftForeArm": (SKIN, True, 2.7, 2.7),
+        "RightUpLeg": (PANTS, False, 4.1, 4.1), "LeftUpLeg": (PANTS, True, 4.1, 4.1), "RightLeg": (PANTS, False, 3.4, 3.4), "LeftLeg": (PANTS, True, 3.4, 3.4)}
+for n in ("Neck", "Head", "RightHand", "LeftHand", "RightFoot", "LeftFoot"): LOOK[n] = (None, False, 3.0, 3.0)   # not drawn (ours)
+LEG_SEGS = {"Hips", "RightUpLeg", "RightLeg", "LeftUpLeg", "LeftLeg"}
+BODY = None
+
+def _collapse(name):   # Mixamo bone -> our segment (fingers into the hand, toes into the foot, eyes into the head)
+    n = name.split(":")[-1]
+    for side in ("Left", "Right"):
+        if n.startswith(side + "Hand"): return side + "Hand"
+        if n.startswith(side + "Toe"): return side + "Foot"
+    if n in ("HeadTop_End", "LeftEye", "RightEye"): return "Head"
+    return n if n in SEG else None
+
+def _frame(e, arm_rule):   # orthonormal frame (axis, in-plane normal, depth normal) for a bone axis
+    e = e / np.linalg.norm(e); Y = np.array([0.0, 1.0, 0.0]); Xa = np.array([1.0, 0.0, 0.0])
+    if arm_rule or abs(e @ Y) > 0.7: m = Xa - (Xa @ e) * e
+    else: m = np.cross(e, Y)
+    m /= np.linalg.norm(m)
+    return np.stack([e, m, np.cross(e, m)], 1)
+
+def load_base():
+    """Import the X Bot body once, rest pose, rotated to our axes -> verts, tris, per-vertex top-4 weights, bone rest frames."""
+    global BODY
+    import hashlib, urllib.request
+    path = f"{TMP}/Xbot.glb"
+    if not os.path.exists(path) or hashlib.sha256(open(path, "rb").read()).hexdigest() != BASE_SHA:
+        print("fetching", BASE_URL, flush=True); urllib.request.urlretrieve(BASE_URL, path)
+        if hashlib.sha256(open(path, "rb").read()).hexdigest() != BASE_SHA: sys.exit("Xbot.glb checksum mismatch")
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    bpy.ops.import_scene.gltf(filepath=path)
+    arm = next(o for o in bpy.data.objects if o.type == "ARMATURE"); arm.data.pose_position = "REST"
+    ob = bpy.data.objects["Beta_Surface"]
+    sm = ob.modifiers.new("smooth", "SMOOTH"); sm.factor = 0.8; sm.iterations = 6    # keep the big forms, drop detail below a sprite pixel
+    dec = ob.modifiers.new("dec", "DECIMATE"); dec.ratio = 0.3
+    dg = bpy.context.evaluated_depsgraph_get(); ev = ob.evaluated_get(dg); me = ev.to_mesh()
+    G = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]], float)       # rest faces -Y with its right at -X -> faces +X, right at -Y
+    k = 27.0                                                          # metres -> hi px (only sets the working scale)
+    mw = np.array(ob.matrix_world)
+    co = np.array([v.co[:] for v in me.vertices]); co = (co @ mw[:3, :3].T + mw[:3, 3]) @ G.T * k
+    me.calc_loop_triangles(); tris = np.array([t.vertices[:] for t in me.loop_triangles])
+    gmap = {g.index: _collapse(g.name) for g in ob.vertex_groups}
+    W = np.zeros((len(co), len(SEGS)))
+    for v in me.vertices:
+        for g in v.groups:
+            s = gmap.get(g.group)
+            if s: W[v.index, SEG[s]] += g.weight
+    W /= np.maximum(W.sum(1, keepdims=True), 1e-6)
+    ev.to_mesh_clear()
+    joint = {b.name.split(":")[-1]: (np.array((arm.matrix_world @ b.head_local)[:]) @ G.T) * k for b in arm.data.bones}
+    tail = {"Hips": "Spine", "Spine": "Spine1", "Spine1": "Spine2", "Spine2": "Neck", "Neck": "Head", "Head": "HeadTop_End"}
+    for s in ("Left", "Right"):
+        tail.update({s + "Shoulder": s + "Arm", s + "Arm": s + "ForeArm", s + "ForeArm": s + "Hand", s + "Hand": s + "HandMiddle1",
+                     s + "UpLeg": s + "Leg", s + "Leg": s + "Foot", s + "Foot": s + "ToeBase"})
+    rest = []
+    for i, n in enumerate(SEGS):
+        h0, t0 = joint[n], joint[tail[n]]
+        F0 = _frame(t0 - h0, "Arm" in n or "Hand" in n or "Shoulder" in n)
+        sel = W[:, i] > 0.35 if (W[:, i] > 0.35).sum() >= 12 else np.argsort(-W[:, i])[:40]   # weights spread on the spine
+        loc = (co[sel] - h0) @ F0
+        lo, hi = np.percentile(loc[:, 1:], 5, 0), np.percentile(loc[:, 1:], 95, 0)
+        rest.append((h0, np.linalg.norm(t0 - h0), F0, (lo + hi) / 2, np.maximum((hi - lo) / 2, 0.05)))
+    top = np.argsort(-W, 1)[:, :4]; tw = np.take_along_axis(W, top, 1); tw /= tw.sum(1, keepdims=True)
+    tdom = W.argmax(1)[tris]; tseg = np.where(tdom[:, 1] == tdom[:, 2], tdom[:, 1], tdom[:, 0])   # majority vote per triangle
+    BODY = dict(co=co, tris=tris, top=top, tw=tw, tseg=tseg, rest=rest)
+    print("base body:", len(co), "verts,", len(tris), "tris", flush=True)
+
+def body_targets(hip, legs_=None, arms=None, upper=False):
+    """Full target skeleton {segment: (head xyz, tail xyz)}; missing limbs default to a standing pose."""
+    hx, hz = hip; T = {}
+    lean = 0.8 if upper else 0.0
+    sp = [(hx, hz + 1.5), (hx + 0.1, hz + 4.5), (hx + 0.3, hz + 7.5), (hx + 0.5, hz + 10.3), (hx + lean, hz + 14.3), (hx + 1.5, hz + 18.0), (hx + 2.5, hz + 30.0)]
+    for n, a, b in zip(("Hips", "Spine", "Spine1", "Spine2", "Neck", "Head"), sp, sp[1:]): T[n] = (X(a), X(b))
+    legs_ = legs_ or {}
+    for side, y, near in (("Right", -3.6, "near"), ("Left", 3.6, "far")):
+        knee, ankle, foot = legs_.get(near, ((hx + 0.5, hz - 9.6), (hx, hz - 15.8), (hx, hz - 19.0)))
+        T[side + "UpLeg"] = (X((hx, hz), y), X(knee, y)); T[side + "Leg"] = (X(knee, y), X(ankle, y))
+        T[side + "Foot"] = (X(ankle, y), X((foot[0] + 5, foot[1] + 1), y))
+    arms = arms or {}
+    for side, y, near, sh in (("Right", YN, "near", SH_N), ("Left", YF, "far", SH_F)):
+        if not upper: sh = (sh[0] - HIP[0] + hx, sh[1] - HIP[1] + hz)
+        el, h = arms.get(near, ((sh[0] - 0.5, sh[1] - 6.8), (sh[0], sh[1] - 13.2)))
+        T[side + "Shoulder"] = ((sh[0] - 1.0, y * 0.2, sh[1] - 0.5), X(sh, y)); T[side + "Arm"] = (X(sh, y), X(el, y))
+        T[side + "ForeArm"] = (X(el, y), X(h, y)); d = np.subtract(h, el); d = d / (np.linalg.norm(d) or 1)
+        T[side + "Hand"] = (X(h, y), X((h[0] + d[0] * 2.5, h[1] + d[1] * 2.5), y))
+    return T
+
+def base_body(m, T, segs):
+    """Skin the base mesh onto targets T and add the triangles of the given segments."""
+    B = BODY; co = B["co"]; out = np.zeros_like(co)
+    for i, n in enumerate(SEGS):
+        h0, L0, F0, c0, r0 = B["rest"][i]; h1, t1 = np.array(T[n][0], float), np.array(T[n][1], float)
+        L1 = np.linalg.norm(t1 - h1); F1 = _frame(t1 - h1, False)
+        _, _, tm, td = LOOK[n]
+        S = np.array([L1 / L0, tm / r0[0], td / r0[1]])
+        sel = (B["top"] == i)
+        if not sel.any(): continue
+        rows = sel.any(1)
+        loc = (co[rows] - h0) @ F0; loc[:, 1:] -= c0
+        p = h1 + (loc * S) @ F1.T
+        w = (B["tw"] * sel)[rows].sum(1, keepdims=True)
+        out[rows] += w * p
+    keep = np.isin(B["tseg"], [SEG[s] for s in segs if LOOK[s][0] is not None])
+    m.tris(out, B["tris"][keep], [LOOK[SEGS[s]][0] for s in B["tseg"][keep]], [LOOK[SEGS[s]][1] for s in B["tseg"][keep]])
+
 # ---------- body parts ----------
 def legs(m, sk):
-    hip = sk["hip"]
+    hip = sk["hip"]; joints = {}
     for side, far in (("far", True), ("near", False)):
         L = sk[side]; y = 3.6 if far else -3.6
         if "knee" in L: knee, foot = L["knee"], L["foot"]
         else: knee, foot = bend(hip, L["foot"], 9.6, 9.4, False)
-        ankle = (foot[0], foot[1] + 3.2)
-        m.capsule(X(hip, y), X(knee, y), 4.0, PANTS, far, r2=3.6)                 # thigh
-        m.capsule(X(knee, y), X(ankle, y), 3.5, PANTS, far, r2=3.0)               # shin
+        ankle = (foot[0], foot[1] + 3.2); joints[side] = (knee, ankle, foot)
+        if not BODY:
+            m.capsule(X(hip, y), X(knee, y), 4.0, PANTS, far, r2=3.6)             # thigh
+            m.capsule(X(knee, y), X(ankle, y), 3.5, PANTS, far, r2=3.0)           # shin
         mid = ((hip[0] + knee[0]) / 2, (hip[1] + knee[1]) / 2)
         ang = math.atan2(knee[1] - hip[1], knee[0] - hip[0])
         m.box((mid[0] - 2.2, y - 4.3, mid[1] - 2.0), (mid[0] + 2.2, y - 2.6, mid[1] + 2.0), PANTS_D, far, about=mid, ang=ang + math.pi / 2)   # cargo pocket
@@ -142,12 +271,14 @@ def legs(m, sk):
         m.box((fx - 4.0, y - 3.6, fy + 0.0), (fx + 6.8, y + 3.6, fy + 1.5), SOLE, far, bevel=0.4)    # sole
         m.box((fx - 3.2, y - 3.6, fy + 4.6), (fx + 2.6, y + 3.6, fy + 7.0), BOOT_L, far, bevel=0.6)  # cuff
         m.box((fx + 1.0, y - 3.7, fy + 2.4), (fx + 4.8, y - 3.3, fy + 2.9), BOOT_L, far, bevel=0)    # lace
+    if BODY: base_body(m, body_targets(hip, joints), LEG_SEGS)                    # pelvis, thighs, shins
 
 def torso(m):
     # sneaking-suit look: broad shoulders, ribbed suit, tactical harness with chest pouches, small back pouch
     hip = HIP
-    m.capsule(X((hip[0], hip[1] + 2.5)), X((SH_N[0] - 0.5, SH_N[1] - 1.5)), 7.0, SHIRT, squash=0.82, r2=8.0)
-    m.capsule(X((hip[0] + 2.5, hip[1] + 6)), X((SH_N[0] + 2.8, SH_N[1] - 3)), 3.4, SHIRT_L, squash=0.7)    # chest muscle sheen
+    if not BODY:
+        m.capsule(X((hip[0], hip[1] + 2.5)), X((SH_N[0] - 0.5, SH_N[1] - 1.5)), 7.0, SHIRT, squash=0.82, r2=8.0)
+        m.capsule(X((hip[0] + 2.5, hip[1] + 6)), X((SH_N[0] + 2.8, SH_N[1] - 3)), 3.4, SHIRT_L, squash=0.7)    # chest muscle sheen
     for z in (23.0, 26.0):                                                                                   # suit ribs
         m.box((-5.5, -6.4, z), (5.0, -5.6, z + 0.6), SHIRT_D, bevel=0)
     m.cyl(X((SH_N[0] - 2.5, SH_N[1] - 1.0)), X((SH_N[0] - 2.0, SH_N[1] + 1.2)), 4.6, 4.0, SHIRT_D, squash=0.85)   # turtleneck
@@ -196,13 +327,14 @@ def head(m, panic=False):
     m.capsule(X((hx - 8.6, hy + 3.0), 1.0), X((hx - 14.0, hy - 3.0), 1.4), 1.1, GEAR, r2=0.8, squash=0.6)
     m.capsule(X((hx - 14.0, hy - 3.0), 1.4), X((hx - 18.0, hy - 7.0), 1.6), 0.8, GEAR, r2=0.5, squash=0.6)
 
+ARMS = {}
 def arm(m, sh, hand, far, sleeve=SHIRT, down=True, glove=True):
     y = YF if far else YN
-    el, h = bend(sh, hand, 6.8, 6.4, down)
-    m.capsule(X(sh, y), X(el, y), 3.4, sleeve, far, r2=3.0)                                                     # sleeve
+    el, h = bend(sh, hand, 6.8, 6.4, down); ARMS["far" if far else "near"] = (el, h)
+    if not BODY: m.capsule(X(sh, y), X(el, y), 3.4, sleeve, far, r2=3.0)                                       # sleeve
     mid = ((sh[0] + el[0]) / 2, (sh[1] + el[1]) / 2)
     m.cyl(X(((sh[0] + 2 * el[0]) / 3, (sh[1] + 2 * el[1]) / 3), y), X(el, y), 3.4, 3.3, SHIRT_D, far)            # rolled cuff
-    m.capsule(X(el, y), X(h, y), 2.8, SKIN, far, r2=2.4)                                                        # forearm
+    if not BODY: m.capsule(X(el, y), X(h, y), 2.8, SKIN, far, r2=2.4)                                          # forearm
     m.sphere(X(h, y), 2.9, BELT if glove else SKIN, far)                                                        # gloved fist
     return el, h
 
@@ -248,7 +380,7 @@ def grip_for(aim, recoil):
 
 def upper(m, kind, gid=None, aim="f", recoil=False, flail=0):
     """kind: gun | knife | throw | flail | idle"""
-    meta = {}
+    meta = {}; ARMS.clear()
     # far arm first (it is behind the body)
     if kind == "gun":
         grip = grip_for(aim, recoil)
@@ -275,6 +407,7 @@ def upper(m, kind, gid=None, aim="f", recoil=False, flail=0):
     elif kind == "flail": arm(m, s, (s[0] + 3, s[1] + 10 + flail * 2), False)
     elif kind == "tuck": arm(m, s, (s[0] + 8, s[1] - 8), False)
     else: arm(m, s, (s[0] + 1, s[1] - 11), False)
+    if BODY: base_body(m, body_targets(HIP, arms=ARMS, upper=True), set(SEGS) - LEG_SEGS)   # torso, shoulders, arms
     return meta
 
 # ---------- scene + render ----------
@@ -358,9 +491,9 @@ ROLL_C = (1.0, 0.0)    # x of the ball's spin centre (hi px); it is kept touchin
 def roll(m, k):
     """Full-body forward roll, frame k of 8: legs tucked, body curled over them, the whole ball turned."""
     sk = skeleton("roll"); legs(m, sk)
-    n0 = len(m.bm.verts)
+    before = set(m.bm.verts)
     upper(m, "tuck")
-    m.bm.verts.ensure_lookup_table(); vs = [m.bm.verts[i] for i in range(n0, len(m.bm.verts))]
+    vs = [v for v in m.bm.verts if v not in before]
     hip = Vector((sk["hip"][0], 0, sk["hip"][1]))
     bmesh.ops.translate(m.bm, verts=vs, vec=hip - Vector((HIP[0], 0, HIP[1])))
     bmesh.ops.rotate(m.bm, verts=vs, cent=hip, matrix=Matrix.Rotation(1.15, 3, "Y"))       # curl forward over the knees
@@ -389,6 +522,7 @@ def rle(b):
     return out
 
 def main():
+    if "--no-base" not in sys.argv: load_base()
     sc = setup()
     frames = {}
     def add(name, build, origin="feet"):
