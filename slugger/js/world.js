@@ -85,6 +85,18 @@ function part(x, y, vx, vy, life, c, s = 2, gr = 0, kind = "sq") { if (parts.len
 function sparks(x, y, n, c, sp) { for (let i = 0; i < n; i++) { const a = rand(0, TAU), v = rand(0.3, 1) * sp; part(x, y, Math.cos(a) * v, Math.sin(a) * v, rand(0.2, 0.45), c, chance(0.5) ? 1 : 2, -300); } }
 function smoke(x, y, n, s = 4) { for (let i = 0; i < n; i++) part(x + rand(-5, 5), y + rand(-4, 6), rand(-12, 12), rand(10, 32), rand(0.6, 1.2), pick(["#5a5550", "#6e6862", "#47423e"]), s, 0, "smoke"); }
 function debris(x, y, n, c) { for (let i = 0; i < n; i++) part(x, y, rand(-90, 90), rand(60, 200), rand(0.5, 0.9), c, ri(2, 3), GRAV * 0.8, "deb"); }
+// Blood and gore (Settings > BLOOD & GORE). Drops fall with gravity and leave splats on the ground.
+const BLOOD = ["#a01010", "#7a0a0a", "#c01818"];
+function blood(x, y, n, dir = 0, sp = 90) {
+  if (!save.settings.gore) return;
+  for (let i = 0; i < n; i++) part(x, y, dir * rand(20, sp) + rand(-30, 30), rand(10, 110), rand(0.5, 0.9), pick(BLOOD), chance(0.3) ? 2 : 1, GRAV * 0.7, "blood");
+}
+function gibs(x, y, n) {
+  if (!save.settings.gore) return;
+  for (let i = 0; i < n; i++) part(x, y, rand(-110, 110), rand(80, 240), rand(0.9, 1.4), pick(["#8a1010", "#c89070", "#5a0808", "#a01010"]), ri(2, 3), GRAV * 0.8, "gib");
+  blood(x, y, n + 4, 0, 120);
+}
+function splat(x, w) { if (decals.length > 140) decals.shift(); decals.push({ x, w, blood: true }); }
 function dust(x, y, n) { for (let i = 0; i < n; i++) part(x + rand(-4, 4), y + 1, rand(-30, 30), rand(5, 25), rand(0.25, 0.45), game?.theme.dust || "#d8c8a0", 2, 0, "smoke"); }
 function muzzle(x, y, big = false) { part(x, y, 0, 0, 0.06, "#fff3a0", big ? 9 : 6, 0, "flash"); light(x, y, big ? 50 : 30, 0.07); }
 function popup(x, y, txt, c = "#fff") { popups.push({ x, y, text: txt, c, t: 0 }); }
@@ -101,7 +113,7 @@ function boom(x, y, size) {
 function explode(x, y, R, dmg, team, size = 1, src = "G") {
   boom(x, y, size); sfx.boom(size > 1.6); addShake(1.5 + size * 1.6);
   smoke(x, y + 6, 2 + Math.round(size * 2), 4); sparks(x, y + 4, 6 + size * 3, "#ffd34d", 170);
-  if (y <= GROUND + 6 && decals.length < 50) decals.push({ x, w: 10 + size * 8 });
+  if (y <= GROUND + 6) { if (decals.length > 140) decals.shift(); decals.push({ x, w: 10 + size * 8 }); }
   if (size > 1.5) { vibrate(40); whiteFlash = Math.max(whiteFlash, 0.07); }
   if (team === "p") {
     for (const e of enemies) {
@@ -183,6 +195,7 @@ function hurtPlayer() {
   if (P.inTank) { damageTank(); return; }
   P.hp--; game.hits++;
   hurtFlash = 0.25; hitstop = 0.06; addShake(3); vibrate(60); hapticTap(true);
+  blood(P.x, P.y + 15, 6, -P.face);
   if (P.hp <= 0) return killPlayer();
   P.inv = 1.4; sfx.hurt();
   P.vy = Math.max(P.vy, 120); P.onGround = false; P.vx = -P.face * 60;
@@ -359,6 +372,8 @@ function shoot() {
     case "F": addB({ kind: "flame", team: "p", x: ox, y: oy, vx: dx * 180, vy: dy * 180, life: 0.55, dmg: 2 * mul, hits: new Set(), src: "F" }); sfx.flame(); break;
   }
   muzzle(ox, oy, P.weapon !== "P");
+  if (P.weapon === "P" || P.weapon === "S") part(P.x, P.y + 15, -P.face * rand(30, 60), rand(60, 110), 0.6, P.weapon === "S" ? "#c83a2a" : "#e8c050", P.weapon === "S" ? 2 : 1, GRAV * 0.7, "deb");
+  if (P.weapon !== "L" && chance(0.25)) part(ox + dx * 3, oy + dy * 3, P.face * 6, 14, 0.5, "#9a948a", 2, 0, "smoke");
   if (P.weapon !== "P" && --P.ammo <= 0) { P.weapon = "P"; P.ammo = Infinity; announce("OUT OF AMMO", "#cfc3b0"); }
 }
 // Laser: an instant beam that pierces soldiers, shields and vehicles; walls and bosses stop it.
@@ -658,6 +673,8 @@ function updateFx(dt) {
   for (const p of parts) {
     p.life -= dt; p.vy += p.g * dt; p.x += p.vx * dt; p.y += p.vy * dt;
     if (p.kind === "deb" && p.y < GROUND) { p.y = GROUND; p.vy = -p.vy * 0.35; p.vx *= 0.6; }
+    else if (p.kind === "blood" && p.y < GROUND) { p.life = 0; if (chance(0.5)) splat(p.x, ri(2, 5)); }
+    else if (p.kind === "gib" && p.y < GROUND) { p.y = GROUND; if (!p.landed) { p.landed = true; splat(p.x, ri(3, 7)); p.life = Math.max(p.life, 4); } p.vy = -p.vy * 0.25; p.vx *= 0.5; }
   }
   parts = parts.filter(p => p.life > 0);
   for (const b of booms) b.t += dt;
@@ -679,11 +696,13 @@ function updateFx(dt) {
       c.vy += GRAV * 0.5 * dt; c.x += c.vx * dt; c.y += c.vy * dt; c.rot += dt * 3;
       if (chance(0.6)) smoke(c.x, c.y, 1, 4);
       if (c.y < GROUND + 8) { c.done = true; explode(c.x, GROUND + 6, 34, 8, "p", 2.4); debris(c.x, GROUND + 8, 12, "#4a5528"); }
-    } else if (c.kind === "fall") { if (c.t < 0.3) c.x += c.vx * dt; if (c.t > 1.5) c.done = true; }
-    else if (c.kind === "burn") { if (chance(0.5) && c.t < 1) part(c.x + rand(-4, 4), c.y + rand(4, 22), 0, 30, 0.3, pick(["#ffd34d", "#ff8a1a"]), 2); if (c.t > 1.8) c.done = true; }
+    } else if (c.kind === "fall") { if (c.t < 0.3) c.x += c.vx * dt; if (c.x < camX - 80) c.done = true; }
+    else if (c.kind === "burn") { if (chance(0.5) && c.t < 1) part(c.x + rand(-4, 4), c.y + rand(4, 22), 0, 30, 0.3, pick(["#ffd34d", "#ff8a1a"]), 2); if (c.t > 1.4 && chance(0.02)) smoke(c.x, c.y + 3, 1, 2); if (c.x < camX - 80) c.done = true; }
     else if (c.t > 1.5) c.done = true;
   }
   corpses = corpses.filter(c => !c.done);
+  if (corpses.length > 30) corpses.splice(0, corpses.length - 30);
+  if (decals.length && decals[0].x < camX - 60) decals = decals.filter(d => d.x > camX - 60);
   shake = Math.max(0, shake - dt * 14);
   hurtFlash = Math.max(0, hurtFlash - dt); whiteFlash = Math.max(0, whiteFlash - dt);
   if (announceMsg) { announceMsg.t += dt; if (announceMsg.t > 1.8) announceMsg = null; }

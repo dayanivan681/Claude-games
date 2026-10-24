@@ -402,7 +402,7 @@ function drawSettings() {
   button("back", SAFE.l + 6, SAFE.t + 6, 54, 20, "← BACK", () => backFromScreen());
   const s = save.settings, L = SAFE.l + 10, R = W - SAFE.r - 10, T = SAFE.t + 34, B = H - SAFE.b - 6;
   const gap = 12, cw = Math.floor((R - L - gap) / 2), rh = 22;
-  const off = scrollArea("settings", L - 4, T, R - L + 8, B - T, rh * 8 + 10);
+  const off = scrollArea("settings", L - 4, T, R - L + 8, B - T, rh * 9 + 10);
   g.save(); g.beginPath(); g.rect(L - 4, T, R - L + 8, B - T); g.clip();
   let y = T - off;
   const c2 = L + cw + gap;
@@ -422,7 +422,8 @@ function drawSettings() {
   stepRow("sf", L, y, cw, "EFFECTS", s.sfx, [0, 0.2, 0.4, 0.6, 0.8, 1], pct, v => { s.sfx = v; applyVolumes(); sfx.pick(); persist(); });
   button("load", c2, y, cw, 18, "LOAD BACKUP CODE", () => { let code = null; try { code = prompt("Paste your backup code"); } catch {} if (code) { const ok = importSave(code); toast(ok ? "PROGRESS LOADED" : "THAT CODE DID NOT WORK", ok ? UIC.green : UIC.red); } }); y += rh;
   toggleRow("vo", L, y, cw, "VOICE", s.voice, () => { s.voice = !s.voice; persist(); });
-  button("reset", c2, y, cw, 18, confirmReset ? "TAP AGAIN TO ERASE" : "RESET PROGRESS", () => { if (confirmReset) { resetSave(); confirmReset = false; toast("PROGRESS ERASED", UIC.red); } else { confirmReset = true; setTimeout(() => confirmReset = false, 3000); } }, { fill: confirmReset ? "#6a1a1a" : UIC.bg2, textColor: UIC.red });
+  button("reset", c2, y, cw, 18, confirmReset ? "TAP AGAIN TO ERASE" : "RESET PROGRESS", () => { if (confirmReset) { resetSave(); confirmReset = false; toast("PROGRESS ERASED", UIC.red); } else { confirmReset = true; setTimeout(() => confirmReset = false, 3000); } }, { fill: confirmReset ? "#6a1a1a" : UIC.bg2, textColor: UIC.red }); y += rh;
+  toggleRow("gore", L, y, cw, "BLOOD & GORE", s.gore, () => { s.gore = !s.gore; persist(); });
   g.restore();
 }
 

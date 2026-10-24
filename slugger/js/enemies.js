@@ -69,6 +69,7 @@ function damageEnemy(e, dmg, kind, fromX, src = "P") {
   }
   if (e.state === "idle") { e.state = "alert"; e.alertT = 0.25; }
   e.hp -= dmg; e.flash = 0.08;
+  if ((e.soldier || e.type === "jugg") && dmg > 0 && kind !== "flame") blood(e.x, e.y + (e.crouch ? 10 : 15), kind === "laser" ? 1 : 3, Math.sign(e.x - fromX) || 1);
   if (e.soldier && dmg > 0) { e.hitT = 0.1; if (!e.plat) e.x += Math.sign(e.x - fromX || 1) * 2; }
   if (e.hp <= 0) killEnemy(e, kind, src);
   return true;
@@ -99,6 +100,7 @@ function killEnemy(e, kind, src = "P") {
   }
   if (e.type === "mortar") { explode(e.x + 10, e.y + 6, 22, 4, "p", 1.2, src); }
   if (chance(0.75)) sfx.scream();
+  if (kind === "boom") gibs(e.x, e.y + 12, 7); else if (kind !== "flame") blood(e.x, e.y + 14, 6, Math.sign(e.x - P.x) || 1, 110);
   const ck = kind === "boom" ? "fly" : kind === "flame" ? "burn" : "fall";
   corpses.push({ kind: ck, x: e.x, y: e.y, floor: e.plat ? e.plat.y : GROUND, vx: (ck === "fly" ? -e.face * rand(40, 90) : -e.face * 30),
     vy: ck === "fly" ? rand(160, 240) : 0, t: 0, face: e.face, rot: 0, pal: e.pal, head: e.type === "sniper" ? "h_beret" : e.type === "jugg" ? "h_jugg" : "h_rebel", torso: e.type === "jugg" ? "t_jugg" : "t_rebel" });

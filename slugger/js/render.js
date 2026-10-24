@@ -85,8 +85,11 @@ function drawGround(th) {
   }
   if (th.id === "city") { g.fillStyle = "#c8c050"; for (let wx = Math.floor(camX / 40) * 40; wx < camX + W + 40; wx += 40) g.fillRect(sx(wx), gy + 16, 18, 2); }
   if (th.id === "harbor") { g.fillStyle = shade(th.ground, -0.25); for (let wx = Math.floor(camX / 14) * 14; wx < camX + W + 14; wx += 14) g.fillRect(sx(wx), gy + 3, 1, GROUND + VPAD); }
-  g.fillStyle = "rgba(20,12,8,0.45)";
-  for (const d of decals) { const x = sx(d.x); if (x > -30 && x < W + 30) { g.fillRect(x - d.w / 2, gy, d.w, 2); g.fillRect(x - d.w / 3, gy + 2, d.w * 2 / 3, 1); } }
+  for (const d of decals) {
+    const x = sx(d.x); if (x < -30 || x > W + 30) continue;
+    if (d.blood) { g.fillStyle = "rgba(110,6,6,0.85)"; g.fillRect(x - (d.w >> 1), gy, d.w, 1); if (d.w > 3) { g.fillStyle = "rgba(80,4,4,0.7)"; g.fillRect(x - (d.w >> 2), gy + 1, d.w >> 1, 1); } continue; }
+    g.fillStyle = "rgba(20,12,8,0.45)";
+    { g.fillRect(x - d.w / 2, gy, d.w, 2); g.fillRect(x - d.w / 3, gy + 2, d.w * 2 / 3, 1); } }
 }
 
 // ---------- Props ----------
@@ -244,8 +247,6 @@ function drawCorpse(c) {
     procBlit(p, x - 35, y - 16, { flip: c.face < 0 });
     return;
   }
-  const late = c.t > (c.kind === "burn" ? 1.4 : 1.1);
-  if (late && Math.floor(clock * 16) % 2) return;
   const o = { pal: c.pal || "rebel_desert", head: c.head || "h_rebel", torso: c.torso || "t_rebel", pose: "stand", arm: "flail", t: c.t };
   if (c.kind === "burn") {
     if (c.t < 1) drawSoldier({ ...o, pose: "run" }, x, y, c.face, { mode: "burn" });
@@ -253,6 +254,8 @@ function drawCorpse(c) {
     return;
   }
   if (c.kind === "fly") { drawSoldier({ ...o, pose: "jump" }, x, y, c.face, { rot: c.rot }); return; }
+  // blood pool spreading under the body
+  if (save.settings.gore && c.t > 0.3) { const w = Math.min(16, Math.round((c.t - 0.3) * 12)); g.fillStyle = "rgba(100,6,6,0.85)"; g.fillRect(x - (w >> 1) - 2, y, w, 1); if (w > 6) g.fillRect(x - (w >> 2) - 2, y + 1, w >> 1, 1); }
   if (c.t < 0.15) drawSoldier(o, x, y, c.face, { mode: "flash" });
   else drawSoldier({ ...o, arm: "idle" }, x + 1, y - 5, c.face, { rot: 3 });
 }
@@ -352,6 +355,7 @@ function drawParts() {
   for (const p of parts) {
     const a = p.life / p.max;
     if (p.kind === "smoke") { g.globalAlpha = 0.55 * a; pcirc(g, sx(p.x), sy(p.y), p.s * (1 + (1 - a) * 1.6), p.c); }
+    else if (p.kind === "blood" || p.kind === "gib") { g.globalAlpha = 1; g.fillStyle = p.c; g.fillRect(sx(p.x), sy(p.y), p.s, p.s); }
     else if (p.kind === "flash") { g.globalAlpha = 1; const x = sx(p.x), y = sy(p.y), s = p.s >> 1; g.fillStyle = p.c; g.fillRect(x - s, y - 1, s * 2, 2); g.fillRect(x - 1, y - s, 2, s * 2); g.fillStyle = "#fff"; g.fillRect(x - 1, y - 1, 2, 2); }
     else { g.globalAlpha = Math.min(1, a * 2); g.fillStyle = p.c; g.fillRect(sx(p.x) - (p.s >> 1), sy(p.y) - (p.s >> 1), p.s, p.s); }
   }
