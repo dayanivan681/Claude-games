@@ -372,7 +372,7 @@ function shoot() {
   let dx = P.face, dy = 0;
   if (P.aim === "u") { dx = 0; dy = 1; } else if (P.aim === "d") { dx = 0; dy = -1; }
   const gun = P.weapon === "P" ? "pistol" : P.weapon;
-  const [mx, my] = muzzleOf(playerPose(), P.runT, P.aim, gun);
+  const [mx, my] = muzzleOf(playerPose(), P.runT, P.aim, gun, HERO_LOOKS[save.hero].head);
   const ox = P.x + mx * P.face, oy = P.y + my;
   const mul = dmgMul();
   switch (P.weapon) {
