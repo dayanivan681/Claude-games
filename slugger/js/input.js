@@ -21,8 +21,8 @@ const KEYMAP = { ArrowLeft: "left", KeyA: "left", ArrowRight: "right", KeyD: "ri
 // All buttons sit low, in a row on the ground strip under the action (see VPAD); the primary
 // button is the big one nearest the right thumb's resting spot. The layout editor still moves them.
 const DEFAULT_LAYOUT = {
-  auto: { jump: { dx: 64, dy: 50, r: 37 }, fire: { dx: 146, dy: 44, r: 26 }, bomb: { dx: 214, dy: 48, r: 23 } },
-  classic: { fire: { dx: 64, dy: 50, r: 37 }, jump: { dx: 146, dy: 44, r: 28 }, bomb: { dx: 214, dy: 48, r: 23 } },
+  auto: { jump: { dx: 58, dy: 48, r: 36 }, fire: { dx: 138, dy: 40, r: 27 }, bomb: { dx: 208, dy: 36, r: 23 } },
+  classic: { fire: { dx: 58, dy: 48, r: 36 }, jump: { dx: 138, dy: 40, r: 28 }, bomb: { dx: 208, dy: 36, r: 23 } },
 };
 const BTN_LABEL = { jump: "JUMP", bomb: "BOMB", fire: "FIRE" };
 function layoutKey() { return autoFireOn() ? "auto" : "classic"; }
@@ -37,7 +37,7 @@ function controlLayout() {
       y: H - SAFE.b - dy * PT, r: d.r * PT * sz, dx, dy, primary: d.r >= 36,
     };
   }
-  const st = user.stick || { dx: 84, dy: 54 };
+  const st = user.stick || { dx: 84, dy: 52 };
   const stickBase = { x: left ? W - SAFE.r - st.dx * PT : SAFE.l + st.dx * PT, y: H - SAFE.b - st.dy * PT, r: 42 * PT * sz, knob: 19 * PT * sz, travel: 32 * PT * sz, dx: st.dx, dy: st.dy };
   const ps = 40 * PT;
   const pause = { x: W - SAFE.r - ps - 4, y: SAFE.t + 4, w: ps, h: ps };

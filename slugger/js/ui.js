@@ -483,7 +483,8 @@ function drawTouchControls(editing = false) {
     if (name === "bomb" && game && P) { lab = P.inTank && tank ? `${tank.shells}` : `${P.bombs}`; below = "BOMB"; }
     if (textW(lab) > b.r * 1.8) { below = lab; lab = name === "fire" ? "+" : ""; }
     text(lab, b.x, b.y - 3, "#ffffff", { align: "center", alpha: Math.min(1, a + 0.35) });
-    if (below) text(below, b.x, b.y + b.r + 3, "#ffffff", { align: "center", alpha: Math.min(1, a + 0.2) });
+    // captions go above the button so they never fall off the bottom edge
+    if (below) text(below, b.x, b.y - b.r - 10, "#ffffff", { align: "center", alpha: Math.min(1, a + 0.2) });
   }
   if (!editing) {
     const p = L.pause;
