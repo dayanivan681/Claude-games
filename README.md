@@ -28,12 +28,15 @@ Scripts clásicos sin paso de compilación, cargados en orden desde `slugger/ind
 | `js/audio.js` | Efectos y música sintetizados. |
 | `js/render.js` | Escalado entero, capas de fondo, objetos, luz nocturna, clima. |
 | `js/sprites.js` | Pixel art en código: paletas, partes de personajes, contorno. |
+| `js/soldier.js` / `js/hero_art.js` | Soldados en código; el héroe Rayo se dibuja con renders realistas de Blender (`img/rayo_<traje>.webp`, generados por `art/hero.py`). |
 | `js/world.js` | Jugador, armas, disparo automático, monedas, combos, tanque, flujo de misión. |
 | `js/enemies.js` / `js/bosses.js` | Enemigos y los 6 jefes. |
 | `js/levels.js` | Biomas, bloques de nivel, las 6 misiones y supervivencia. |
 | `js/input.js` | Joystick, botones, gestos, teclado, mando, vibración. |
 | `js/ui.js` | HUD y todos los menús. |
 | `js/main.js` | Arranque y bucle a 60 Hz fijos. Con `?dev` en la URL expone `window.__dev` para pruebas. |
+
+Créditos de arte: cuerpo y rig de Rayo de Mixamo (X Bot); escaneo de cabeza "Lee Perry-Smith" de Infinite-Realities, CC BY 3.0. Detalle en [`docs/art-resources.md`](docs/art-resources.md).
 
 ## Bomblast (`bomberman/`)
 

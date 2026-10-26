@@ -5,7 +5,19 @@
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const buf = document.createElement("canvas");
-const g = buf.getContext("2d");
+const gMain = buf.getContext("2d");
+let g = gMain;
+// The rendered hero (js/hero_art.js) is drawn at screen resolution, not into the low-res buffer: in a mission
+// everything drawn after the player goes to a second buffer, and present() stacks buffer, hero, top buffer.
+const bufTop = document.createElement("canvas"), gTop = bufTop.getContext("2d");
+let heroDraw = null, heroDefer = false;
+function deferHero(fn) {   // called from drawHeroArt while drawing the player: keep the draw, switch to the top buffer
+  heroDraw = { fn, t: g.getTransform(), a: g.globalAlpha };
+  gTop.setTransform(1, 0, 0, 1, 0, 0); gTop.clearRect(0, 0, bufTop.width, bufTop.height);
+  gTop.setTransform(F, 0, 0, F, 0, 0); gTop.save(); gTop.setTransform(heroDraw.t);
+  g = gTop;
+}
+function beginFrame() { g = gMain; heroDraw = null; }
 let OX = 0, OY = 0;
 
 function measureSafe() {
@@ -44,8 +56,8 @@ function resize() {
   canvas.width = devW; canvas.height = devH;
   canvas.style.width = cw + "px"; canvas.style.height = ch + "px";
   OX = Math.floor((devW - W * K) / 2); OY = Math.floor((devH - H * K) / 2);
-  buf.width = W * F; buf.height = H * F;
-  g.imageSmoothingEnabled = false;
+  buf.width = bufTop.width = W * F; buf.height = bufTop.height = H * F;
+  gMain.imageSmoothingEnabled = gTop.imageSmoothingEnabled = false;
   PT = DPR / K;
   const s = measureSafe();
   SAFE.t = Math.ceil(s.t * PT); SAFE.r = Math.ceil(s.r * PT); SAFE.b = Math.ceil(s.b * PT); SAFE.l = Math.ceil(s.l * PT);
@@ -64,6 +76,12 @@ function present() {
   ctx.imageSmoothingEnabled = false;
   if (OX || OY) { ctx.fillStyle = "#000"; ctx.fillRect(0, 0, canvas.width, canvas.height); }
   ctx.drawImage(buf, 0, 0, W * F, H * F, OX, OY, W * K, H * K);
+  if (heroDraw) {
+    const t = heroDraw.t;
+    ctx.save(); ctx.setTransform(K / F, 0, 0, K / F, OX, OY); ctx.transform(t.a, t.b, t.c, t.d, t.e, t.f);
+    ctx.globalAlpha = heroDraw.a; heroDraw.fn(ctx); ctx.restore();
+    ctx.drawImage(bufTop, 0, 0, W * F, H * F, OX, OY, W * K, H * K);
+  }
   drawControlsHD(ctx);
 }
 let presentMs = 0;   // dev metric
@@ -460,7 +478,7 @@ function drawWorld(dt) {
   for (const it of items) drawItem(it);
   for (const c of corpses) drawCorpse(c);
   for (const e of enemies) if (e.type !== "heli") drawEnemy(e);
-  drawPlayer();
+  heroDefer = true; drawPlayer(); heroDefer = false;
   if (tank && tank.state === "driven") drawTankEntity(tank);
   for (const e of enemies) if (e.type === "heli") drawEnemy(e);
   for (const b of bullets) {

@@ -111,8 +111,10 @@ function gripFor(sk, aim, recoil, gun) {
 }
 // Muzzle in world px relative to the feet (x forward); shoot() spawns bullets here
 function muzzleOf(pose, t, aim, gun, head) {
-  const art = typeof HERO_ART !== "undefined" && head === HERO_ART.head && heroFrame(`U_${gun}_${aim}`);
-  if (art && art.muzzle) { const sk = skeleton(pose, t, 0); return [(sk.hip[0] + sk.lean + art.muzzle[0]) / HD, (sk.hip[1] + art.muzzle[1]) / HD]; }
+  if (heroArtFor(head)) {   // hip from the rendered legs frame, muzzle from the rendered upper body
+    const lo = HERO_ART.frames[heroLowerName(pose, t)], up = HERO_ART.frames[`U_${gun}_${aim}`];
+    if (lo && up && up.length > 6) return [lo[6] + skeleton(pose, t, 0).lean / HD + up[6], lo[7] + up[7]];
+  }
   const sk = skeleton(pose, t, 0), gp = gripFor(sk, aim, false, gun), m = (GUNS[gun] || GUNS.pistol).m, r = rot(aim, m[0], m[1]);
   return [(gp[0] + r[0]) / HD, (gp[1] + r[1]) / HD];
 }
@@ -156,23 +158,27 @@ function drawHead(id, pal, hx, hy, panic) {
 }
 
 // ---- full soldier ----
-// ---- the hero drawn from Blender renders (js/hero_art.js, made by art/hero.py) ----
-// Frames are palette-indexed (part, tone, far side), so costumes recolour them like the code-drawn
-// soldiers. Legs and upper body are separate layers, Metal Slug style: the upper body rides the hip.
-let heroFrames = null;
-function heroFrame(name) {
-  if (typeof HERO_ART === "undefined") return null;
-  if (!heroFrames) {
-    heroFrames = {};
-    const bin = atob(HERO_ART.rle), bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    for (const [n, f] of Object.entries(HERO_ART.frames)) {
-      const [w, h, ox, oy, off, len] = f, px = new Uint8Array(w * h);
-      for (let i = off, j = 0; i < off + len; i += 2) { px.fill(bytes[i], j, j + bytes[i + 1]); j += bytes[i + 1]; }
-      heroFrames[n] = { w, h, ox, oy, px, muzzle: f.length > 6 ? [f[6], f[7]] : null };
-    }
+// ---- the hero drawn from Blender renders (js/hero_art.js + img/rayo_<costume>.webp, made by art/hero.py) ----
+// Full-colour frames, one atlas per costume, drawn straight into the world at R px per world px (the mission
+// buffer runs at screen resolution, see resize()). Legs and upper body are separate layers, Metal Slug style:
+// the upper body rides the hip that each legs frame records.
+const heroAtlases = {};
+function heroAtlas(ci, mode) {   // loaded atlas for a costume (null until it arrives), tinted copies for flash / burn
+  let a = heroAtlases[ci];
+  if (!a) {
+    a = heroAtlases[ci] = { img: new Image(), ok: false, tint: {} };
+    a.img.onload = () => { a.ok = true; };
+    a.img.src = `${HERO_ART.atlas}${ci}.webp`;
   }
-  return heroFrames[name] || null;
+  if (!a.ok) return null;
+  if (mode === "normal") return a.img;
+  if (!a.tint[mode]) {
+    const c = document.createElement("canvas"); c.width = a.img.width; c.height = a.img.height;
+    const x = c.getContext("2d"); x.drawImage(a.img, 0, 0);
+    x.globalCompositeOperation = "source-atop"; x.fillStyle = mode === "flash" ? "rgba(255,255,255,0.85)" : "rgba(42,26,20,0.9)"; x.fillRect(0, 0, c.width, c.height);
+    a.tint[mode] = c;
+  }
+  return a.tint[mode];
 }
 function heroUpperName(o) {
   const arm = o.arm || "none";
@@ -186,36 +192,33 @@ function heroLowerName(pose, t) {
   if (pose === "cwalk") return "L_cwalk" + Math.floor(t * 16) % 8;
   return pose === "stand" || pose === "jump" || pose === "apex" || pose === "fall" || pose === "crouch" ? "L_" + pose : null;
 }
-function renderHeroArt(o) {
-  if (typeof HERO_ART === "undefined" || o.head !== HERO_ART.head || o.chute) return null;
-  const pose = o.pose || "stand", t = o.t || 0;
-  if (pose === "roll") {   // full-body forward roll, t = 0..1 over one turn
-    const f = heroFrame("R_roll" + Math.floor(t * 8) % 8);
-    if (!f) return null;
-    hdPix.fill(0); paintHeroFrame(f, SCX - f.ox, SBY + 1 - f.oy, PALS[o.pal] || {});
-    return outlinedCanvas();
-  }
-  const lo = heroFrame(heroLowerName(pose, t)), up = heroFrame(heroUpperName(o));
-  if (!lo || !up) return null;
-  const pal = PALS[o.pal] || {};
-  hdPix.fill(0);
-  const bob = o.bob ? (Math.sin(t * 4) > 0.6 ? 1 : 0) : 0, sk = skeleton(pose, t, bob);
-  paintHeroFrame(lo, SCX - lo.ox, SBY + 1 - lo.oy, pal);
-  paintHeroFrame(up, SCX + Math.round(sk.hip[0] + sk.lean) - up.ox, SBY + 1 - Math.round(sk.hip[1]) - up.oy, pal);
-  return outlinedCanvas();
-}
-function paintHeroFrame(f, x0, y0, pal) {   // palette-indexed frame -> hdPix (part colour, tone, far-side darkening)
-  const parts = HERO_ART.parts;
-  for (let r = 0; r < f.h; r++) for (let q = 0; q < f.w; q++) {
-    const c = f.px[r * f.w + q]; if (!c) continue;
-    const v = c - 1, x = x0 + q, y = y0 + r, pid = v >> 3, pt = parts[pid];
-    if (x >= 0 && y >= 0 && x < SW && y < SH) hdPix[y * SW + x] = ramp(pt[1] || pal[pt[0]] || basePal[pt[0]], v & 1 ? -0.18 : 0)[(v >> 1) & 3];
-  }
+function heroArtFor(head) { return typeof HERO_ART !== "undefined" && head === HERO_ART.head; }
+function drawHeroArt(o, sx, sy, face, blit) {
+  if (!heroArtFor(o.head) || o.chute) return false;
+  const F_ = HERO_ART.frames, pose = o.pose || "stand", t = o.t || 0, ci = +((o.pal || "").split("_")[1] || 0) % HERO_ART.costumes;
+  const roll = pose === "roll" ? F_["R_roll" + Math.floor(t * 8) % 8] : null;
+  const lo = roll ? null : F_[heroLowerName(pose, t)], up = roll ? null : F_[heroUpperName(o)];
+  if (!roll && (!lo || !up)) return false;
+  const img = heroAtlas(ci, blit.mode || "normal");
+  if (!img) return false;
+  const r = HERO_ART.R, lean = roll ? 0 : skeleton(pose, t, 0).lean / HD, bob = o.bob && Math.sin(t * 4) > 0.6 ? 0.5 : 0;
+  const draw = c => {
+    const put = (f, x, y) => c.drawImage(img, f[0], f[1], f[2], f[3], x - f[4] / r, y - f[5] / r, f[2] / r, f[3] / r);
+    c.save();
+    if (blit.alpha !== undefined) c.globalAlpha *= blit.alpha;
+    c.translate(Math.round(sx), Math.round(sy) + 0.5);
+    if (face < 0) c.scale(-1, 1);
+    if (blit.rot) c.rotate(blit.rot * Math.PI / 2);
+    c.imageSmoothingEnabled = true; c.imageSmoothingQuality = "high";
+    if (roll) put(roll, 0, 0);
+    else { put(lo, 0, 0); put(up, lo[6] + lean, -lo[7] + bob); }
+    c.restore();
+  };
+  if (heroDefer) deferHero(draw); else draw(g);   // the player in a mission: drawn at screen resolution by present()
+  return true;
 }
 
 function renderSoldier(o) {
-  const art = renderHeroArt(o);
-  if (art) return art;
   hdPix.fill(0);
   const pal = PALS[o.pal] || PALS.rebel_desert, pose = o.pose || "stand", t = o.t || 0;
   const bob = o.bob ? (Math.sin(t * 4) > 0.6 ? 1 : 0) : 0;
@@ -307,6 +310,7 @@ function soldierKey(o) {
   return `${o.pal}|${o.head}|${o.torso}|${pose}|${fr}|${arm}|${o.gun}|${o.recoil ? 1 : 0}|${bob}|${o.chute ? 1 : 0}|${o.poke ? 1 : 0}|${flail}`;
 }
 function drawSoldier(o, sx, sy, face, blit = {}) {
+  if (drawHeroArt(o, sx, sy, face, blit)) return;
   const key = soldierKey(o);
   let cv = hdCache.get(key);
   if (!cv) { cv = renderSoldier(o); hdCache.set(key, cv); if (hdCache.size > 700) hdCache.delete(hdCache.keys().next().value); }
