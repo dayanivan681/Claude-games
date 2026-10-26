@@ -1,5 +1,5 @@
 // Offline cache: network first (always the latest build when online), cached copy when offline.
-const CACHE = 'slugger-v8';
+const CACHE = 'slugger-v9';   // = BUILD in index.html
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icons/icon-180.png', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-512-maskable.png',
   './img/rayo_0.webp', './img/rayo_1.webp', './img/rayo_2.webp', './img/rayo_3.webp',
   ...['core', 'font', 'save', 'audio', 'render', 'sprites', 'hero_art', 'soldier', 'world', 'enemies', 'bosses', 'levels', 'input', 'ui', 'main'].map(f => `./js/${f}.js`)];
@@ -13,7 +13,8 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
-  e.respondWith(fetch(req).then(res => {
+  // revalidate with the server every time: the browser's own HTTP cache must never hand back an old build
+  e.respondWith(fetch(req.url, { cache: 'no-cache', credentials: 'same-origin' }).then(res => {
     if (res && res.ok) { const copy = res.clone(); caches.open(CACHE).then(c => c.put(req, copy)); }
     return res;
   }).catch(() => caches.match(req, { ignoreSearch: true })));

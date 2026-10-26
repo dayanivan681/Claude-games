@@ -57,7 +57,7 @@ final class BundleSchemeHandler: NSObject, WKURLSchemeHandler {
 
     private static let mimeTypes = [
         "html": "text/html", "js": "text/javascript", "css": "text/css", "json": "application/json",
-        "webmanifest": "application/manifest+json", "png": "image/png", "svg": "image/svg+xml",
+        "webmanifest": "application/manifest+json", "png": "image/png", "webp": "image/webp", "svg": "image/svg+xml",
     ]
 
     func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {

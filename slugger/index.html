@@ -47,7 +47,29 @@ canvas { display: block; position: fixed; inset: 0; touch-action: none; image-re
 <script src="js/ui.js"></script>
 <script src="js/main.js"></script>
 <script>
-if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+// Live updates: an installed app is resumed, not reloaded, so on launch, on every return and every 10 minutes it
+// asks whether a new build is published (the service worker's cache name changes with each one) and reloads,
+// once per build, as soon as no mission is running.
+const BUILD = "slugger-v9";   // = CACHE in sw.js
+let updateFor = null;
+async function checkUpdate() {
+  try {
+    const id = (/slugger-[\w.]+/.exec(await (await fetch("sw.js", { cache: "no-store" })).text()) || [])[0];
+    if (!id || id === BUILD) return;
+    let tried = null; try { tried = sessionStorage.getItem("slugger_reloadFor"); } catch (e) { /* no storage */ }
+    if (tried !== id) updateFor = id;
+  } catch (e) { /* offline, or a host without sw.js */ }
+}
+setInterval(() => {
+  if (!updateFor || state === "play") return;
+  try { sessionStorage.setItem("slugger_reloadFor", updateFor); } catch (e) { /* no storage */ }
+  location.reload();
+}, 1000);
+checkUpdate();
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkUpdate(); });
+setInterval(() => { if (!document.hidden) checkUpdate(); }, 600000);
+if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost"))
+  addEventListener("load", () => navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).catch(() => {}));
 </script>
 </body>
 </html>
