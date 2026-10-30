@@ -79,14 +79,3 @@ downloaded, changes made, and status (candidate, downloaded, tested, discarded).
 
 ## Environment notes (this repo)
 - Blender runs headless as the Python module: `pip install --break-system-packages bpy` (5.2.x matches Python 3.13). Cycles CPU works without a GPU; Eevee/Workbench need a GPU context and may not.
-- Slugger (web game, `slugger/`) uses pre-rendered sprites, not real-time 3D. The hero (Rayo) is full-colour and
-  realistic: `slugger/art/hero.py` builds him from the Mixamo X Bot body and rig (bone tails fixed, IK on legs
-  and arms, the run cycle from its mocap clip) and the Lee Perry-Smith head scan, both fetched from the
-  three.js repo at a pinned tag with sha256 checks, plus modelled hair, bandana, gear and guns with PBR
-  materials. Cycles renders each pose (legs layer, upper-body layer, roll) at R = 6 px per world px
-  (M = 15 world px per metre), orthographic side view, key light from the upper left, AgX; it writes one
-  WebP atlas per costume (`slugger/img/rayo_<n>.webp`, colours read from `js/sprites.js`) and the frame table
-  in `slugger/js/hero_art.js`. In missions the player is drawn straight onto the screen canvas at full
-  resolution, between the low-res world buffer and a second buffer holding everything drawn after him
-  (render.js: deferHero / present), so the rest stays pixel art and the frame rate is unchanged.
-  Other characters are still the procedural pixel soldiers in `js/soldier.js`.
