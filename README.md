@@ -1,42 +1,6 @@
 # Claude Games
 
-La página principal (`index.html`) enlaza a los dos juegos. Cada juego es una PWA independiente: se instala en la pantalla de inicio y funciona sin conexión.
-
-## Slugger (`slugger/`)
-
-Run-and-gun en pixel art estilo Metal Slug, pensado para jugar en horizontal en el teléfono. El juego está en inglés.
-
-- **6 misiones** (desierto, selva, nieve, ciudad de noche, puerto y fortaleza), cada una con techos, arenas, prisioneros, el tanque **SLUG**, 3 placas secretas y su propio jefe con fases y puntos débiles.
-- **Supervivencia**: oleadas infinitas con jefes cada 10 oleadas (se desbloquea al terminar la misión 1).
-- **Progreso**: monedas, armería (6 mejoras de 5 niveles), 4 soldados con nivel y trajes, 3 estrellas y rango por misión, 34 logros, 3 tareas diarias con racha y récords. Todo se guarda en el teléfono, con código de respaldo en Ajustes.
-- **Controles**: joystick a la izquierda (arriba apunta, abajo se agacha), disparo automático por defecto en táctil, botones JUMP / BOMB / FIRE que se pueden mover y agrandar, modo zurdo, mando (PlayStation/Xbox) y teclado (flechas, J dispara, K salta, L granada, P pausa).
-- **Vida**: 3 corazones por vida (más con la armería) y 3 vidas por misión, con puntos de control.
-
-Instalar: abre `https://<usuario>.github.io/Claude-games/slugger/` en Safari → Compartir → **Agregar a inicio**.
-
-App iOS nativa: [`slugger-ios/`](slugger-ios) envuelve este mismo juego (un solo código). Instrucciones para compilarla en el iPhone con Xcode en [`slugger-ios/README.md`](slugger-ios/README.md).
-
-### Código
-
-Scripts clásicos sin paso de compilación, cargados en orden desde `slugger/index.html`:
-
-| Archivo | Rol |
-|---|---|
-| `js/core.js` | Constantes, resolución interna y utilidades. |
-| `js/font.js` | Fuente de mapa de bits (derivada de Press Start 2P, licencia OFL). |
-| `js/save.js` | Guardado, armería, soldados, logros, tareas diarias. |
-| `js/audio.js` | Efectos y música sintetizados. |
-| `js/render.js` | Escalado entero, capas de fondo, objetos, luz nocturna, clima. |
-| `js/sprites.js` | Pixel art en código: paletas, partes de personajes, contorno. |
-| `js/soldier.js` / `js/hero_art.js` | Soldados en código; el héroe Rayo se dibuja con renders realistas de Blender (`img/rayo_<traje>.webp`, generados por `art/hero.py`). |
-| `js/world.js` | Jugador, armas, disparo automático, monedas, combos, tanque, flujo de misión. |
-| `js/enemies.js` / `js/bosses.js` | Enemigos y los 6 jefes. |
-| `js/levels.js` | Biomas, bloques de nivel, las 6 misiones y supervivencia. |
-| `js/input.js` | Joystick, botones, gestos, teclado, mando, vibración. |
-| `js/ui.js` | HUD y todos los menús. |
-| `js/main.js` | Arranque y bucle a 60 Hz fijos. Con `?dev` en la URL expone `window.__dev` para pruebas. |
-
-Créditos de arte: cuerpo y rig de Rayo de Mixamo (X Bot); escaneo de cabeza "Lee Perry-Smith" de Infinite-Realities, CC BY 3.0. Detalle en [`docs/art-resources.md`](docs/art-resources.md).
+La página principal (`index.html`) enlaza a los juegos. Cada juego es una PWA independiente: se instala en la pantalla de inicio y funciona sin conexión.
 
 ## Bomblast (`bomberman/`)
 
